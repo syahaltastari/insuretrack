@@ -4,10 +4,31 @@
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { Reveal, StaggerGroup } from "@/components/Reveal";
+import { Carousel } from "@/components/Carousel";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
 
 type Product = { code: string; name: string; description: string };
+
+type Client = {
+  id: string;
+  name: string;
+  logo_url: string;
+  industry: string | null;
+  website: string | null;
+};
+
+type Testimonial = {
+  id: string;
+  customer_name: string;
+  photo_url: string | null;
+  rating: number;
+  review: string;
+  role: string | null;
+  company: string | null;
+  policy_type: string | null;
+  is_featured: boolean;
+};
 
 async function fetchProducts(): Promise<Product[]> {
   try {
@@ -20,10 +41,54 @@ async function fetchProducts(): Promise<Product[]> {
   }
 }
 
+async function fetchClients(): Promise<Client[]> {
+  try {
+    const r = await fetch(`${API}/public/clients`, { cache: "no-store" });
+    if (!r.ok) return [];
+    const json = (await r.json()) as { data: Client[] };
+    return json.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTestimonials(): Promise<Testimonial[]> {
+  try {
+    const r = await fetch(`${API}/public/testimonials`, { cache: "no-store" });
+    if (!r.ok) return [];
+    const json = (await r.json()) as { data: Testimonial[] };
+    return json.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 const SWATCH_TONES = ["matcha-300", "slushie-500", "ube-300"] as const;
 
+function Stars({ rating, size = 16 }: { rating: number; size?: number }) {
+  return (
+    <span aria-label={`Rating ${rating} dari 5`} style={{ display: "inline-flex", gap: 2 }}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span
+          key={i}
+          style={{
+            fontSize: size,
+            color: i <= rating ? "var(--lemon-700)" : "var(--oat-light)",
+          }}
+        >
+          ★
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export default async function HomePage() {
-  const products = await fetchProducts();
+  const [products, clients, testimonials] = await Promise.all([
+    fetchProducts(),
+    fetchClients(),
+    fetchTestimonials(),
+  ]);
 
   return (
     <>
@@ -178,6 +243,140 @@ export default async function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* ===== CLIENTS (carousel) ===== */}
+        {clients.length > 0 && (
+          <section className="clay-section" style={{ paddingTop: 0 }}>
+            <div className="clay-container">
+              <Reveal>
+                <p className="uppercase-label" style={{ marginBottom: 16, textAlign: "center", color: "var(--ube-800)" }}>
+                  ✦ Dipercaya Oleh
+                </p>
+                <h2 className="section-heading" style={{ textAlign: "center", marginBottom: 48 }}>
+                  Klien korporat kami
+                </h2>
+              </Reveal>
+              <Carousel
+                itemsPerSlideDesktop={4}
+                ariaLabel="Logo klien korporat"
+                items={clients.map((c) => (
+                  <a
+                    key={c.id}
+                    href={c.website ?? "#"}
+                    target={c.website ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    className="clay-card dashed"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 24,
+                      height: 140,
+                      textDecoration: "none",
+                      color: "inherit",
+                      background: "var(--pure-white)",
+                    }}
+                  >
+                    <img
+                      src={c.logo_url}
+                      alt={c.name}
+                      style={{
+                        maxWidth: "100%",
+                        maxHeight: "100%",
+                        objectFit: "contain",
+                        filter: "grayscale(0.2)",
+                        transition: "filter 200ms",
+                      }}
+                    />
+                  </a>
+                ))}
+              />
+            </div>
+          </section>
+        )}
+
+        {/* ===== TESTIMONIALS (carousel) ===== */}
+        {testimonials.length > 0 && (
+          <section id="testimonials" className="swatch-ube clay-section" style={{ borderRadius: 0, margin: "80px 0" }}>
+            <div className="clay-container">
+              <Reveal>
+                <p className="uppercase-label" style={{ marginBottom: 16, color: "var(--ube-300)" }}>
+                  ✦ Apa Kata Mereka
+                </p>
+                <h2 className="section-heading" style={{ color: "var(--pure-white)", marginBottom: 48 }}>
+                  Testimoni customer
+                </h2>
+              </Reveal>
+              <Carousel
+                itemsPerSlideDesktop={2}
+                ariaLabel="Testimoni customer"
+                items={testimonials.map((t) => (
+                  <div
+                    key={t.id}
+                    className="clay-card feature"
+                    style={{ background: "var(--ube-900)", height: "100%" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                      <div
+                        style={{
+                          width: 56,
+                          height: 56,
+                          borderRadius: "50%",
+                          overflow: "hidden",
+                          background: "var(--ube-800)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          border: "2px solid var(--ube-300)",
+                        }}
+                      >
+                        {t.photo_url ? (
+                          <img
+                            src={t.photo_url}
+                            alt={t.customer_name}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 24, color: "var(--ube-300)" }}>
+                            {t.customer_name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="feature-title" style={{ color: "var(--pure-white)", marginBottom: 2 }}>
+                          {t.customer_name}
+                        </h3>
+                        <p className="caption" style={{ color: "var(--ube-300)", margin: 0 }}>
+                          {t.role ?? "Customer"}{t.company ? ` · ${t.company}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <Stars rating={t.rating} size={18} />
+                    <p
+                      className="body"
+                      style={{
+                        color: "var(--ube-300)",
+                        margin: "12px 0 0 0",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      &ldquo;{t.review}&rdquo;
+                    </p>
+                    {t.is_featured && (
+                      <span
+                        className="clay-badge lemon"
+                        style={{ marginTop: 12, fontSize: "0.7rem" }}
+                      >
+                        Featured
+                      </span>
+                    )}
+                  </div>
+                ))}
+              />
+            </div>
+          </section>
+        )}
 
         {/* ===== CTA ===== */}
         <section className="swatch-matcha-deep clay-section" style={{ borderRadius: 0 }}>

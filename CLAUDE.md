@@ -217,4 +217,23 @@ Visual system inspired by Clay.com — see `DESIGN.md` for the full spec. Implem
 - Public landing: ub (hero CTA), lemon/ube accents
 - Admin: ube (primary actions), pomegranate (danger/reject), matcha (approve)
 - Customer portal: matcha (primary), pomegranate (claim), ube (inquiry)
+
+## Commit & Contribution Standards
+
+Standar pesan commit, format PR, dan checklist kontribusi ada di
+[`CONTRIBUTING.md`](./CONTRIBUTING.md). Repo ini mengikuti
+[Conventional Commits 1.0](https://www.conventionalcommits.org/) —
+wajib untuk PR title, commit subject, dan changelog otomatis.
+
+Ringkas tipe yang paling sering dipakai:
+
+- `feat(<scope>):` — fitur baru
+- `fix(<scope>):` — perbaikan bug
+- `refactor(<scope>):` — restrukturisasi tanpa ubah behavior
+- `chore(deps):` / `build(docker):` — tooling, dependency, build
+- `docs:` — markdown saja
+- `!` setelah scope = breaking change
+
+Cantumkan `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` di
+footer saat commit dihasilkan/diubah oleh AI assistant.
 - Login pages: each role's brand color for primary button

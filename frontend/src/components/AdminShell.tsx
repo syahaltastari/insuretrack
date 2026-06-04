@@ -12,6 +12,8 @@ const navItems = [
   { href: "/admin/policies", label: "Polis" },
   { href: "/admin/claims", label: "Klaim" },
   { href: "/admin/inquiries", label: "Inquiry" },
+  { href: "/admin/clients", label: "Klien" },
+  { href: "/admin/testimonials", label: "Testimoni" },
   { href: "/admin/email-logs", label: "Email Log" },
   { href: "/admin/audit-logs", label: "Audit Trail" },
 ];

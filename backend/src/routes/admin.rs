@@ -45,6 +45,7 @@ pub fn router() -> Router<AppState> {
             "/inquiries/{id}/respond",
             axum::routing::post(respond_inquiry),
         )
+        // Marketing: clients + testimonials — see admin_marketing::router
 }
 
 async fn login(

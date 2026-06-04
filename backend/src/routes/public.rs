@@ -6,9 +6,10 @@
 //!   POST /api/public/payment/webhook
 
 use axum::{
+    body::Body,
     extract::{Multipart, Path, State},
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -30,6 +31,8 @@ use crate::{
     },
     state::AppState,
 };
+use std::path::Path as StdPath;
+use tokio::fs;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -37,6 +40,9 @@ pub fn router() -> Router<AppState> {
         .route("/registrations", post(create_registration))
         .route("/registrations/{reg_no}", get(get_registration))
         .route("/payment/webhook", post(payment_webhook))
+        .route("/clients", get(list_clients_public))
+        .route("/testimonials", get(list_testimonials_public))
+        .route("/uploads/*path", get(serve_upload))
 }
 
 // ---- GET /products ----
@@ -677,4 +683,192 @@ async fn customer_id_from_registration(
         .fetch_one(&state.pool)
         .await?;
     Ok(row.0)
+}
+
+// ---- GET /clients (public, untuk landing page) ----
+
+#[derive(Serialize, sqlx::FromRow)]
+struct PublicClient {
+    id: Uuid,
+    name: String,
+    logo_path: String,
+    industry: Option<String>,
+    website: Option<String>,
+    sort_order: i32,
+}
+
+async fn list_clients_public(
+    State(state): State<AppState>,
+) -> AppResult<Json<serde_json::Value>> {
+    let data: Vec<PublicClient> = sqlx::query_as(
+        r#"
+        SELECT id, name, logo_path, industry, website, sort_order
+          FROM clients
+         WHERE is_active = TRUE
+         ORDER BY sort_order ASC, created_at DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    // Build absolute URL for logo based on media_base_url (separate from app_base_url
+    // so the <img> tag can hit the backend directly even when APP_BASE_URL points to
+    // the frontend at a different port).
+    let media_base = state.config.media_base_url.as_str();
+    let upload_dir = state.config.upload_dir.as_str();
+    let out: Vec<serde_json::Value> = data
+        .into_iter()
+        .map(|c| {
+            let logo_url = to_public_upload_url(media_base, upload_dir, &c.logo_path);
+            json!({
+                "id": c.id,
+                "name": c.name,
+                "logo_url": logo_url,
+                "logo_path": c.logo_path,
+                "industry": c.industry,
+                "website": c.website,
+                "sort_order": c.sort_order,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({ "data": out })))
+}
+
+/// Bangun URL publik untuk path upload.
+/// `path` di DB bisa berupa:
+///   - path relatif: `clients/{uuid}/logo.svg` (produksi, dari `marketing::save_image`)
+///   - path absolut host: `/var/uploads/clients/seed-...svg` (dari seed migration, host-specific)
+/// Normalisasi: jika `path` di-prefix dengan `upload_dir` (absolute atau trim-slash),
+/// strip prefix-nya agar URL jadi `${APP_BASE_URL}/api/public/uploads/{relatif}`.
+fn to_public_upload_url(app_base_url: &str, upload_dir: &str, path: &str) -> String {
+    let base = app_base_url.trim_end_matches('/');
+
+    if path.starts_with("http://") || path.starts_with("https://") {
+        return path.to_string();
+    }
+
+    let upload_dir_trim = upload_dir.trim_end_matches('/').trim_start_matches('/');
+    let stripped = path
+        .strip_prefix(upload_dir_trim)
+        .or_else(|| path.strip_prefix(&format!("/{}", upload_dir_trim)))
+        .unwrap_or(path);
+    let rel = stripped.trim_start_matches('/');
+
+    format!("{}/api/public/uploads/{}", base, rel)
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+struct PublicTestimonial {
+    id: Uuid,
+    customer_name: String,
+    photo_path: Option<String>,
+    rating: i32,
+    review: String,
+    role: Option<String>,
+    company: Option<String>,
+    policy_type: Option<String>,
+    display_date: chrono::NaiveDate,
+    is_featured: bool,
+}
+
+async fn list_testimonials_public(
+    State(state): State<AppState>,
+) -> AppResult<Json<serde_json::Value>> {
+    let data: Vec<PublicTestimonial> = sqlx::query_as(
+        r#"
+        SELECT id, customer_name, photo_path, rating, review, role, company,
+               policy_type, display_date, is_featured
+          FROM testimonials
+         WHERE is_active = TRUE
+         ORDER BY is_featured DESC, display_date DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let media_base = state.config.media_base_url.as_str();
+    let upload_dir = state.config.upload_dir.as_str();
+    let out: Vec<serde_json::Value> = data
+        .into_iter()
+        .map(|t| {
+            let photo_url = t
+                .photo_path
+                .as_ref()
+                .map(|p| to_public_upload_url(media_base, upload_dir, p));
+            json!({
+                "id": t.id,
+                "customer_name": t.customer_name,
+                "photo_url": photo_url,
+                "photo_path": t.photo_path,
+                "rating": t.rating,
+                "review": t.review,
+                "role": t.role,
+                "company": t.company,
+                "policy_type": t.policy_type,
+                "display_date": t.display_date,
+                "is_featured": t.is_featured,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({ "data": out })))
+}
+
+// ---- GET /uploads/*path (serve files statis: logo, foto) ----
+
+async fn serve_upload(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+) -> Result<Response, AppError> {
+    // Security: tolak parent dir traversal.
+    for component in StdPath::new(&path).components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err(AppError::Validation("invalid path".into()));
+        }
+    }
+
+    let upload_root = StdPath::new(&state.config.upload_dir);
+    let absolute = upload_root.join(&path);
+    let canonical_root = fs::canonicalize(upload_root)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("canonicalize upload_dir: {e}")))?;
+    let canonical_file = fs::canonicalize(&absolute)
+        .await
+        .map_err(|_| AppError::NotFound(format!("upload {}", path)))?;
+    if !canonical_file.starts_with(&canonical_root) {
+        return Err(AppError::Validation("invalid path".into()));
+    }
+
+    let bytes = fs::read(&canonical_file)
+        .await
+        .map_err(|_| AppError::NotFound(format!("upload {}", path)))?;
+
+    // Tentukan content type dari ekstensi
+    let ext = canonical_file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let ct = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "gif" => "image/gif",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    };
+
+    let mut resp = Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(bytes))
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("build response: {e}")))?;
+    resp.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
+    resp.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=3600"),
+    );
+    Ok(resp)
 }

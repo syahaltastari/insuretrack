@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod admin_marketing;
 pub mod customer;
 pub mod public;
 
@@ -12,6 +13,7 @@ pub fn build(state: AppState) -> Router {
         .route("/health", get(health))
         .nest("/api/public", public::router())
         .nest("/api/admin", admin::router())
+        .nest("/api/admin", admin_marketing::router())
         .nest("/api/customer", customer::router())
         .with_state(state)
 }
