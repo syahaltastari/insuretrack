@@ -2,6 +2,7 @@
 // Reference: DESIGN.md + globals.css design tokens
 
 import Link from "next/link";
+import { Icon, type IconName } from "@/components/Icon";
 import { Navbar } from "@/components/Navbar";
 import { Reveal, StaggerGroup } from "@/components/Reveal";
 import { Carousel } from "@/components/Carousel";
@@ -63,7 +64,20 @@ async function fetchTestimonials(): Promise<Testimonial[]> {
   }
 }
 
-const SWATCH_TONES = ["matcha-300", "slushie-500", "ube-300"] as const;
+const PRODUCT_VISUALS: Array<{ icon: IconName; tone: string }> = [
+  { icon: "HeartPulse", tone: "matcha-300" },
+  { icon: "BriefcaseMedical", tone: "slushie-500" },
+  { icon: "Stethoscope", tone: "ube-300" },
+];
+
+const BENEFITS: Array<{ icon: IconName; title: string; desc: string }> = [
+  { icon: "ShieldCheck", title: "Tanpa Cabang", desc: "100% online, dari formulir hingga polis terbit." },
+  { icon: "Zap", title: "Auto-Accept", desc: "Tidak ada underwriting manual. Polis terbit otomatis." },
+  { icon: "FileText", title: "E-Policy PDF", desc: "Polis elektronik dikirim ke email Anda." },
+  { icon: "LayoutDashboard", title: "Portal Customer", desc: "Lihat polis, ajukan klaim, tanya jawab—semua di portal." },
+  { icon: "Lock", title: "Pembayaran Aman", desc: "Payment gateway tepercaya. Idempotent webhook." },
+  { icon: "ScrollText", title: "Audit Trail", desc: "Setiap aksi tercatat untuk transparansi penuh." },
+];
 
 function Stars({ rating, size = 16 }: { rating: number; size?: number }) {
   return (
@@ -83,6 +97,25 @@ function Stars({ rating, size = 16 }: { rating: number; size?: number }) {
   );
 }
 
+function SectionLabel({ children, color }: { children: React.ReactNode; color: string }) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 16,
+        color,
+      }}
+    >
+      <Icon name="Sparkles" size="xs" />
+      <span className="uppercase-label" style={{ margin: 0 }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
 export default async function HomePage() {
   const [products, clients, testimonials] = await Promise.all([
     fetchProducts(),
@@ -99,9 +132,23 @@ export default async function HomePage() {
         <section className="clay-section" style={{ paddingTop: 96, paddingBottom: 96 }}>
           <div className="clay-container">
             <Reveal from="fade">
-              <p className="uppercase-label" style={{ marginBottom: 24, color: "var(--matcha-600)" }}>
-                ✦ Digital Insurance Platform
-              </p>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 14px",
+                  borderRadius: 999,
+                  background: "var(--matcha-300)",
+                  color: "var(--matcha-600)",
+                  marginBottom: 24,
+                }}
+              >
+                <Icon name="ShieldCheck" size="sm" />
+                <span className="uppercase-label" style={{ margin: 0 }}>
+                  Digital Insurance Platform
+                </span>
+              </div>
             </Reveal>
             <Reveal from="up" delay={80}>
               <h1 className="display-hero" style={{ marginBottom: 24, textAlign: "center" }}>
@@ -119,8 +166,13 @@ export default async function HomePage() {
             </Reveal>
             <Reveal from="up" delay={280}>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-                <Link href="/register" className="clay-button solid-ube size-large pill">
-                  Beli Polis Sekarang →
+                <Link
+                  href="/register"
+                  className="clay-button solid-ube size-large pill"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                >
+                  Beli Polis Sekarang
+                  <Icon name="ArrowRight" size="sm" />
                 </Link>
                 <a href="#products" className="clay-button ghost size-large pill">
                   Lihat Produk
@@ -134,9 +186,12 @@ export default async function HomePage() {
         <section id="products" className="clay-section" style={{ paddingTop: 0 }}>
           <div className="clay-container">
             <Reveal>
-              <h2 className="section-heading" style={{ textAlign: "center", marginBottom: 48 }}>
-                Tiga produk, satu platform
-              </h2>
+              <div style={{ textAlign: "center", marginBottom: 48 }}>
+                <div style={{ display: "inline-flex" }}>
+                  <SectionLabel color="var(--matcha-600)">Tiga produk, satu platform</SectionLabel>
+                </div>
+                <h2 className="section-heading">Pilih perlindungan yang tepat</h2>
+              </div>
             </Reveal>
             {products.length === 0 ? (
               <Reveal>
@@ -146,29 +201,37 @@ export default async function HomePage() {
               </Reveal>
             ) : (
               <div className="clay-grid cols-3">
-                {products.map((p, i) => (
-                  <Reveal key={p.code} delay={i * 120} from="up">
-                    <article className="clay-card feature clay-card-hoverable" style={{ height: "100%" }}>
-                      <div
-                        style={{
-                          display: "inline-block",
-                          width: 48,
-                          height: 48,
-                          borderRadius: 12,
-                          background: `var(--${SWATCH_TONES[i] ?? "matcha-300"})`,
-                          marginBottom: 16,
-                          transition: "transform 240ms cubic-bezier(0.4, 0, 0.2, 1)",
-                        }}
-                      />
-                      <h3 className="card-heading" style={{ fontSize: "1.5rem" }}>
-                        {p.name}
-                      </h3>
-                      <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-                        {p.description}
-                      </p>
-                    </article>
-                  </Reveal>
-                ))}
+                {products.map((p, i) => {
+                  const visual = PRODUCT_VISUALS[i] ?? PRODUCT_VISUALS[0];
+                  return (
+                    <Reveal key={p.code} delay={i * 120} from="up">
+                      <article className="clay-card feature clay-card-hoverable" style={{ height: "100%" }}>
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 48,
+                            height: 48,
+                            borderRadius: 12,
+                            background: `var(--${visual.tone})`,
+                            color: "var(--clay-black)",
+                            marginBottom: 16,
+                            transition: "transform 240ms cubic-bezier(0.4, 0, 0.2, 1)",
+                          }}
+                        >
+                          <Icon name={visual.icon} size="md" />
+                        </div>
+                        <h3 className="card-heading" style={{ fontSize: "1.5rem" }}>
+                          {p.name}
+                        </h3>
+                        <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+                          {p.description}
+                        </p>
+                      </article>
+                    </Reveal>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -178,9 +241,7 @@ export default async function HomePage() {
         <section id="how" className="swatch-ube clay-section" style={{ borderRadius: 0, margin: "80px 0" }}>
           <div className="clay-container">
             <Reveal>
-              <p className="uppercase-label" style={{ marginBottom: 16, color: "var(--ube-300)" }}>
-                ✦ Bagaimana Caranya
-              </p>
+              <SectionLabel color="var(--ube-300)">Bagaimana Caranya</SectionLabel>
               <h2 className="section-heading" style={{ color: "var(--pure-white)", marginBottom: 48 }}>
                 Dari formulir ke polis, dalam 3 langkah.
               </h2>
@@ -213,29 +274,37 @@ export default async function HomePage() {
         <section id="why" className="clay-section" style={{ paddingTop: 0 }}>
           <div className="clay-container">
             <Reveal>
-              <h2 className="section-heading" style={{ textAlign: "center", marginBottom: 48 }}>
-                Kenapa InsureTrack
-              </h2>
+              <div style={{ textAlign: "center", marginBottom: 48 }}>
+                <div style={{ display: "inline-flex" }}>
+                  <SectionLabel color="var(--ube-800)">Kenapa InsureTrack</SectionLabel>
+                </div>
+                <h2 className="section-heading">Dibangun untuk kesederhanaan</h2>
+              </div>
             </Reveal>
             <div className="clay-grid cols-3">
-              {[
-                { i: "✓", t: "Tanpa Cabang", d: "100% online, dari formulir hingga polis terbit." },
-                { i: "✓", t: "Auto-Accept", d: "Tidak ada underwriting manual. Polis terbit otomatis." },
-                { i: "✓", t: "E-Policy PDF", d: "Polis elektronik dikirim ke email Anda." },
-                { i: "✓", t: "Portal Customer", d: "Lihat polis, ajukan klaim, tanya jawab—semua di portal." },
-                { i: "✓", t: "Pembayaran Aman", d: "Payment gateway tepercaya. Idempotent webhook." },
-                { i: "✓", t: "Audit Trail", d: "Setiap aksi tercatat untuk transparansi penuh." },
-              ].map((b, i) => (
-                <Reveal key={b.t} delay={(i % 3) * 100} from="up">
+              {BENEFITS.map((b, i) => (
+                <Reveal key={b.title} delay={(i % 3) * 100} from="up">
                   <div className="clay-card dashed" style={{ padding: 24, height: "100%" }}>
-                    <p className="mono" style={{ color: "var(--matcha-600)", fontSize: "1.5rem", margin: "0 0 8px 0" }}>
-                      {b.i}
-                    </p>
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
+                        background: "var(--matcha-300)",
+                        color: "var(--matcha-600)",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <Icon name={b.icon} size="md" />
+                    </div>
                     <h3 className="feature-title" style={{ marginBottom: 8 }}>
-                      {b.t}
+                      {b.title}
                     </h3>
                     <p className="caption" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-                      {b.d}
+                      {b.desc}
                     </p>
                   </div>
                 </Reveal>
@@ -249,12 +318,12 @@ export default async function HomePage() {
           <section className="clay-section" style={{ paddingTop: 0 }}>
             <div className="clay-container">
               <Reveal>
-                <p className="uppercase-label" style={{ marginBottom: 16, textAlign: "center", color: "var(--ube-800)" }}>
-                  ✦ Dipercaya Oleh
-                </p>
-                <h2 className="section-heading" style={{ textAlign: "center", marginBottom: 48 }}>
-                  Klien korporat kami
-                </h2>
+                <div style={{ textAlign: "center", marginBottom: 48 }}>
+                  <div style={{ display: "inline-flex" }}>
+                    <SectionLabel color="var(--ube-800)">Dipercaya Oleh</SectionLabel>
+                  </div>
+                  <h2 className="section-heading">Klien korporat kami</h2>
+                </div>
               </Reveal>
               <Carousel
                 itemsPerSlideDesktop={4}
@@ -300,12 +369,12 @@ export default async function HomePage() {
           <section id="testimonials" className="swatch-ube clay-section" style={{ borderRadius: 0, margin: "80px 0" }}>
             <div className="clay-container">
               <Reveal>
-                <p className="uppercase-label" style={{ marginBottom: 16, color: "var(--ube-300)" }}>
-                  ✦ Apa Kata Mereka
-                </p>
-                <h2 className="section-heading" style={{ color: "var(--pure-white)", marginBottom: 48 }}>
-                  Testimoni customer
-                </h2>
+                <div style={{ marginBottom: 48 }}>
+                  <SectionLabel color="var(--ube-300)">Apa Kata Mereka</SectionLabel>
+                  <h2 className="section-heading" style={{ color: "var(--pure-white)" }}>
+                    Testimoni customer
+                  </h2>
+                </div>
               </Reveal>
               <Carousel
                 itemsPerSlideDesktop={2}
@@ -316,11 +385,16 @@ export default async function HomePage() {
                     className="clay-card feature"
                     style={{ background: "var(--ube-900)", height: "100%" }}
                   >
+                    <Icon
+                      name="Quote"
+                      size="lg"
+                      style={{ color: "var(--ube-300)", marginBottom: 12 }}
+                    />
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
                       <div
                         style={{
-                          width: 56,
-                          height: 56,
+                          width: 48,
+                          height: 48,
                           borderRadius: "50%",
                           overflow: "hidden",
                           background: "var(--ube-800)",
@@ -338,7 +412,7 @@ export default async function HomePage() {
                             style={{ width: "100%", height: "100%", objectFit: "cover" }}
                           />
                         ) : (
-                          <span style={{ fontSize: 24, color: "var(--ube-300)" }}>
+                          <span style={{ fontSize: 18, color: "var(--ube-300)", fontWeight: 600 }}>
                             {t.customer_name.charAt(0).toUpperCase()}
                           </span>
                         )}
@@ -352,7 +426,7 @@ export default async function HomePage() {
                         </p>
                       </div>
                     </div>
-                    <Stars rating={t.rating} size={18} />
+                    <Stars rating={t.rating} size={16} />
                     <p
                       className="body"
                       style={{
@@ -388,8 +462,13 @@ export default async function HomePage() {
               <p className="body-large" style={{ color: "var(--matcha-300)", marginBottom: 32 }}>
                 Pendaftaran memakan waktu kurang dari 5 menit.
               </p>
-              <Link href="/register" className="clay-button solid-white size-large pill">
-                Mulai Sekarang →
+              <Link
+                href="/register"
+                className="clay-button solid-white size-large pill"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                Mulai Sekarang
+                <Icon name="ArrowRight" size="sm" />
               </Link>
             </Reveal>
           </div>
