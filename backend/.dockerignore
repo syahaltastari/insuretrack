@@ -1,0 +1,9 @@
+target
+**/target
+.git
+.gitignore
+**/.env
+**/.env.local
+*.log
+**/*.log
+README.md

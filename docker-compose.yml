@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: insurance_db
+    environment:
+      POSTGRES_USER: insurance_admin
+      POSTGRES_PASSWORD: insurance_password
+      POSTGRES_DB: digital_insurance
+    # Host port 5433 agar tidak konflik dengan Postgres lokal di Windows/Linux
+    # yang mungkin sudah berjalan di 5432. Container-internal port tetap 5432.
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Migrations tidak di-mount di /docker-entrypoint-initdb.d; sqlx::migrate!
+      # di backend (saat startup) yang apply. Mount ganda akan konflik karena
+      # init script dan sqlx sama-sama CREATE TABLE customers.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insurance_admin -d digital_insurance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Backend Rust (Axum). Aktif sejak M0.
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: insurance_backend
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://insurance_admin:insurance_password@db:5432/digital_insurance
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_me_in_production}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev_webhook_secret_change_me}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      UPLOAD_DIR: /var/uploads
+      RUST_LOG: ${RUST_LOG:-info,insuretrack_backend=debug}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/var/uploads
+    restart: unless-stopped
+
+  # Frontend Next.js. Aktif sejak M0.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080/api}
+    container_name: insurance_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080/api}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  backend_uploads:

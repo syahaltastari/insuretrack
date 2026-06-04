@@ -1,0 +1,62 @@
+[package]
+name = "insuretrack-backend"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["multipart", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
+
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# Database
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "rust_decimal",
+    "json",
+    "migrate",
+    "macros",
+] }
+
+# Serde
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Auth
+jsonwebtoken = "9.3"
+argon2 = "0.5"
+
+# UUID, time, decimal
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1.36", features = ["serde-with-str"] }
+rust_decimal_macros = "1.36"
+
+# Errors & logging
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Config & misc
+dotenvy = "0.15"
+mime = "0.3"
+mime_guess = "2.0"
+async-trait = "0.1"
+rand = "0.8"
+
+# PDF generation (e-Policy)
+printpdf = "0.7"
+
+# Misc streaming
+tokio-util = { version = "0.7", features = ["io"] }
+
+[dev-dependencies]
+# Optional di MVP; tambahkan testcontainers di M6 jika diaktifkan
