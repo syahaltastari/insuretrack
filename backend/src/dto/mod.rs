@@ -30,6 +30,12 @@ pub struct PasswordResetRequest {
     pub email: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PasswordResetConsumeRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
 // ---- Products ----
 
 #[derive(Debug, Clone, Serialize)]

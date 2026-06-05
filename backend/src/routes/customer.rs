@@ -3,6 +3,7 @@
 //!   POST /api/customer/activate          (activation-purpose JWT, no prior auth)
 //!   POST /api/customer/login
 //!   POST /api/customer/password/reset
+//!   POST /api/customer/password/reset/consume
 //!   GET  /api/customer/me                 (dashboard summary)
 //!   GET  /api/customer/policies           (own policies)
 //!   GET  /api/customer/policies/:id
@@ -31,7 +32,10 @@ use uuid::Uuid;
 use crate::{
     auth::{password::hash_password, password::verify_password, Role, RequireCustomer},
     domain::{claim::can_transition as claim_can_transition, identifier::{next_id, EntityType}},
-    dto::{ActivateRequest, LoginRequest, LoginResponse, PasswordResetRequest},
+    dto::{
+        ActivateRequest, LoginRequest, LoginResponse, PasswordResetConsumeRequest,
+        PasswordResetRequest,
+    },
     error::{AppError, AppResult},
     repo::{Page, PageQuery},
     services::{
@@ -47,6 +51,10 @@ pub fn router() -> Router<AppState> {
         .route("/activate", post(activate))
         .route("/login", post(login))
         .route("/password/reset", post(password_reset))
+        .route(
+            "/password/reset/consume",
+            post(password_reset_consume),
+        )
         .route("/me", get(me))
         .route("/policies", get(list_policies))
         .route("/policies/:id", get(get_policy))
@@ -192,6 +200,59 @@ async fn password_reset(
             state.config.app_base_url, reset_token
         ),
     })))
+}
+
+async fn password_reset_consume(
+    State(state): State<AppState>,
+    Json(req): Json<PasswordResetConsumeRequest>,
+) -> AppResult<Json<LoginResponse>> {
+    if req.new_password.len() < 8 {
+        return Err(AppError::Validation(
+            "Password baru minimal 8 karakter".into(),
+        ));
+    }
+    let claims = state.tokens.verify(&req.token)?;
+    if claims.purpose.as_deref() != Some("password_reset") || claims.role != Role::Customer {
+        return Err(AppError::Unauthorized);
+    }
+    let customer_id: Uuid = claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let new_hash = hash_password(&req.new_password)?;
+
+    let row: Option<CustomerCredRow> = sqlx::query_as(
+        r#"
+        UPDATE customers
+           SET password_hash = $1, updated_at = now()
+         WHERE id = $2
+        RETURNING id, email, password_hash, portal_status
+        "#,
+    )
+    .bind(&new_hash)
+    .bind(customer_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let customer = row.ok_or(AppError::NotFound("customer".into()))?;
+
+    audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &customer.email,
+            action: "customer_password_reset",
+            entity_type: "customer",
+            entity_id: Some(customer.id),
+            metadata: None,
+            ip_address: None,
+        },
+    )
+    .await?;
+
+    // Issue a fresh login token so the user is signed in immediately.
+    let token = state
+        .tokens
+        .issue(&customer.id.to_string(), Role::Customer, None, 60 * 60 * 8)?;
+    Ok(Json(LoginResponse {
+        token,
+        role: "customer".to_string(),
+    }))
 }
 
 // ---- GET /me ----

@@ -8,6 +8,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
@@ -25,6 +26,55 @@ use crate::{
     },
     state::AppState,
 };
+
+/// Query string for list endpoints: when `format=csv`, return all rows
+/// as CSV instead of paginated JSON. `q` and `status` are reused from
+/// PageQuery so the existing filters still apply.
+#[derive(Debug, Deserialize)]
+struct ListFormatQuery {
+    #[serde(default)]
+    format: Option<String>,
+}
+
+impl ListFormatQuery {
+    fn is_csv(&self) -> bool {
+        self.format.as_deref() == Some("csv")
+    }
+}
+
+/// Escape a single CSV field per RFC 4180.
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Build a CSV download response. `headers` is the column labels; `rows`
+/// is the cell text per row (Decimal / NaiveDate / Option<…> should be
+/// pre-formatted to String before calling).
+fn csv_response(headers: &[&str], rows: Vec<Vec<String>>, filename: &str) -> Response {
+    let mut s = String::new();
+    s.push_str(&headers.iter().map(|h| csv_escape(h)).collect::<Vec<_>>().join(","));
+    s.push_str("\r\n");
+    for row in rows {
+        s.push_str(&row.iter().map(|c| csv_escape(c)).collect::<Vec<_>>().join(","));
+        s.push_str("\r\n");
+    }
+    let mut resp = (StatusCode::OK, s).into_response();
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    let today = Utc::now().format("%Y-%m-%d");
+    let safe_name = format!("{}-{}.csv", filename, today);
+    let disp = format!("attachment; filename=\"{}\"", safe_name);
+    if let Ok(v) = HeaderValue::from_str(&disp) {
+        resp.headers_mut().insert(header::CONTENT_DISPOSITION, v);
+    }
+    resp
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -140,8 +190,9 @@ async fn dashboard_stats(
 async fn dashboard_charts(
     State(state): State<AppState>,
     _: RequireAdmin,
+    Query(q): Query<dashboard::DashboardQuery>,
 ) -> AppResult<Json<dashboard::DashboardCharts>> {
-    let charts = dashboard::fetch_all(&state.pool).await?;
+    let charts = dashboard::fetch_all(&state.pool, q).await?;
     Ok(Json(charts))
 }
 
@@ -308,7 +359,8 @@ async fn list_registrations(
     State(state): State<AppState>,
     _: RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<RegistrationRow>>> {
+    Query(fmt): Query<ListFormatQuery>,
+) -> AppResult<Response> {
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -316,6 +368,58 @@ async fn list_registrations(
     let search = q.q.clone().unwrap_or_default();
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
+
+    if fmt.is_csv() {
+        let rows: Vec<RegistrationRow> = sqlx::query_as(
+            r#"
+            SELECT r.id, r.registration_no, r.customer_id,
+                   c.full_name AS customer_name, c.email AS customer_email,
+                   r.product, r.sum_assured, r.coverage_term, r.status, r.created_at
+              FROM registrations r
+              JOIN customers c ON c.id = r.customer_id
+             WHERE ($1 = '' OR r.registration_no ILIKE $1
+                              OR c.full_name    ILIKE $1
+                              OR c.email        ILIKE $1
+                              OR c.nik          ILIKE $1)
+               AND ($2 = '' OR r.status = $2)
+             ORDER BY r.created_at DESC
+            "#,
+        )
+        .bind(&like)
+        .bind(&status)
+        .fetch_all(&state.pool)
+        .await?;
+        let body: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.registration_no.clone(),
+                    r.customer_name.clone(),
+                    r.customer_email.clone(),
+                    r.product.clone(),
+                    r.sum_assured.to_string(),
+                    r.coverage_term.to_string(),
+                    r.status.clone(),
+                    r.created_at.to_rfc3339(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &[
+                "registration_no",
+                "customer_name",
+                "customer_email",
+                "product",
+                "sum_assured",
+                "coverage_term",
+                "status",
+                "created_at",
+            ],
+            body,
+            "registrations",
+        ));
+    }
+
 
     let total: (i64,) = sqlx::query_as(
         r#"
@@ -362,7 +466,7 @@ async fn list_registrations(
         page,
         page_size,
         total: total.0,
-    }))
+    }).into_response())
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -429,7 +533,8 @@ async fn list_invoices(
     State(state): State<AppState>,
     _: RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<InvoiceRow>>> {
+    Query(fmt): Query<ListFormatQuery>,
+) -> AppResult<Response> {
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -437,6 +542,58 @@ async fn list_invoices(
     let search = q.q.clone().unwrap_or_default();
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
+
+    if fmt.is_csv() {
+        let rows: Vec<InvoiceRow> = sqlx::query_as(
+            r#"
+            SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
+                   i.premium_amount, i.due_date, i.status, i.paid_at, i.created_at
+              FROM invoices i
+              JOIN registrations r ON r.id = i.registration_id
+              JOIN customers c     ON c.id = r.customer_id
+             WHERE ($1 = '' OR i.invoice_no ILIKE $1
+                              OR r.registration_no ILIKE $1
+                              OR c.full_name       ILIKE $1
+                              OR c.email           ILIKE $1)
+               AND ($2 = '' OR i.status = $2)
+             ORDER BY i.created_at DESC
+            "#,
+        )
+        .bind(&like)
+        .bind(&status)
+        .fetch_all(&state.pool)
+        .await?;
+        let body: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.invoice_no.clone(),
+                    r.registration_no.clone(),
+                    r.customer_name.clone(),
+                    r.premium_amount.to_string(),
+                    r.due_date.to_string(),
+                    r.status.clone(),
+                    r.paid_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                    r.created_at.to_rfc3339(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &[
+                "invoice_no",
+                "registration_no",
+                "customer_name",
+                "premium_amount",
+                "due_date",
+                "status",
+                "paid_at",
+                "created_at",
+            ],
+            body,
+            "invoices",
+        ));
+    }
+
 
     let total: (i64,) = sqlx::query_as(
         r#"
@@ -484,7 +641,7 @@ async fn list_invoices(
         page,
         page_size,
         total: total.0,
-    }))
+    }).into_response())
 }
 
 async fn get_invoice(
@@ -529,7 +686,8 @@ async fn list_policies(
     State(state): State<AppState>,
     _: RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<PolicyRow>>> {
+    Query(fmt): Query<ListFormatQuery>,
+) -> AppResult<Response> {
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -537,6 +695,62 @@ async fn list_policies(
     let search = q.q.clone().unwrap_or_default();
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
+
+    if fmt.is_csv() {
+        let rows: Vec<PolicyRow> = sqlx::query_as(
+            r#"
+            SELECT p.id, p.policy_no, r.registration_no, c.full_name AS customer_name,
+                   p.product, p.sum_assured, p.premium,
+                   p.effective_date, p.expiry_date, p.status, p.pdf_path, p.created_at
+              FROM policies p
+              JOIN registrations r ON r.id = p.registration_id
+              JOIN customers c     ON c.id = r.customer_id
+             WHERE ($1 = '' OR p.policy_no ILIKE $1
+                              OR r.registration_no ILIKE $1
+                              OR c.full_name       ILIKE $1)
+               AND ($2 = '' OR p.status = $2)
+             ORDER BY p.created_at DESC
+            "#,
+        )
+        .bind(&like)
+        .bind(&status)
+        .fetch_all(&state.pool)
+        .await?;
+        let body: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.policy_no.clone(),
+                    r.registration_no.clone(),
+                    r.customer_name.clone(),
+                    r.product.clone(),
+                    r.sum_assured.to_string(),
+                    r.premium.to_string(),
+                    r.effective_date.to_string(),
+                    r.expiry_date.to_string(),
+                    r.status.clone(),
+                    r.created_at.to_rfc3339(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &[
+                "policy_no",
+                "registration_no",
+                "customer_name",
+                "product",
+                "sum_assured",
+                "premium",
+                "effective_date",
+                "expiry_date",
+                "status",
+                "created_at",
+            ],
+            body,
+            "policies",
+        ));
+    }
+
 
     let total: (i64,) = sqlx::query_as(
         r#"
@@ -583,7 +797,7 @@ async fn list_policies(
         page,
         page_size,
         total: total.0,
-    }))
+    }).into_response())
 }
 
 async fn get_policy(
@@ -656,7 +870,8 @@ async fn list_email_logs(
     State(state): State<AppState>,
     _: RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<EmailLogRow>>> {
+    Query(fmt): Query<ListFormatQuery>,
+) -> AppResult<Response> {
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -664,6 +879,48 @@ async fn list_email_logs(
     let search = q.q.clone().unwrap_or_default();
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
+
+    if fmt.is_csv() {
+        let rows: Vec<EmailLogRow> = sqlx::query_as(
+            r#"
+            SELECT id, recipient, email_type, subject, status, error_message, sent_at
+              FROM email_logs
+             WHERE ($1 = '' OR recipient ILIKE $1 OR subject ILIKE $1)
+               AND ($2 = '' OR status = $2)
+             ORDER BY id DESC
+            "#,
+        )
+        .bind(&like)
+        .bind(&status)
+        .fetch_all(&state.pool)
+        .await?;
+        let body: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.recipient.clone(),
+                    r.email_type.clone(),
+                    r.subject.clone(),
+                    r.status.clone(),
+                    r.error_message.clone().unwrap_or_default(),
+                    r.sent_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &[
+                "recipient",
+                "email_type",
+                "subject",
+                "status",
+                "error_message",
+                "sent_at",
+            ],
+            body,
+            "email-logs",
+        ));
+    }
+
 
     let total: (i64,) = sqlx::query_as(
         r#"
@@ -700,7 +957,7 @@ async fn list_email_logs(
         page,
         page_size,
         total: total.0,
-    }))
+    }).into_response())
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -719,7 +976,8 @@ async fn list_audit_logs(
     State(state): State<AppState>,
     _: RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<AuditLogRow>>> {
+    Query(fmt): Query<ListFormatQuery>,
+) -> AppResult<Response> {
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -727,6 +985,53 @@ async fn list_audit_logs(
     let search = q.q.clone().unwrap_or_default();
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
+
+    if fmt.is_csv() {
+        let rows: Vec<AuditLogRow> = sqlx::query_as(
+            r#"
+            SELECT id, actor, action, entity_type, entity_id, metadata, ip_address, created_at
+              FROM audit_logs
+             WHERE ($1 = '' OR actor ILIKE $1 OR action ILIKE $1 OR entity_type ILIKE $1)
+               AND ($2 = '' OR entity_type = $2)
+             ORDER BY created_at DESC
+            "#,
+        )
+        .bind(&like)
+        .bind(&status)
+        .fetch_all(&state.pool)
+        .await?;
+        let body: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.actor.clone(),
+                    r.action.clone(),
+                    r.entity_type.clone(),
+                    r.entity_id.map(|u| u.to_string()).unwrap_or_default(),
+                    r.metadata
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
+                    r.ip_address.clone().unwrap_or_default(),
+                    r.created_at.to_rfc3339(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &[
+                "actor",
+                "action",
+                "entity_type",
+                "entity_id",
+                "metadata",
+                "ip_address",
+                "created_at",
+            ],
+            body,
+            "audit-logs",
+        ));
+    }
+
 
     let total: (i64,) = sqlx::query_as(
         r#"
@@ -763,7 +1068,7 @@ async fn list_audit_logs(
         page,
         page_size,
         total: total.0,
-    }))
+    }).into_response())
 }
 
 // ---- Claims (admin view & review) ----
@@ -787,7 +1092,8 @@ async fn list_claims_admin(
     State(state): State<AppState>,
     _: RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<AdminClaimRow>>> {
+    Query(fmt): Query<ListFormatQuery>,
+) -> AppResult<Response> {
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -795,6 +1101,60 @@ async fn list_claims_admin(
     let search = q.q.clone().unwrap_or_default();
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
+
+    if fmt.is_csv() {
+        let rows: Vec<AdminClaimRow> = sqlx::query_as(
+            r#"
+            SELECT cl.id, cl.claim_no, p.policy_no, c.full_name AS customer_name,
+                   cl.claim_type, cl.incident_date, cl.claimed_amount,
+                   cl.status, cl.decision_note, cl.submitted_at, cl.updated_at
+              FROM claims cl
+              JOIN policies p ON p.id = cl.policy_id
+              JOIN customers c ON c.id = cl.customer_id
+             WHERE ($1 = '' OR cl.claim_no ILIKE $1 OR c.full_name ILIKE $1)
+               AND ($2 = '' OR cl.status = $2)
+             ORDER BY cl.submitted_at DESC
+            "#,
+        )
+        .bind(&like)
+        .bind(&status)
+        .fetch_all(&state.pool)
+        .await?;
+        let body: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.claim_no.clone(),
+                    r.policy_no.clone(),
+                    r.customer_name.clone(),
+                    r.claim_type.clone(),
+                    r.incident_date.to_string(),
+                    r.claimed_amount.to_string(),
+                    r.status.clone(),
+                    r.decision_note.clone().unwrap_or_default(),
+                    r.submitted_at.to_rfc3339(),
+                    r.updated_at.to_rfc3339(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &[
+                "claim_no",
+                "policy_no",
+                "customer_name",
+                "claim_type",
+                "incident_date",
+                "claimed_amount",
+                "status",
+                "decision_note",
+                "submitted_at",
+                "updated_at",
+            ],
+            body,
+            "claims",
+        ));
+    }
+
 
     let total: (i64,) = sqlx::query_as(
         r#"
@@ -837,7 +1197,7 @@ async fn list_claims_admin(
         page,
         page_size,
         total: total.0,
-    }))
+    }).into_response())
 }
 
 #[derive(serde::Deserialize)]
@@ -961,7 +1321,8 @@ async fn list_inquiries_admin(
     State(state): State<AppState>,
     _: RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<AdminInquiryRow>>> {
+    Query(fmt): Query<ListFormatQuery>,
+) -> AppResult<Response> {
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -969,6 +1330,61 @@ async fn list_inquiries_admin(
     let search = q.q.clone().unwrap_or_default();
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
+
+    if fmt.is_csv() {
+        let rows: Vec<AdminInquiryRow> = sqlx::query_as(
+            r#"
+            SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
+                   p.policy_no,
+                   i.subject, i.message, i.status, i.response,
+                   i.created_at, i.responded_at
+              FROM inquiries i
+              JOIN customers c ON c.id = i.customer_id
+              LEFT JOIN policies p ON p.id = i.policy_id
+             WHERE ($1 = '' OR i.inquiry_no ILIKE $1 OR i.subject ILIKE $1 OR c.full_name ILIKE $1)
+               AND ($2 = '' OR i.status = $2)
+             ORDER BY i.created_at DESC
+            "#,
+        )
+        .bind(&like)
+        .bind(&status)
+        .fetch_all(&state.pool)
+        .await?;
+        let body: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.inquiry_no.clone(),
+                    r.customer_name.clone(),
+                    r.customer_email.clone(),
+                    r.policy_no.clone().unwrap_or_default(),
+                    r.subject.clone(),
+                    r.message.clone(),
+                    r.status.clone(),
+                    r.response.clone().unwrap_or_default(),
+                    r.created_at.to_rfc3339(),
+                    r.responded_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                ]
+            })
+            .collect();
+        return Ok(csv_response(
+            &[
+                "inquiry_no",
+                "customer_name",
+                "customer_email",
+                "policy_no",
+                "subject",
+                "message",
+                "status",
+                "response",
+                "created_at",
+                "responded_at",
+            ],
+            body,
+            "inquiries",
+        ));
+    }
+
 
     let total: (i64,) = sqlx::query_as(
         r#"
@@ -1011,7 +1427,7 @@ async fn list_inquiries_admin(
         page,
         page_size,
         total: total.0,
-    }))
+    }).into_response())
 }
 
 #[derive(serde::Deserialize)]

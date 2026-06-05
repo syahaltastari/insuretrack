@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Confirm } from "@/components/ui/confirm";
+import { SafeImage } from "@/components/SafeImage";
 import { Form, FormField, FormError } from "@/lib/forms";
 import { optionalString } from "@/lib/schemas/common";
 import { API_BASE, ApiError } from "@/lib/api";
@@ -276,7 +277,6 @@ export default function AdminTestimonialsPage() {
         title="Testimoni"
         endpoint="/admin/testimonials"
         searchPlaceholder="Cari nama atau review..."
-        statusOptions={["true", "false"]}
         headerActions={
           <Button
             onClick={openCreate}
@@ -291,22 +291,15 @@ export default function AdminTestimonialsPage() {
             key: "photo_path",
             label: "Foto",
             width: "72px",
-            render: (t) =>
-              t.photo_path ? (
-                <img
-                  src={photoUrl(t.photo_path)}
-                  alt={t.customer_name}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    objectFit: "cover",
-                    borderRadius: "50%",
-                    background: "var(--warm-cream)",
-                  }}
-                />
-              ) : (
-                <span style={{ color: "var(--warm-silver)" }}>—</span>
-              ),
+            render: (t) => (
+              <SafeImage
+                src={t.photo_path ? photoUrl(t.photo_path) : null}
+                alt={t.customer_name}
+                initials={t.customer_name.slice(0, 2)}
+                size={40}
+                rounded
+              />
+            ),
           },
           { key: "customer_name", label: "Nama" },
           {

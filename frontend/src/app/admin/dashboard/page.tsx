@@ -3,7 +3,7 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "@/components/AdminShell";
 import {
   Bar,
@@ -36,13 +36,17 @@ type Stats = {
   total_premium_collected: string;
 };
 
-type MonthCount = { month: string; count: number };
-type MonthAmount = { month: string; amount: string };
+type BucketCount = { bucket: string; count: number };
+type BucketAmount = { bucket: string; amount: string };
 type StatusCount = { status: string; count: number };
+type Granularity = "day" | "week" | "month";
 type Charts = {
-  registrations_per_month: MonthCount[];
-  policies_per_month: MonthCount[];
-  revenue_per_month: MonthAmount[];
+  granularity: Granularity;
+  from: string;
+  to: string;
+  registrations_per_period: BucketCount[];
+  policies_per_period: BucketCount[];
+  revenue_per_period: BucketAmount[];
   invoice_status_breakdown: StatusCount[];
   claim_status_breakdown: StatusCount[];
   policy_product_breakdown: StatusCount[];
@@ -99,37 +103,108 @@ function labelOf(s: string) {
   return STATUS_LABELS[s] ?? s;
 }
 
+const RANGE_OPTIONS: Array<{
+  key: string;
+  label: string;
+  /** days back from today, undefined = no upper bound */
+  days?: number;
+  /** explicit granularity, undefined = auto */
+  granularity?: Granularity;
+}> = [
+  { key: "7d", label: "7 Hari", days: 7, granularity: "day" },
+  { key: "30d", label: "30 Hari", days: 30, granularity: "day" },
+  { key: "90d", label: "90 Hari", days: 90, granularity: "week" },
+  { key: "12m", label: "12 Bulan", days: 365, granularity: "month" },
+];
+
+const DAY_LABELS = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "Mei",
+  "Jun",
+  "Jul",
+  "Agu",
+  "Sep",
+  "Okt",
+  "Nov",
+  "Des",
+];
+
+function bucketLabel(ymd: string, granularity: Granularity): string {
+  // ymd is "YYYY-MM-DD" (the bucket start).
+  const parts = ymd.split("-");
+  if (parts.length < 3) return ymd;
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  if (granularity === "day") {
+    return `${d} ${MONTH_LABELS[m - 1]}`;
+  }
+  if (granularity === "week") {
+    // Show week start date
+    return `${d} ${MONTH_LABELS[m - 1]}`;
+  }
+  // month
+  return `${MONTH_LABELS[m - 1]} '${String(y).slice(2)}`;
+}
+
+function toYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [charts, setCharts] = useState<Charts | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rangeKey, setRangeKey] = useState("30d");
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const range = RANGE_OPTIONS.find((r) => r.key === rangeKey) ?? RANGE_OPTIONS[1];
+
+  const load = useCallback(async () => {
     const token = getAdminToken();
     if (!token) return;
-    (async () => {
-      try {
-        const [s, c] = await Promise.all([
-          fetch(`${API_BASE}/admin/dashboard/stats`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }).then(async (r) => {
-            if (!r.ok) throw new ApiError(r.status, "ERR", "Gagal load stats");
-            return r.json();
-          }),
-          fetch(`${API_BASE}/admin/dashboard/charts`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }).then(async (r) => {
-            if (!r.ok) throw new ApiError(r.status, "ERR", "Gagal load charts");
-            return r.json();
-          }),
-        ]);
-        setStats(s);
-        setCharts(c);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Gagal load");
-      }
-    })();
-  }, []);
+    setLoading(true);
+    setError(null);
+    try {
+      const today = new Date();
+      const from = new Date(today);
+      if (range.days) from.setDate(today.getDate() - range.days + 1);
+      const params = new URLSearchParams({ from: toYmd(from), to: toYmd(today) });
+      if (range.granularity) params.set("granularity", range.granularity);
+
+      const [s, c] = await Promise.all([
+        fetch(`${API_BASE}/admin/dashboard/stats`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(async (r) => {
+          if (!r.ok) throw new ApiError(r.status, "ERR", "Gagal load stats");
+          return r.json();
+        }),
+        fetch(`${API_BASE}/admin/dashboard/charts?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(async (r) => {
+          if (!r.ok) throw new ApiError(r.status, "ERR", "Gagal load charts");
+          return r.json();
+        }),
+      ]);
+      setStats(s);
+      setCharts(c);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gagal load");
+    } finally {
+      setLoading(false);
+    }
+  }, [rangeKey]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <AdminShell>
@@ -137,7 +212,7 @@ export default function AdminDashboard() {
         ✦ Ringkasan Operasional
       </p>
       <h1 className="page-title">Dashboard</h1>
-      <p className="page-subtitle">Metrik agregat & tren 12 bulan terakhir.</p>
+      <p className="page-subtitle">Metrik agregat & tren berdasarkan rentang waktu.</p>
 
       {error && (
         <div
@@ -147,6 +222,44 @@ export default function AdminDashboard() {
           ⚠ {error}
         </div>
       )}
+
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          flexWrap: "wrap",
+          marginBottom: 24,
+          background: "var(--oat-light)",
+          padding: 4,
+          borderRadius: "var(--radius-card)",
+          width: "fit-content",
+        }}
+      >
+        {RANGE_OPTIONS.map((r) => (
+          <button
+            key={r.key}
+            type="button"
+            onClick={() => setRangeKey(r.key)}
+            disabled={loading}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "var(--radius-sharp)",
+              border: "none",
+              background: r.key === rangeKey ? "var(--pure-white)" : "transparent",
+              color: "var(--clay-black)",
+              fontSize: "0.85rem",
+              fontWeight: r.key === rangeKey ? 600 : 500,
+              cursor: loading ? "wait" : "pointer",
+              boxShadow:
+                r.key === rangeKey ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+              transition: "all 150ms ease",
+            }}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
       {!stats && !error && <p>Memuat...</p>}
 
       {stats && (
@@ -184,16 +297,19 @@ export default function AdminDashboard() {
                 gap: 20,
               }}
             >
-              <ChartCard title="Registrasi 12 Bulan" subtitle="Jumlah pendaftar baru per bulan">
+              <ChartCard
+                title="Registrasi per Periode"
+                subtitle={`Jumlah pendaftar baru (${charts.granularity})`}
+              >
                 <ResponsiveContainer>
                   <BarChart
-                    data={charts.registrations_per_month}
+                    data={charts.registrations_per_period}
                     margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
                   >
                     <CartesianGrid stroke="var(--oat-light)" strokeDasharray="3 3" />
                     <XAxis
-                      dataKey="month"
-                      tickFormatter={chartFormatters.shortMonth}
+                      dataKey="bucket"
+                      tickFormatter={(b) => bucketLabel(b, charts.granularity)}
                       interval="preserveStartEnd"
                       tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={{ stroke: "var(--oat-border)" }}
@@ -210,7 +326,7 @@ export default function AdminDashboard() {
                       content={(p) => (
                         <ChartTooltip
                           {...p}
-                          label={chartFormatters.shortMonth(String(p.label ?? ""))}
+                          label={bucketLabel(String(p.label ?? ""), charts.granularity)}
                           valueFormatter={chartFormatters.count}
                         />
                       )}
@@ -225,16 +341,19 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Polis Diterbitkan" subtitle="Jumlah polis baru per bulan">
+              <ChartCard
+                title="Polis Diterbitkan"
+                subtitle={`Jumlah polis baru (${charts.granularity})`}
+              >
                 <ResponsiveContainer>
                   <BarChart
-                    data={charts.policies_per_month}
+                    data={charts.policies_per_period}
                     margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
                   >
                     <CartesianGrid stroke="var(--oat-light)" strokeDasharray="3 3" />
                     <XAxis
-                      dataKey="month"
-                      tickFormatter={chartFormatters.shortMonth}
+                      dataKey="bucket"
+                      tickFormatter={(b) => bucketLabel(b, charts.granularity)}
                       interval="preserveStartEnd"
                       tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={{ stroke: "var(--oat-border)" }}
@@ -251,7 +370,7 @@ export default function AdminDashboard() {
                       content={(p) => (
                         <ChartTooltip
                           {...p}
-                          label={chartFormatters.shortMonth(String(p.label ?? ""))}
+                          label={bucketLabel(String(p.label ?? ""), charts.granularity)}
                           valueFormatter={chartFormatters.count}
                         />
                       )}
@@ -266,16 +385,19 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Premi Terkumpul" subtitle="Total invoice paid per bulan">
+              <ChartCard
+                title="Premi Terkumpul"
+                subtitle={`Total invoice paid per ${charts.granularity === "day" ? "hari" : charts.granularity === "week" ? "minggu" : "bulan"}`}
+              >
                 <ResponsiveContainer>
                   <LineChart
-                    data={charts.revenue_per_month}
+                    data={charts.revenue_per_period}
                     margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
                   >
                     <CartesianGrid stroke="var(--oat-light)" strokeDasharray="3 3" />
                     <XAxis
-                      dataKey="month"
-                      tickFormatter={chartFormatters.shortMonth}
+                      dataKey="bucket"
+                      tickFormatter={(b) => bucketLabel(b, charts.granularity)}
                       interval="preserveStartEnd"
                       tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={{ stroke: "var(--oat-border)" }}
@@ -292,7 +414,7 @@ export default function AdminDashboard() {
                       content={(p) => (
                         <ChartTooltip
                           {...p}
-                          label={chartFormatters.shortMonth(String(p.label ?? ""))}
+                          label={bucketLabel(String(p.label ?? ""), charts.granularity)}
                           valueFormatter={chartFormatters.idr}
                         />
                       )}
@@ -310,7 +432,7 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Status Invoice" subtitle="Distribusi status invoice">
+              <ChartCard title="Status Invoice" subtitle="Distribusi status invoice (all-time)">
                 <ResponsiveContainer>
                   <PieChart>
                     <Tooltip
@@ -346,7 +468,7 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Produk" subtitle="Distribusi polis per produk">
+              <ChartCard title="Produk" subtitle="Distribusi polis per produk (all-time)">
                 <ResponsiveContainer>
                   <PieChart>
                     <Tooltip
@@ -382,7 +504,7 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Status Klaim" subtitle="Distribusi status klaim">
+              <ChartCard title="Status Klaim" subtitle="Distribusi status klaim (all-time)">
                 <ResponsiveContainer>
                   <PieChart>
                     <Tooltip

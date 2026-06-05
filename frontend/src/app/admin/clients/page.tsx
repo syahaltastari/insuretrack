@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Confirm } from "@/components/ui/confirm";
+import { SafeImage } from "@/components/SafeImage";
 import { Form, FormField, FormError } from "@/lib/forms";
 import {
   emailSchema,
@@ -235,7 +236,6 @@ export default function AdminClientsPage() {
         title="Klien Korporat"
         endpoint="/admin/clients"
         searchPlaceholder="Cari nama atau industri..."
-        statusOptions={["true", "false"]}
         headerActions={
           <Button onClick={openCreate} className="bg-[var(--ube-800)] text-white hover:bg-[var(--ube-900)]">
             + Tambah Klien
@@ -247,23 +247,14 @@ export default function AdminClientsPage() {
             key: "logo_path",
             label: "Logo",
             width: "72px",
-            render: (c) =>
-              c.logo_path ? (
-                <img
-                  src={logoUrl(c.logo_path)}
-                  alt={c.name}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    objectFit: "contain",
-                    background: "var(--warm-cream)",
-                    borderRadius: 6,
-                    padding: 4,
-                  }}
-                />
-              ) : (
-                <span style={{ color: "var(--warm-silver)" }}>—</span>
-              ),
+            render: (c) => (
+              <SafeImage
+                src={c.logo_path ? logoUrl(c.logo_path) : null}
+                alt={c.name}
+                initials={c.name.slice(0, 2)}
+                size={40}
+              />
+            ),
           },
           { key: "name", label: "Nama" },
           {

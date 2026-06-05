@@ -109,6 +109,18 @@ function LoginInner() {
               {submitting ? "Login..." : "Login →"}
             </button>
 
+            <p
+              className="caption"
+              style={{ textAlign: "center", marginTop: 12, color: "var(--warm-charcoal)" }}
+            >
+              <Link
+                href="/portal/reset"
+                style={{ color: "var(--matcha-600)", textDecoration: "underline" }}
+              >
+                Lupa password?
+              </Link>
+            </p>
+
             <div
               style={{
                 display: "flex",

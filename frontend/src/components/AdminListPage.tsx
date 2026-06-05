@@ -2,6 +2,7 @@
 
 import { useEffect, useState, ReactNode } from "react";
 import { toast } from "sonner";
+import { Inbox, Download } from "lucide-react";
 import { AdminShell } from "@/components/AdminShell";
 import { Pagination } from "@/components/Pagination";
 import { API_BASE } from "@/lib/api";
@@ -28,6 +29,7 @@ export function AdminListPage<T extends { id: string }>({
   headerActions,
   formSlot,
   emptyMessage = "Tidak ada data.",
+  enableExport = true,
 }: {
   title: string;
   endpoint: string;
@@ -44,6 +46,8 @@ export function AdminListPage<T extends { id: string }>({
   formSlot?: ReactNode;
   /** Override the "Tidak ada data" message. */
   emptyMessage?: string;
+  /** Show the "Export CSV" button next to the search bar. Defaults to true. */
+  enableExport?: boolean;
 }) {
   const [data, setData] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -144,6 +148,24 @@ export function AdminListPage<T extends { id: string }>({
         <button type="submit" className="clay-button solid-ube">
           Cari
         </button>
+        {enableExport && (
+          <a
+            href={(() => {
+              const params = new URLSearchParams({ format: "csv" });
+              if (q) params.set("q", q);
+              if (status) params.set("status", status);
+              return `${API_BASE}${endpoint}?${params}`;
+            })()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="clay-button ghost size-small"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            title="Download semua baris (mengikuti filter saat ini) sebagai CSV"
+          >
+            <Download size={14} />
+            <span>Export CSV</span>
+          </a>
+        )}
       </form>
 
       {formSlot}
@@ -158,7 +180,25 @@ export function AdminListPage<T extends { id: string }>({
       )}
       {loading && <p>Memuat...</p>}
 
-      {!loading && (
+      {!loading && data.length === 0 && (
+        <div
+          className="clay-card feature dashed"
+          style={{ textAlign: "center", padding: "48px 24px", marginTop: 8 }}
+        >
+          <Inbox
+            size={40}
+            style={{ color: "var(--warm-silver)", margin: "0 auto" }}
+          />
+          <p
+            className="body"
+            style={{ color: "var(--warm-charcoal)", margin: "12px 0 0 0" }}
+          >
+            {emptyMessage}
+          </p>
+        </div>
+      )}
+
+      {!loading && data.length > 0 && (
         <>
           <div className="clay-table-wrap">
             <table className="clay-table">
@@ -177,91 +217,76 @@ export function AdminListPage<T extends { id: string }>({
                 </tr>
               </thead>
               <tbody>
-                {data.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={colCount}
-                      style={{
-                        padding: 32,
-                        textAlign: "center",
-                        color: "var(--warm-charcoal)",
-                      }}
-                    >
-                      {emptyMessage}
-                    </td>
-                  </tr>
-                ) : (
-                  data.map((row) => (
-                    <tr key={row.id}>
-                      {columns.map((c) => {
-                        const v = c.render
-                          ? c.render(row)
-                          : (row as Record<string, unknown>)[c.key as string];
-                        return (
-                          <td
-                            key={String(c.key)}
-                            className={c.hideOnMobile ? "hide-mobile" : undefined}
-                          >
-                            {detailBasePath ? (
-                              <a
-                                href={`${detailBasePath}/${row.id}`}
-                                style={{
-                                  color: "var(--clay-black)",
-                                  fontWeight: 500,
-                                }}
-                              >
-                                {v as ReactNode}
-                              </a>
-                            ) : (
-                              (v as ReactNode)
-                            )}
-                          </td>
-                        );
-                      })}
-                      {showActionsCol && (
-                        <td>
-                          <div
-                            style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-                          >
-                            {pdfDownloadPath &&
-                              (() => {
-                                const path = pdfDownloadPath(row);
-                                if (!path) return null;
-                                const token = getAdminToken();
-                                return (
-                                  <button
-                                    className="clay-button ghost size-small"
-                                    onClick={async (e) => {
-                                      e.preventDefault();
-                                      const r = await fetch(
-                                        `${API_BASE}${path}`,
-                                        {
-                                          headers: {
-                                            Authorization: `Bearer ${token}`,
-                                          },
-                                        },
-                                      );
-                                      if (!r.ok) return toast.error("Gagal download PDF");
-                                      const blob = await r.blob();
-                                      const url = URL.createObjectURL(blob);
-                                      const a = document.createElement("a");
-                                      a.href = url;
-                                      a.download = `policy-${row.id}.pdf`;
-                                      a.click();
-                                      URL.revokeObjectURL(url);
-                                    }}
-                                  >
-                                    📄 PDF
-                                  </button>
-                                );
-                              })()}
-                            {actions && actions(row)}
-                          </div>
+                {data.map((row) => (
+                  <tr key={row.id}>
+                    {columns.map((c) => {
+                      const v = c.render
+                        ? c.render(row)
+                        : (row as Record<string, unknown>)[c.key as string];
+                      return (
+                        <td
+                          key={String(c.key)}
+                          className={c.hideOnMobile ? "hide-mobile" : undefined}
+                        >
+                          {detailBasePath ? (
+                            <a
+                              href={`${detailBasePath}/${row.id}`}
+                              style={{
+                                color: "var(--clay-black)",
+                                fontWeight: 500,
+                              }}
+                            >
+                              {v as ReactNode}
+                            </a>
+                          ) : (
+                            (v as ReactNode)
+                          )}
                         </td>
-                      )}
-                    </tr>
-                  ))
-                )}
+                      );
+                    })}
+                    {showActionsCol && (
+                      <td>
+                        <div
+                          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+                        >
+                          {pdfDownloadPath &&
+                            (() => {
+                              const path = pdfDownloadPath(row);
+                              if (!path) return null;
+                              const token = getAdminToken();
+                              return (
+                                <button
+                                  className="clay-button ghost size-small"
+                                  onClick={async (e) => {
+                                    e.preventDefault();
+                                    const r = await fetch(
+                                      `${API_BASE}${path}`,
+                                      {
+                                        headers: {
+                                          Authorization: `Bearer ${token}`,
+                                        },
+                                      },
+                                    );
+                                    if (!r.ok) return toast.error("Gagal download PDF");
+                                    const blob = await r.blob();
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `policy-${row.id}.pdf`;
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                >
+                                  📄 PDF
+                                </button>
+                              );
+                            })()}
+                          {actions && actions(row)}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
