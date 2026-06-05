@@ -2,7 +2,7 @@
 // Reference: DESIGN.md + globals.css design tokens
 
 import Link from "next/link";
-import { Icon, type IconName } from "@/components/Icon";
+import { Icon, type IconName } from "@insuretrack/ui";
 import { Navbar } from "@/components/Navbar";
 import { Reveal, StaggerGroup } from "@/components/Reveal";
 import { Carousel } from "@/components/Carousel";

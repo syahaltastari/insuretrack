@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Icon, type IconName } from "@/components/Icon";
+import { Icon, type IconName } from "@insuretrack/ui";
 import { AdminUserMenu, fetchAdminProfile, type AdminProfile } from "@/components/AdminUserMenu";
-import { clearAdminToken, getAdminToken } from "@/lib/auth";
+import { clearAdminToken, getAdminToken } from "@insuretrack/api-client";
 
 const navItems: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" },

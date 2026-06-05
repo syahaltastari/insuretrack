@@ -48,11 +48,12 @@ services:
       - backend_uploads:/var/uploads
     restart: unless-stopped
 
-  # Frontend Next.js. Aktif sejak M0.
+  # Frontend Next.js. Build context = monorepo root (transitional, sampai
+  # Phase 6 di-split jadi apps/portal + apps/admin).
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
     container_name: insurance_frontend

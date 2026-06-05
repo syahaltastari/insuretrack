@@ -4,7 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { AdminListPage } from "@/components/AdminListPage";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge } from "@insuretrack/ui";
 
 type Row = {
   id: string;

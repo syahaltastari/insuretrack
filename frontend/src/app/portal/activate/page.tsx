@@ -8,10 +8,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { API_BASE } from "@/lib/api";
-import { setCustomerToken } from "@/lib/auth";
-import { Form, FormField, FormError } from "@/lib/forms";
-import { passwordSchema } from "@/lib/schemas/common";
+import { API_BASE } from "@insuretrack/api-client";
+import { setCustomerToken } from "@insuretrack/api-client";
+import { Form, FormField, FormError } from "@insuretrack/forms";
+import { passwordSchema } from "@insuretrack/forms";
 
 const activateSchema = z
   .object({

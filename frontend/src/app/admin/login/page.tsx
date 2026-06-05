@@ -10,9 +10,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Navbar } from "@/components/Navbar";
-import { Form, FormField, FormError } from "@/lib/forms";
-import { API_BASE } from "@/lib/api";
-import { setAdminToken } from "@/lib/auth";
+import { Form, FormField, FormError } from "@insuretrack/forms";
+import { API_BASE } from "@insuretrack/api-client";
+import { setAdminToken } from "@insuretrack/api-client";
 
 const loginSchema = z.object({
   username: z.string().trim().min(3, "Username minimal 3 karakter").max(64),

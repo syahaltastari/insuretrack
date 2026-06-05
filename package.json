@@ -1,0 +1,24 @@
+{
+  "name": "insuretrack",
+  "version": "0.1.0",
+  "private": true,
+  "description": "InsureTrack monorepo — Backend (Rust/Axum) + Admin + Portal (Next.js)",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+    "dev:portal": "pnpm --filter @insuretrack/portal dev",
+    "dev:admin": "pnpm --filter @insuretrack/admin dev",
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.6.3"
+  }
+}

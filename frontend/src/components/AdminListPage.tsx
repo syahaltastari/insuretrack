@@ -4,9 +4,9 @@ import { useEffect, useState, ReactNode } from "react";
 import { toast } from "sonner";
 import { Inbox, Download } from "lucide-react";
 import { AdminShell } from "@/components/AdminShell";
-import { Pagination } from "@/components/Pagination";
-import { API_BASE } from "@/lib/api";
-import { getAdminToken } from "@/lib/auth";
+import { Pagination } from "@insuretrack/ui";
+import { API_BASE } from "@insuretrack/api-client";
+import { getAdminToken } from "@insuretrack/api-client";
 
 export type Column<T> = {
   key: keyof T | string;

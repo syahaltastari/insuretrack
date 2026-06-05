@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCustomerToken, clearCustomerToken } from "@/lib/auth";
+import { getCustomerToken, clearCustomerToken } from "@insuretrack/api-client";
 
 const navItems = [
   { href: "/#products", label: "Produk" },

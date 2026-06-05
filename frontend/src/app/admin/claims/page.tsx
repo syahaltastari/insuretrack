@@ -8,10 +8,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { AdminShell } from "@/components/AdminShell";
-import { StatusBadge } from "@/components/StatusBadge";
-import { FormField, FormError } from "@/lib/forms";
-import { API_BASE } from "@/lib/api";
-import { getAdminToken } from "@/lib/auth";
+import { StatusBadge } from "@insuretrack/ui";
+import { FormField, FormError } from "@insuretrack/forms";
+import { API_BASE } from "@insuretrack/api-client";
+import { getAdminToken } from "@insuretrack/api-client";
 
 type Claim = {
   id: string;

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Icon, type IconName } from "@/components/Icon";
-import { clearCustomerToken, getCustomerToken } from "@/lib/auth";
+import { Icon, type IconName } from "@insuretrack/ui";
+import { clearCustomerToken, getCustomerToken } from "@insuretrack/api-client";
 
 const navItems: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/portal/dashboard", label: "Dashboard", icon: "LayoutDashboard" },

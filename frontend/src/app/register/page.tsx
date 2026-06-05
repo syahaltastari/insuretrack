@@ -8,16 +8,16 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { API_BASE, ApiError } from "@/lib/api";
+import { API_BASE, ApiError } from "@insuretrack/api-client";
 import { Navbar } from "@/components/Navbar";
 import { Reveal } from "@/components/Reveal";
-import { Form, FormField, FormError } from "@/lib/forms";
+import { Form, FormField, FormError } from "@insuretrack/forms";
 import {
   emailSchema,
   nikSchema,
   phoneSchema,
   dateNotFutureSchema,
-} from "@/lib/schemas/common";
+} from "@insuretrack/forms";
 
 const PRODUCTS = ["LIFE", "PERSONAL_ACCIDENT", "HEALTH"] as const;
 const GENDERS = ["MALE", "FEMALE"] as const;

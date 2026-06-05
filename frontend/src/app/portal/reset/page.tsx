@@ -10,10 +10,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
-import { Form, FormField, FormError } from "@/lib/forms";
-import { emailSchema, passwordSchema } from "@/lib/schemas/common";
-import { API_BASE } from "@/lib/api";
-import { setCustomerToken } from "@/lib/auth";
+import { Form, FormField, FormError } from "@insuretrack/forms";
+import { emailSchema, passwordSchema } from "@insuretrack/forms";
+import { API_BASE } from "@insuretrack/api-client";
+import { setCustomerToken } from "@insuretrack/api-client";
 
 const requestSchema = z.object({
   email: emailSchema.refine((s) => s.length > 0, { message: "Email wajib diisi" }),

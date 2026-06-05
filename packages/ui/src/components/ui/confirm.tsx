@@ -11,9 +11,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+} from "./alert-dialog";
+import { buttonVariants } from "./button";
+import { cn } from "@insuretrack/api-client";
 
 /**
  * Reusable shadcn-style confirmation dialog. Renders the `trigger` as the

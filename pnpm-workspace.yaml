@@ -1,0 +1,4 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "frontend"  # transitional: replaced by apps/portal + apps/admin in Phase 3-4

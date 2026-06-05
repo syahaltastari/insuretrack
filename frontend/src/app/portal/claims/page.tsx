@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PortalShell } from "@/components/PortalShell";
-import { StatusBadge } from "@/components/StatusBadge";
-import { API_BASE } from "@/lib/api";
-import { getCustomerToken } from "@/lib/auth";
+import { StatusBadge } from "@insuretrack/ui";
+import { API_BASE } from "@insuretrack/api-client";
+import { getCustomerToken } from "@insuretrack/api-client";
 
 type Claim = {
   id: string;

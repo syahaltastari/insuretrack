@@ -9,11 +9,11 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { API_BASE } from "@/lib/api";
-import { setCustomerToken } from "@/lib/auth";
+import { API_BASE } from "@insuretrack/api-client";
+import { setCustomerToken } from "@insuretrack/api-client";
 import { Navbar } from "@/components/Navbar";
-import { Form, FormField, FormError } from "@/lib/forms";
-import { emailSchema } from "@/lib/schemas/common";
+import { Form, FormField, FormError } from "@insuretrack/forms";
+import { emailSchema } from "@insuretrack/forms";
 
 const loginSchema = z.object({
   email: emailSchema.refine((s) => s.length > 0, { message: "Email wajib diisi" }),

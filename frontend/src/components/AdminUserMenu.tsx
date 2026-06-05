@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/Icon";
-import { API_BASE } from "@/lib/api";
-import { clearAdminToken, getAdminToken } from "@/lib/auth";
+import { Icon } from "@insuretrack/ui";
+import { API_BASE } from "@insuretrack/api-client";
+import { clearAdminToken, getAdminToken } from "@insuretrack/api-client";
 
 export type AdminProfile = {
   id: string;

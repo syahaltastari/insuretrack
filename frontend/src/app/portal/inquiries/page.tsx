@@ -8,10 +8,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { PortalShell } from "@/components/PortalShell";
-import { StatusBadge } from "@/components/StatusBadge";
-import { Form, FormField, FormError } from "@/lib/forms";
-import { API_BASE } from "@/lib/api";
-import { getCustomerToken } from "@/lib/auth";
+import { StatusBadge } from "@insuretrack/ui";
+import { Form, FormField, FormError } from "@insuretrack/forms";
+import { API_BASE } from "@insuretrack/api-client";
+import { getCustomerToken } from "@insuretrack/api-client";
 
 type Inquiry = {
   id: string;

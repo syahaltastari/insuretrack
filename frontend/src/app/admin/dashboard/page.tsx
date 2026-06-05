@@ -23,9 +23,9 @@ import {
   YAxis,
   chartFormatters,
   statusColor,
-} from "@/components/Chart";
-import { API_BASE, ApiError } from "@/lib/api";
-import { getAdminToken } from "@/lib/auth";
+} from "@insuretrack/ui";
+import { API_BASE, ApiError } from "@insuretrack/api-client";
+import { getAdminToken } from "@insuretrack/api-client";
 
 type Stats = {
   total_registrations: number;

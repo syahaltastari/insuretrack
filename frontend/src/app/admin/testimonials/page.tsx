@@ -9,20 +9,20 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { AdminListPage } from "@/components/AdminListPage";
-import { Button } from "@/components/ui/button";
+import { Button } from "@insuretrack/ui";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Confirm } from "@/components/ui/confirm";
-import { SafeImage } from "@/components/SafeImage";
-import { Form, FormField, FormError } from "@/lib/forms";
-import { optionalString } from "@/lib/schemas/common";
-import { API_BASE, ApiError } from "@/lib/api";
-import { getAdminToken } from "@/lib/auth";
+} from "@insuretrack/ui";
+import { Confirm } from "@insuretrack/ui";
+import { SafeImage } from "@insuretrack/ui";
+import { Form, FormField, FormError } from "@insuretrack/forms";
+import { optionalString } from "@insuretrack/forms";
+import { API_BASE, ApiError } from "@insuretrack/api-client";
+import { getAdminToken } from "@insuretrack/api-client";
 
 type Testimonial = {
   id: string;

@@ -8,10 +8,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { AdminShell } from "@/components/AdminShell";
-import { Form, FormField, FormError } from "@/lib/forms";
-import { emailSchema, passwordSchema } from "@/lib/schemas/common";
-import { API_BASE, ApiError } from "@/lib/api";
-import { getAdminToken } from "@/lib/auth";
+import { Form, FormField, FormError } from "@insuretrack/forms";
+import { emailSchema, passwordSchema } from "@insuretrack/forms";
+import { API_BASE, ApiError } from "@insuretrack/api-client";
+import { getAdminToken } from "@insuretrack/api-client";
 
 type AdminMe = {
   id: string;
