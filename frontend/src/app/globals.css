@@ -1198,4 +1198,22 @@ a:hover {
   .clay-form-grid.cols-2 {
     grid-template-columns: 1fr;
   }
+  .clay-table th.hide-mobile,
+  .clay-table td.hide-mobile {
+    display: none;
+  }
+  /* Tighten cell padding on mobile so remaining columns don't squish as much */
+  .clay-table th,
+  .clay-table td {
+    padding: 10px 12px;
+  }
+  /* Keep the table-wrap scroll on mobile, but ensure it doesn't overflow page */
+  .clay-table-wrap {
+    margin-left: -16px;
+    margin-right: -16px;
+    border-radius: 0;
+  }
+  .clay-table-wrap .clay-table {
+    min-width: 480px;
+  }
 }

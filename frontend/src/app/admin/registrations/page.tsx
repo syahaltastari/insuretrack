@@ -28,18 +28,20 @@ export default function Page() {
       columns={[
         { key: "registration_no", label: "No. Registrasi" },
         { key: "customer_name", label: "Nama" },
-        { key: "customer_email", label: "Email" },
-        { key: "product", label: "Produk" },
+        { key: "customer_email", label: "Email", hideOnMobile: true },
+        { key: "product", label: "Produk", hideOnMobile: true },
         {
           key: "sum_assured",
           label: "UP",
+          hideOnMobile: true,
           render: (r) => new Intl.NumberFormat("id-ID").format(Number(r.sum_assured)),
         },
-        { key: "coverage_term", label: "Tahun" },
+        { key: "coverage_term", label: "Tahun", hideOnMobile: true },
         { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
         {
           key: "created_at",
           label: "Tgl",
+          hideOnMobile: true,
           render: (r) => new Date(r.created_at).toLocaleDateString("id-ID"),
         },
       ]}

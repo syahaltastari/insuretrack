@@ -30,14 +30,15 @@ export default function Page() {
       columns={[
         { key: "policy_no", label: "No. Polis" },
         { key: "customer_name", label: "Nama" },
-        { key: "product", label: "Produk" },
+        { key: "product", label: "Produk", hideOnMobile: true },
         {
           key: "sum_assured",
           label: "UP",
+          hideOnMobile: true,
           render: (r) => new Intl.NumberFormat("id-ID").format(Number(r.sum_assured)),
         },
-        { key: "effective_date", label: "Efektif" },
-        { key: "expiry_date", label: "Berakhir" },
+        { key: "effective_date", label: "Efektif", hideOnMobile: true },
+        { key: "expiry_date", label: "Berakhir", hideOnMobile: true },
         { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
       ]}
     />

@@ -63,6 +63,7 @@ export default function Page() {
           key: "created_at",
           label: "Waktu",
           width: "180px",
+          hideOnMobile: true,
           render: (r) => new Date(r.created_at).toLocaleString("id-ID"),
         },
         { key: "actor", label: "Actor", width: "140px" },
@@ -72,6 +73,7 @@ export default function Page() {
           key: "entity_id",
           label: "Entity ID",
           width: "110px",
+          hideOnMobile: true,
           render: (r) =>
             r.entity_id ? (
               <code style={{ fontSize: "0.75rem" }}>{r.entity_id.slice(0, 8)}</code>

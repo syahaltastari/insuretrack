@@ -23,13 +23,14 @@ export default function Page() {
       endpoint="/admin/email-logs"
       statusOptions={["SENT", "FAILED", "QUEUED"]}
       columns={[
-        { key: "email_type", label: "Tipe" },
+        { key: "email_type", label: "Tipe", hideOnMobile: true },
         { key: "recipient", label: "Penerima" },
         { key: "subject", label: "Subjek" },
         { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
         {
           key: "sent_at",
           label: "Tgl Kirim",
+          hideOnMobile: true,
           render: (r) => (r.sent_at ? new Date(r.sent_at).toLocaleString("id-ID") : "—"),
         },
       ]}

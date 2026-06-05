@@ -308,12 +308,14 @@ export default function AdminTestimonialsPage() {
             key: "display_date",
             label: "Tanggal",
             width: "110px",
+            hideOnMobile: true,
             render: (t) => new Date(t.display_date).toLocaleDateString("id-ID"),
           },
           {
             key: "is_featured",
             label: "Featured",
             width: "90px",
+            hideOnMobile: true,
             render: (t) =>
               t.is_featured ? (
                 <span className="clay-badge lemon">Featured</span>
@@ -393,7 +395,7 @@ export default function AdminTestimonialsPage() {
           </>
         }
       >
-        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2">
+        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2" id="testimonial-form">
           <FormError message={formError} />
           <FormField label="Nama Pelanggan" name="customer_name" required>
             <input

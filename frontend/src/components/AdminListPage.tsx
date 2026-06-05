@@ -11,6 +11,8 @@ export type Column<T> = {
   label: string;
   render?: (row: T) => ReactNode;
   width?: string;
+  /** Hide this column on screens < 768px to keep the table compact on mobile. */
+  hideOnMobile?: boolean;
 };
 
 export function AdminListPage<T extends { id: string }>({
@@ -164,6 +166,7 @@ export function AdminListPage<T extends { id: string }>({
                   {columns.map((c) => (
                     <th
                       key={String(c.key)}
+                      className={c.hideOnMobile ? "hide-mobile" : undefined}
                       style={c.width ? { width: c.width } : undefined}
                     >
                       {c.label}
@@ -194,7 +197,10 @@ export function AdminListPage<T extends { id: string }>({
                           ? c.render(row)
                           : (row as Record<string, unknown>)[c.key as string];
                         return (
-                          <td key={String(c.key)}>
+                          <td
+                            key={String(c.key)}
+                            className={c.hideOnMobile ? "hide-mobile" : undefined}
+                          >
                             {detailBasePath ? (
                               <a
                                 href={`${detailBasePath}/${row.id}`}

@@ -244,9 +244,10 @@ export default function AdminClientsPage() {
           {
             key: "industry",
             label: "Industri",
+            hideOnMobile: true,
             render: (c) => c.industry ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
           },
-          { key: "sort_order", label: "Urutan", width: "80px" },
+          { key: "sort_order", label: "Urutan", width: "80px", hideOnMobile: true },
           {
             key: "is_active",
             label: "Status",
@@ -319,7 +320,7 @@ export default function AdminClientsPage() {
           </>
         }
       >
-        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2">
+        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2" id="client-form">
           <FormError message={formError} />
           <FormField label="Nama Klien" name="name" required>
             <input

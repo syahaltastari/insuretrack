@@ -13,16 +13,24 @@ export function Form<T extends Record<string, unknown>>({
   children,
   className,
   style,
+  id,
 }: {
   methods: UseFormReturn<T>;
   onSubmit: (values: T) => void | Promise<void>;
   children: ReactNode;
   className?: string;
   style?: React.CSSProperties;
+  /**
+   * When the submit button lives OUTSIDE the form (e.g. in a Modal footer),
+   * set this and reference the same id via `form="..."` on the button.
+   * Without this, clicking the button does nothing in some browsers.
+   */
+  id?: string;
 }) {
   return (
     <FormProvider {...methods}>
       <form
+        id={id}
         onSubmit={methods.handleSubmit(onSubmit)}
         noValidate
         className={className}

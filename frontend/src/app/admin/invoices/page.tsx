@@ -26,14 +26,15 @@ export default function Page() {
       statusOptions={["UNPAID", "PAID", "EXPIRED", "CANCELLED"]}
       columns={[
         { key: "invoice_no", label: "No. Invoice" },
-        { key: "registration_no", label: "No. Reg" },
+        { key: "registration_no", label: "No. Reg", hideOnMobile: true },
         { key: "customer_name", label: "Nama" },
         {
           key: "premium_amount",
           label: "Premi",
+          hideOnMobile: true,
           render: (r) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(r.premium_amount)),
         },
-        { key: "due_date", label: "Jatuh Tempo" },
+        { key: "due_date", label: "Jatuh Tempo", hideOnMobile: true },
         { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
       ]}
     />
