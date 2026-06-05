@@ -7,8 +7,17 @@ import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { AdminListPage } from "@/components/AdminListPage";
-import { Modal } from "@/components/Modal";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Confirm } from "@/components/ui/confirm";
 import { Form, FormField, FormError } from "@/lib/forms";
 import { optionalString } from "@/lib/schemas/common";
 import { API_BASE, ApiError } from "@/lib/api";
@@ -118,7 +127,6 @@ export default function AdminTestimonialsPage() {
   const [editing, setEditing] = useState<Testimonial | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -141,7 +149,6 @@ export default function AdminTestimonialsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setFormError(null);
     setPhotoPreview(null);
     methods.reset({
       customer_name: "",
@@ -160,7 +167,6 @@ export default function AdminTestimonialsPage() {
 
   const openEdit = (t: Testimonial) => {
     setEditing(t);
-    setFormError(null);
     setPhotoPreview(null);
     methods.reset({
       customer_name: t.customer_name,
@@ -180,7 +186,6 @@ export default function AdminTestimonialsPage() {
   const closeForm = () => {
     setShowForm(false);
     setEditing(null);
-    setFormError(null);
     setPhotoPreview(null);
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -203,7 +208,6 @@ export default function AdminTestimonialsPage() {
       return;
     }
     setSubmitting(true);
-    setFormError(null);
     try {
       const fd = new FormData();
       const data = {
@@ -236,12 +240,32 @@ export default function AdminTestimonialsPage() {
           j?.error?.message ?? `HTTP ${r.status}`,
         );
       }
+      toast.success(editing ? "Testimoni diperbarui" : "Testimoni ditambahkan");
       closeForm();
       setRefreshKey((k) => k + 1);
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Gagal simpan");
+      toast.error(e instanceof Error ? e.message : "Gagal simpan");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const deleteTestimonial = async (t: Testimonial) => {
+    const token = getAdminToken();
+    if (!token) return;
+    try {
+      const r = await fetch(`${API_BASE}/admin/testimonials/${t.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok && r.status !== 204) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+      }
+      toast.success(`Testimoni dari "${t.customer_name}" dihapus`);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Gagal hapus");
     }
   };
 
@@ -254,9 +278,12 @@ export default function AdminTestimonialsPage() {
         searchPlaceholder="Cari nama atau review..."
         statusOptions={["true", "false"]}
         headerActions={
-          <button className="clay-button solid-ube" onClick={openCreate}>
+          <Button
+            onClick={openCreate}
+            className="bg-[var(--ube-800)] text-white hover:bg-[var(--ube-900)]"
+          >
             + Tambah Testimoni
-          </button>
+          </Button>
         }
         emptyMessage='Belum ada testimoni. Klik "+Tambah Testimoni" untuk menambahkan.'
         columns={[
@@ -336,203 +363,204 @@ export default function AdminTestimonialsPage() {
         ]}
         actions={(t) => (
           <>
-            <button
-              className="clay-button solid-ube size-small"
+            <Button
+              size="sm"
+              className="bg-[var(--ube-800)] text-white hover:bg-[var(--ube-900)]"
               onClick={() => openEdit(t)}
             >
               Edit
-            </button>
-            <button
-              className="clay-button solid-pomegranate size-small"
-              onClick={async () => {
-                if (!confirm(`Hapus testimoni dari "${t.customer_name}"?`)) return;
-                const token = getAdminToken();
-                if (!token) return;
-                try {
-                  const r = await fetch(`${API_BASE}/admin/testimonials/${t.id}`, {
-                    method: "DELETE",
-                    headers: { Authorization: `Bearer ${token}` },
-                  });
-                  if (!r.ok && r.status !== 204) {
-                    const j = await r.json().catch(() => ({}));
-                    throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-                  }
-                  setRefreshKey((k) => k + 1);
-                } catch (e) {
-                  alert(e instanceof Error ? e.message : "Gagal hapus");
-                }
-              }}
-            >
-              Hapus
-            </button>
+            </Button>
+            <Confirm
+              trigger={
+                <Button
+                  size="sm"
+                  className="bg-[var(--pomegranate-400)] text-black hover:opacity-90"
+                >
+                  Hapus
+                </Button>
+              }
+              title="Hapus Testimoni?"
+              description={
+                <p>
+                  Testimoni dari <strong>“{t.customer_name}”</strong> akan dihapus
+                  permanen. Tindakan ini tidak dapat dibatalkan.
+                </p>
+              }
+              confirmLabel="Hapus"
+              destructive
+              onConfirm={() => deleteTestimonial(t)}
+            />
           </>
         )}
       />
 
-      <Modal
-        open={showForm}
-        onClose={closeForm}
-        title={editing ? "Edit Testimoni" : "Tambah Testimoni"}
-        maxWidth={720}
-        footer={
-          <>
-            <button
+      <Dialog open={showForm} onOpenChange={(o) => !o && closeForm()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Testimoni" : "Tambah Testimoni"}</DialogTitle>
+          </DialogHeader>
+          <Form
+            methods={methods}
+            onSubmit={onSubmit}
+            className="clay-form-grid cols-2"
+            id="testimonial-form"
+          >
+            <FormError message={null} />
+            <FormField label="Nama Pelanggan" name="customer_name" required>
+              <input
+                id="customer_name"
+                className="clay-input"
+                autoComplete="off"
+                {...methods.register("customer_name")}
+              />
+            </FormField>
+            <FormField label="Rating" name="rating" required>
+              <Stars
+                value={methods.watch("rating")}
+                onChange={(n) => methods.setValue("rating", n, { shouldValidate: true })}
+              />
+            </FormField>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FormField label="Review" name="review" required>
+                <textarea
+                  id="review"
+                  className="clay-textarea"
+                  rows={4}
+                  {...methods.register("review")}
+                />
+              </FormField>
+            </div>
+            <FormField label="Role / Jabatan" name="role">
+              <input
+                id="role"
+                className="clay-input"
+                autoComplete="off"
+                {...methods.register("role")}
+              />
+            </FormField>
+            <FormField label="Perusahaan" name="company">
+              <input
+                id="company"
+                className="clay-input"
+                autoComplete="off"
+                {...methods.register("company")}
+              />
+            </FormField>
+            <FormField label="Produk" name="policy_type">
+              <select
+                id="policy_type"
+                className="clay-select"
+                {...methods.register("policy_type")}
+              >
+                <option value="">—</option>
+                <option value="LIFE">Asuransi Jiwa</option>
+                <option value="PERSONAL_ACCIDENT">Asuransi Kecelakaan Diri</option>
+                <option value="HEALTH">Asuransi Kesehatan</option>
+              </select>
+            </FormField>
+            <FormField label="Tanggal Tampil" name="display_date" required>
+              <input
+                id="display_date"
+                className="clay-input"
+                type="date"
+                {...methods.register("display_date")}
+              />
+            </FormField>
+            <FormField
+              label={editing ? "Foto (opsional)" : "Foto"}
+              name="photo"
+              hint={editing ? "Biarkan kosong jika tidak ingin mengganti foto." : "JPG/PNG/WebP/SVG, max 5 MB."}
+            >
+              <input
+                ref={(el) => {
+                  fileRef.current = el;
+                  methods.register("photo").ref(el);
+                }}
+                id="photo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  methods.setValue("photo", f ?? null, { shouldValidate: true });
+                  setPhotoPreview(f ? URL.createObjectURL(f) : null);
+                }}
+                className="clay-input"
+                style={{ padding: 8 }}
+              />
+              {photoPreview && (
+                <img
+                  src={photoPreview}
+                  alt="Preview"
+                  style={{
+                    marginTop: 8,
+                    width: 60,
+                    height: 60,
+                    objectFit: "cover",
+                    borderRadius: "50%",
+                  }}
+                />
+              )}
+              {editing && !photoPreview && editing.photo_path && (
+                <img
+                  src={photoUrl(editing.photo_path)}
+                  alt={editing.customer_name}
+                  style={{
+                    marginTop: 8,
+                    width: 60,
+                    height: 60,
+                    objectFit: "cover",
+                    borderRadius: "50%",
+                  }}
+                />
+              )}
+            </FormField>
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                display: "flex",
+                gap: 20,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={methods.watch("is_featured")}
+                  onChange={(e) => methods.setValue("is_featured", e.target.checked)}
+                />
+                Featured (tampil menonjol)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={methods.watch("is_active")}
+                  onChange={(e) => methods.setValue("is_active", e.target.checked)}
+                />
+                Aktif (tampil di landing page)
+              </label>
+            </div>
+          </Form>
+          <DialogFooter>
+            <Button
               type="button"
-              className="clay-button ghost"
+              variant="outline"
               onClick={closeForm}
               disabled={submitting}
             >
               Batal
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               form="testimonial-form"
-              className="clay-button solid-ube"
               disabled={submitting}
+              className="bg-[var(--ube-800)] text-white hover:bg-[var(--ube-900)]"
             >
               {submitting ? "Menyimpan..." : "Simpan"}
-            </button>
-          </>
-        }
-      >
-        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2" id="testimonial-form">
-          <FormError message={formError} />
-          <FormField label="Nama Pelanggan" name="customer_name" required>
-            <input
-              id="customer_name"
-              className="clay-input"
-              autoComplete="off"
-              {...methods.register("customer_name")}
-            />
-          </FormField>
-          <FormField label="Rating" name="rating" required>
-            <Stars
-              value={methods.watch("rating")}
-              onChange={(n) => methods.setValue("rating", n, { shouldValidate: true })}
-            />
-          </FormField>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <FormField label="Review" name="review" required>
-              <textarea
-                id="review"
-                className="clay-textarea"
-                rows={4}
-                {...methods.register("review")}
-              />
-            </FormField>
-          </div>
-          <FormField label="Role / Jabatan" name="role">
-            <input
-              id="role"
-              className="clay-input"
-              autoComplete="off"
-              {...methods.register("role")}
-            />
-          </FormField>
-          <FormField label="Perusahaan" name="company">
-            <input
-              id="company"
-              className="clay-input"
-              autoComplete="off"
-              {...methods.register("company")}
-            />
-          </FormField>
-          <FormField label="Produk" name="policy_type">
-            <select
-              id="policy_type"
-              className="clay-select"
-              {...methods.register("policy_type")}
-            >
-              <option value="">—</option>
-              <option value="LIFE">Asuransi Jiwa</option>
-              <option value="PERSONAL_ACCIDENT">Asuransi Kecelakaan Diri</option>
-              <option value="HEALTH">Asuransi Kesehatan</option>
-            </select>
-          </FormField>
-          <FormField label="Tanggal Tampil" name="display_date" required>
-            <input
-              id="display_date"
-              className="clay-input"
-              type="date"
-              {...methods.register("display_date")}
-            />
-          </FormField>
-          <FormField
-            label={editing ? "Foto (opsional)" : "Foto"}
-            name="photo"
-            hint={editing ? "Biarkan kosong jika tidak ingin mengganti foto." : "JPG/PNG/WebP/SVG, max 5 MB."}
-          >
-            <input
-              ref={(el) => {
-                fileRef.current = el;
-                methods.register("photo").ref(el);
-              }}
-              id="photo"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/svg+xml"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                methods.setValue("photo", f ?? null, { shouldValidate: true });
-                setPhotoPreview(f ? URL.createObjectURL(f) : null);
-              }}
-              className="clay-input"
-              style={{ padding: 8 }}
-            />
-            {photoPreview && (
-              <img
-                src={photoPreview}
-                alt="Preview"
-                style={{
-                  marginTop: 8,
-                  width: 60,
-                  height: 60,
-                  objectFit: "cover",
-                  borderRadius: "50%",
-                }}
-              />
-            )}
-            {editing && !photoPreview && editing.photo_path && (
-              <img
-                src={photoUrl(editing.photo_path)}
-                alt={editing.customer_name}
-                style={{
-                  marginTop: 8,
-                  width: 60,
-                  height: 60,
-                  objectFit: "cover",
-                  borderRadius: "50%",
-                }}
-              />
-            )}
-          </FormField>
-          <div
-            style={{
-              gridColumn: "1 / -1",
-              display: "flex",
-              gap: 20,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={methods.watch("is_featured")}
-                onChange={(e) => methods.setValue("is_featured", e.target.checked)}
-              />
-              Featured (tampil menonjol)
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={methods.watch("is_active")}
-                onChange={(e) => methods.setValue("is_active", e.target.checked)}
-              />
-              Aktif (tampil di landing page)
-            </label>
-          </div>
-        </Form>
-      </Modal>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

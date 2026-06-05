@@ -1,13 +1,13 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
     container_name: insurance_db
     environment:
-      POSTGRES_USER: insurance_admin
-      POSTGRES_PASSWORD: insurance_password
-      POSTGRES_DB: digital_insurance
+      # Username, password, dan nama DB disuntik dari .env (lihat .env.example).
+      # Ganti nilainya di .env untuk environment non-dev — JANGAN commit .env.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     # Host port 5433 agar tidak konflik dengan Postgres lokal di Windows/Linux
     # yang mungkin sudah berjalan di 5432. Container-internal port tetap 5432.
     ports:
@@ -19,7 +19,7 @@ services:
       # init script dan sqlx sama-sama CREATE TABLE customers.
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U insurance_admin -d digital_insurance"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -33,9 +33,11 @@ services:
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     environment:
-      DATABASE_URL: postgres://insurance_admin:insurance_password@db:5432/digital_insurance
-      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_me_in_production}
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev_webhook_secret_change_me}
+      # DATABASE_URL dibentuk dari var .env (konsisten: jika POSTGRES_PASSWORD
+      # diganti di .env, tidak perlu edit URL di sini secara manual).
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET harus di-set di .env (lihat .env.example)}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET harus di-set di .env}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       UPLOAD_DIR: /var/uploads
       RUST_LOG: ${RUST_LOG:-info,insuretrack_backend=debug}

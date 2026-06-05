@@ -34,7 +34,7 @@ export function ChartCard({
   title,
   subtitle,
   children,
-  height = 240,
+  height = 260,
 }: {
   title: string;
   subtitle?: string;
@@ -42,7 +42,7 @@ export function ChartCard({
   height?: number;
 }) {
   return (
-    <div className="clay-card feature" style={{ padding: 20, height: height + 64 }}>
+    <div className="clay-card feature" style={{ padding: 20, height: height + 80 }}>
       <div style={{ marginBottom: 8 }}>
         <h3 className="feature-title" style={{ margin: 0 }}>
           {title}

@@ -3,6 +3,10 @@
    Reference: DESIGN.md
    ============================================================ */
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ----- Font (Plus Jakarta Sans sebagai substitute Roobert yang proprietary;
        Space Mono persis dengan spec) ----- */
 :root {

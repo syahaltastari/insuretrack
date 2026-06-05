@@ -3,14 +3,27 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { AdminListPage } from "@/components/AdminListPage";
-import { Modal } from "@/components/Modal";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Confirm } from "@/components/ui/confirm";
 import { Form, FormField, FormError } from "@/lib/forms";
-import { emailSchema, urlOptionalSchema, optionalString } from "@/lib/schemas/common";
+import {
+  emailSchema,
+  urlOptionalSchema,
+  optionalString,
+} from "@/lib/schemas/common";
 import { API_BASE, ApiError } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
 
@@ -30,9 +43,6 @@ type Client = {
   updated_at: string;
 };
 
-/**
- * Phone: optional. Empty string → undefined. When present, must be 10–15 digits.
- */
 const optionalPhone = z.preprocess(
   (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
   z
@@ -75,7 +85,6 @@ export default function AdminClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -98,7 +107,6 @@ export default function AdminClientsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setFormError(null);
     setLogoPreview(null);
     methods.reset({
       name: "",
@@ -117,7 +125,6 @@ export default function AdminClientsPage() {
 
   const openEdit = (c: Client) => {
     setEditing(c);
-    setFormError(null);
     setLogoPreview(null);
     methods.reset({
       name: c.name,
@@ -137,7 +144,6 @@ export default function AdminClientsPage() {
   const closeForm = () => {
     setShowForm(false);
     setEditing(null);
-    setFormError(null);
     setLogoPreview(null);
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -161,7 +167,6 @@ export default function AdminClientsPage() {
       return;
     }
     setSubmitting(true);
-    setFormError(null);
     try {
       const fd = new FormData();
       const data = {
@@ -194,12 +199,32 @@ export default function AdminClientsPage() {
           j?.error?.message ?? `HTTP ${r.status}`,
         );
       }
+      toast.success(editing ? "Klien diperbarui" : "Klien ditambahkan");
       closeForm();
       setRefreshKey((k) => k + 1);
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Gagal simpan");
+      toast.error(e instanceof Error ? e.message : "Gagal simpan");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const deleteClient = async (c: Client) => {
+    const token = getAdminToken();
+    if (!token) return;
+    try {
+      const r = await fetch(`${API_BASE}/admin/clients/${c.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok && r.status !== 204) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+      }
+      toast.success(`Klien "${c.name}" dihapus`);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Gagal hapus");
     }
   };
 
@@ -212,9 +237,9 @@ export default function AdminClientsPage() {
         searchPlaceholder="Cari nama atau industri..."
         statusOptions={["true", "false"]}
         headerActions={
-          <button className="clay-button solid-ube" onClick={openCreate}>
+          <Button onClick={openCreate} className="bg-[var(--ube-800)] text-white hover:bg-[var(--ube-900)]">
             + Tambah Klien
-          </button>
+          </Button>
         }
         emptyMessage="Belum ada klien. Klik “+Tambah Klien” untuk menambahkan."
         columns={[
@@ -261,205 +286,206 @@ export default function AdminClientsPage() {
         ]}
         actions={(c) => (
           <>
-            <button
-              className="clay-button solid-ube size-small"
+            <Button
+              size="sm"
+              className="bg-[var(--ube-800)] text-white hover:bg-[var(--ube-900)]"
               onClick={() => openEdit(c)}
             >
               Edit
-            </button>
-            <button
-              className="clay-button solid-pomegranate size-small"
-              onClick={async () => {
-                if (!confirm(`Hapus klien "${c.name}"?`)) return;
-                const token = getAdminToken();
-                if (!token) return;
-                try {
-                  const r = await fetch(`${API_BASE}/admin/clients/${c.id}`, {
-                    method: "DELETE",
-                    headers: { Authorization: `Bearer ${token}` },
-                  });
-                  if (!r.ok && r.status !== 204) {
-                    const j = await r.json().catch(() => ({}));
-                    throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-                  }
-                  setRefreshKey((k) => k + 1);
-                } catch (e) {
-                  alert(e instanceof Error ? e.message : "Gagal hapus");
-                }
-              }}
-            >
-              Hapus
-            </button>
+            </Button>
+            <Confirm
+              trigger={
+                <Button
+                  size="sm"
+                  className="bg-[var(--pomegranate-400)] text-black hover:opacity-90"
+                >
+                  Hapus
+                </Button>
+              }
+              title="Hapus Klien?"
+              description={
+                <p>
+                  Klien <strong>“{c.name}”</strong> akan dihapus permanen. Tindakan
+                  ini tidak dapat dibatalkan.
+                </p>
+              }
+              confirmLabel="Hapus"
+              destructive
+              onConfirm={() => deleteClient(c)}
+            />
           </>
         )}
       />
 
-      <Modal
-        open={showForm}
-        onClose={closeForm}
-        title={editing ? "Edit Klien" : "Tambah Klien"}
-        maxWidth={720}
-        footer={
-          <>
-            <button
+      <Dialog open={showForm} onOpenChange={(o) => !o && closeForm()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Klien" : "Tambah Klien"}</DialogTitle>
+          </DialogHeader>
+          <Form
+            methods={methods}
+            onSubmit={onSubmit}
+            className="clay-form-grid cols-2"
+            id="client-form"
+          >
+            <FormError message={null} />
+            <FormField label="Nama Klien" name="name" required>
+              <input
+                id="name"
+                className="clay-input"
+                autoComplete="off"
+                {...methods.register("name")}
+              />
+            </FormField>
+            <FormField label="Industri" name="industry">
+              <input
+                id="industry"
+                className="clay-input"
+                autoComplete="off"
+                {...methods.register("industry")}
+              />
+            </FormField>
+            <FormField label="Website" name="website" hint="https://...">
+              <input
+                id="website"
+                className="clay-input"
+                type="url"
+                autoComplete="off"
+                {...methods.register("website")}
+              />
+            </FormField>
+            <FormField label="Urutan Tampil" name="sort_order">
+              <input
+                id="sort_order"
+                className="clay-input"
+                type="number"
+                min={0}
+                {...methods.register("sort_order")}
+              />
+            </FormField>
+            <FormField label="Contact Person" name="contact_person">
+              <input
+                id="contact_person"
+                className="clay-input"
+                autoComplete="off"
+                {...methods.register("contact_person")}
+              />
+            </FormField>
+            <FormField label="Email Kontak" name="contact_email">
+              <input
+                id="contact_email"
+                className="clay-input"
+                type="email"
+                autoComplete="off"
+                {...methods.register("contact_email")}
+              />
+            </FormField>
+            <FormField label="Telepon Kontak" name="contact_phone" hint="10–15 digit">
+              <input
+                id="contact_phone"
+                className="clay-input"
+                type="tel"
+                autoComplete="off"
+                {...methods.register("contact_phone")}
+              />
+            </FormField>
+            <FormField
+              label={editing ? "Logo (opsional)" : "Logo"}
+              name="logo"
+              required={!editing}
+              hint={
+                editing
+                  ? "Biarkan kosong jika tidak ingin mengganti logo."
+                  : "JPG/PNG/WebP/SVG, max 5 MB."
+              }
+            >
+              <input
+                ref={(el) => {
+                  fileRef.current = el;
+                  methods.register("logo").ref(el);
+                }}
+                id="logo"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  methods.setValue("logo", f ?? null, { shouldValidate: true });
+                  setLogoPreview(f ? URL.createObjectURL(f) : null);
+                }}
+                className="clay-input"
+                style={{ padding: 8 }}
+              />
+              {logoPreview && (
+                <img
+                  src={logoPreview}
+                  alt="Preview"
+                  style={{
+                    marginTop: 8,
+                    maxHeight: 60,
+                    maxWidth: "100%",
+                    objectFit: "contain",
+                    background: "var(--warm-cream)",
+                    padding: 4,
+                    borderRadius: 6,
+                  }}
+                />
+              )}
+              {editing && !logoPreview && (
+                <img
+                  src={logoUrl(editing.logo_path)}
+                  alt={editing.name}
+                  style={{
+                    marginTop: 8,
+                    maxHeight: 60,
+                    maxWidth: "100%",
+                    objectFit: "contain",
+                    background: "var(--warm-cream)",
+                    padding: 4,
+                    borderRadius: 6,
+                  }}
+                />
+              )}
+            </FormField>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FormField label="Catatan Internal" name="notes">
+                <textarea
+                  id="notes"
+                  className="clay-textarea"
+                  rows={2}
+                  {...methods.register("notes")}
+                />
+              </FormField>
+            </div>
+            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                id="is_active"
+                type="checkbox"
+                checked={methods.watch("is_active")}
+                onChange={(e) => methods.setValue("is_active", e.target.checked)}
+              />
+              <label htmlFor="is_active">Aktif (tampil di landing page)</label>
+            </div>
+          </Form>
+          <DialogFooter>
+            <Button
               type="button"
-              className="clay-button ghost"
+              variant="outline"
               onClick={closeForm}
               disabled={submitting}
             >
               Batal
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               form="client-form"
-              className="clay-button solid-ube"
               disabled={submitting}
+              className="bg-[var(--ube-800)] text-white hover:bg-[var(--ube-900)]"
             >
               {submitting ? "Menyimpan..." : "Simpan"}
-            </button>
-          </>
-        }
-      >
-        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2" id="client-form">
-          <FormError message={formError} />
-          <FormField label="Nama Klien" name="name" required>
-            <input
-              id="name"
-              className="clay-input"
-              autoComplete="off"
-              {...methods.register("name")}
-            />
-          </FormField>
-          <FormField label="Industri" name="industry">
-            <input
-              id="industry"
-              className="clay-input"
-              autoComplete="off"
-              {...methods.register("industry")}
-            />
-          </FormField>
-          <FormField label="Website" name="website" hint="https://...">
-            <input
-              id="website"
-              className="clay-input"
-              type="url"
-              autoComplete="off"
-              {...methods.register("website")}
-            />
-          </FormField>
-          <FormField label="Urutan Tampil" name="sort_order">
-            <input
-              id="sort_order"
-              className="clay-input"
-              type="number"
-              min={0}
-              {...methods.register("sort_order")}
-            />
-          </FormField>
-          <FormField label="Contact Person" name="contact_person">
-            <input
-              id="contact_person"
-              className="clay-input"
-              autoComplete="off"
-              {...methods.register("contact_person")}
-            />
-          </FormField>
-          <FormField label="Email Kontak" name="contact_email">
-            <input
-              id="contact_email"
-              className="clay-input"
-              type="email"
-              autoComplete="off"
-              {...methods.register("contact_email")}
-            />
-          </FormField>
-          <FormField label="Telepon Kontak" name="contact_phone" hint="10–15 digit">
-            <input
-              id="contact_phone"
-              className="clay-input"
-              type="tel"
-              autoComplete="off"
-              {...methods.register("contact_phone")}
-            />
-          </FormField>
-          <FormField
-            label={editing ? "Logo (opsional)" : "Logo"}
-            name="logo"
-            required={!editing}
-            hint={
-              editing
-                ? "Biarkan kosong jika tidak ingin mengganti logo."
-                : "JPG/PNG/WebP/SVG, max 5 MB."
-            }
-          >
-            <input
-              ref={(el) => {
-                fileRef.current = el;
-                methods.register("logo").ref(el);
-              }}
-              id="logo"
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/svg+xml"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                methods.setValue("logo", f ?? null, { shouldValidate: true });
-                setLogoPreview(f ? URL.createObjectURL(f) : null);
-              }}
-              className="clay-input"
-              style={{ padding: 8 }}
-            />
-            {logoPreview && (
-              <img
-                src={logoPreview}
-                alt="Preview"
-                style={{
-                  marginTop: 8,
-                  maxHeight: 60,
-                  maxWidth: "100%",
-                  objectFit: "contain",
-                  background: "var(--warm-cream)",
-                  padding: 4,
-                  borderRadius: 6,
-                }}
-              />
-            )}
-            {editing && !logoPreview && (
-              <img
-                src={logoUrl(editing.logo_path)}
-                alt={editing.name}
-                style={{
-                  marginTop: 8,
-                  maxHeight: 60,
-                  maxWidth: "100%",
-                  objectFit: "contain",
-                  background: "var(--warm-cream)",
-                  padding: 4,
-                  borderRadius: 6,
-                }}
-              />
-            )}
-          </FormField>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <FormField label="Catatan Internal" name="notes">
-              <textarea
-                id="notes"
-                className="clay-textarea"
-                rows={2}
-                {...methods.register("notes")}
-              />
-            </FormField>
-          </div>
-          <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
-            <input
-              id="is_active"
-              type="checkbox"
-              checked={methods.watch("is_active")}
-              onChange={(e) => methods.setValue("is_active", e.target.checked)}
-            />
-            <label htmlFor="is_active">Aktif (tampil di landing page)</label>
-          </div>
-        </Form>
-      </Modal>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

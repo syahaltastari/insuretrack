@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, ReactNode } from "react";
+import { toast } from "sonner";
 import { AdminShell } from "@/components/AdminShell";
 import { Pagination } from "@/components/Pagination";
 import { API_BASE } from "@/lib/api";
@@ -240,7 +241,7 @@ export function AdminListPage<T extends { id: string }>({
                                           },
                                         },
                                       );
-                                      if (!r.ok) return alert("Gagal download");
+                                      if (!r.ok) return toast.error("Gagal download PDF");
                                       const blob = await r.blob();
                                       const url = URL.createObjectURL(blob);
                                       const a = document.createElement("a");

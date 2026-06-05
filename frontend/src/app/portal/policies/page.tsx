@@ -4,6 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { PortalShell } from "@/components/PortalShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { API_BASE } from "@/lib/api";
@@ -45,7 +46,7 @@ export default function PortalPoliciesPage() {
     const r = await fetch(`${API_BASE}/customer/policies/${id}/pdf`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!r.ok) return alert("Gagal download");
+    if (!r.ok) return toast.error("Gagal download PDF");
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

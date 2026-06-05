@@ -180,7 +180,7 @@ export default function AdminDashboard() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
                 gap: 20,
               }}
             >
@@ -188,21 +188,23 @@ export default function AdminDashboard() {
                 <ResponsiveContainer>
                   <BarChart
                     data={charts.registrations_per_month}
-                    margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+                    margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
                   >
                     <CartesianGrid stroke="var(--oat-light)" strokeDasharray="3 3" />
                     <XAxis
                       dataKey="month"
                       tickFormatter={chartFormatters.shortMonth}
-                      tick={{ fill: "var(--warm-charcoal)", fontSize: 11 }}
+                      interval="preserveStartEnd"
+                      tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={{ stroke: "var(--oat-border)" }}
                       tickLine={false}
                     />
                     <YAxis
                       allowDecimals={false}
-                      tick={{ fill: "var(--warm-charcoal)", fontSize: 11 }}
+                      tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={false}
                       tickLine={false}
+                      width={32}
                     />
                     <Tooltip
                       content={(p) => (
@@ -227,21 +229,23 @@ export default function AdminDashboard() {
                 <ResponsiveContainer>
                   <BarChart
                     data={charts.policies_per_month}
-                    margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+                    margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
                   >
                     <CartesianGrid stroke="var(--oat-light)" strokeDasharray="3 3" />
                     <XAxis
                       dataKey="month"
                       tickFormatter={chartFormatters.shortMonth}
-                      tick={{ fill: "var(--warm-charcoal)", fontSize: 11 }}
+                      interval="preserveStartEnd"
+                      tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={{ stroke: "var(--oat-border)" }}
                       tickLine={false}
                     />
                     <YAxis
                       allowDecimals={false}
-                      tick={{ fill: "var(--warm-charcoal)", fontSize: 11 }}
+                      tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={false}
                       tickLine={false}
+                      width={32}
                     />
                     <Tooltip
                       content={(p) => (
@@ -266,22 +270,23 @@ export default function AdminDashboard() {
                 <ResponsiveContainer>
                   <LineChart
                     data={charts.revenue_per_month}
-                    margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
+                    margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
                   >
                     <CartesianGrid stroke="var(--oat-light)" strokeDasharray="3 3" />
                     <XAxis
                       dataKey="month"
                       tickFormatter={chartFormatters.shortMonth}
-                      tick={{ fill: "var(--warm-charcoal)", fontSize: 11 }}
+                      interval="preserveStartEnd"
+                      tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={{ stroke: "var(--oat-border)" }}
                       tickLine={false}
                     />
                     <YAxis
                       tickFormatter={chartFormatters.idrShort}
-                      tick={{ fill: "var(--warm-charcoal)", fontSize: 11 }}
+                      tick={{ fill: "var(--warm-charcoal)", fontSize: 10 }}
                       axisLine={false}
                       tickLine={false}
-                      width={64}
+                      width={56}
                     />
                     <Tooltip
                       content={(p) => (
@@ -315,9 +320,10 @@ export default function AdminDashboard() {
                     />
                     <Legend
                       verticalAlign="bottom"
-                      height={36}
+                      height={48}
                       formatter={(value: unknown) => labelOf(String(value))}
                       iconType="circle"
+                      wrapperStyle={{ fontSize: "0.75rem", paddingTop: 4 }}
                     />
                     <Pie
                       data={charts.invoice_status_breakdown.map((s) => ({
@@ -326,8 +332,10 @@ export default function AdminDashboard() {
                       }))}
                       dataKey="count"
                       nameKey="status"
-                      innerRadius={48}
-                      outerRadius={80}
+                      cx="50%"
+                      cy="45%"
+                      innerRadius="40%"
+                      outerRadius="70%"
                       paddingAngle={2}
                     >
                       {charts.invoice_status_breakdown.map((s) => (
@@ -348,9 +356,10 @@ export default function AdminDashboard() {
                     />
                     <Legend
                       verticalAlign="bottom"
-                      height={36}
+                      height={48}
                       formatter={(value: unknown) => labelOf(String(value))}
                       iconType="circle"
+                      wrapperStyle={{ fontSize: "0.75rem", paddingTop: 4 }}
                     />
                     <Pie
                       data={charts.policy_product_breakdown.map((s) => ({
@@ -359,8 +368,10 @@ export default function AdminDashboard() {
                       }))}
                       dataKey="count"
                       nameKey="status"
-                      innerRadius={48}
-                      outerRadius={80}
+                      cx="50%"
+                      cy="45%"
+                      innerRadius="40%"
+                      outerRadius="70%"
                       paddingAngle={2}
                     >
                       {charts.policy_product_breakdown.map((s) => (
@@ -381,9 +392,10 @@ export default function AdminDashboard() {
                     />
                     <Legend
                       verticalAlign="bottom"
-                      height={36}
+                      height={48}
                       formatter={(value: unknown) => labelOf(String(value))}
                       iconType="circle"
+                      wrapperStyle={{ fontSize: "0.75rem", paddingTop: 4 }}
                     />
                     <Pie
                       data={charts.claim_status_breakdown.map((s) => ({
@@ -392,8 +404,10 @@ export default function AdminDashboard() {
                       }))}
                       dataKey="count"
                       nameKey="status"
-                      innerRadius={48}
-                      outerRadius={80}
+                      cx="50%"
+                      cy="45%"
+                      innerRadius="40%"
+                      outerRadius="70%"
                       paddingAngle={2}
                     >
                       {charts.claim_status_breakdown.map((s) => (
