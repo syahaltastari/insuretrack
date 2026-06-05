@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-// Admin pages are interactive client components; skip static prerendering.
+// Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
-import { AdminShell } from "@/components/AdminShell";
-import { Pagination } from "@/components/Pagination";
-import { API_BASE } from "@/lib/api";
+
+import { useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { AdminListPage } from "@/components/AdminListPage";
+import { Modal } from "@/components/Modal";
+import { Form, FormField, FormError } from "@/lib/forms";
+import { optionalString } from "@/lib/schemas/common";
+import { API_BASE, ApiError } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
 
 type Testimonial = {
@@ -25,35 +30,39 @@ type Testimonial = {
   updated_at: string;
 };
 
-type FormState = {
-  customer_name: string;
-  rating: number;
-  review: string;
-  role: string;
-  company: string;
-  policy_type: string;
-  display_date: string;
-  is_featured: boolean;
-  is_active: boolean;
-};
+const POLICY_TYPES = ["LIFE", "PERSONAL_ACCIDENT", "HEALTH"] as const;
 
-const EMPTY_FORM: FormState = {
-  customer_name: "",
-  rating: 5,
-  review: "",
-  role: "",
-  company: "",
-  policy_type: "LIFE",
-  display_date: new Date().toISOString().slice(0, 10),
-  is_featured: false,
-  is_active: true,
-};
+const testimonialSchema = z.object({
+  customer_name: z
+    .string()
+    .trim()
+    .min(1, "Nama pelanggan wajib diisi")
+    .max(120, "Maksimal 120 karakter"),
+  rating: z.coerce
+    .number({ invalid_type_error: "Rating harus angka" })
+    .int("Rating harus bilangan bulat")
+    .min(1, "Rating minimal 1")
+    .max(5, "Rating maksimal 5"),
+  review: z
+    .string()
+    .trim()
+    .min(5, "Review minimal 5 karakter")
+    .max(2000, "Maksimal 2000 karakter"),
+  role: optionalString(80),
+  company: optionalString(120),
+  policy_type: z
+    .enum(["", ...POLICY_TYPES] as [string, ...typeof POLICY_TYPES])
+    .optional()
+    .transform((v) => (v === "" ? undefined : v)),
+  display_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal YYYY-MM-DD"),
+  is_featured: z.boolean().default(false),
+  is_active: z.boolean().default(true),
+  photo: z.any().optional(),
+});
 
-const POLICY_OPTIONS = [
-  { code: "LIFE", label: "Life Insurance" },
-  { code: "PERSONAL_ACCIDENT", label: "Personal Accident" },
-  { code: "HEALTH", label: "Health Insurance" },
-];
+type TestimonialFormValues = z.infer<typeof testimonialSchema>;
 
 function photoUrl(photo_path: string | null): string {
   if (!photo_path) return "";
@@ -62,139 +71,153 @@ function photoUrl(photo_path: string | null): string {
   return `${apiRoot}/api/public/uploads/${photo_path.replace(/^\/+/, "")}`;
 }
 
-function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
+function Stars({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
   return (
-    <span style={{ display: "inline-flex", gap: 2 }}>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <span
-          key={i}
+    <div style={{ display: "flex", gap: 4 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          aria-label={`Beri rating ${n}`}
           style={{
-            fontSize: size,
-            color: i <= rating ? "var(--lemon-700)" : "var(--oat-light)",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            padding: 4,
+            color: n <= value ? "var(--lemon-700)" : "var(--oat-light)",
+            fontSize: "1.5rem",
+            lineHeight: 1,
           }}
         >
           ★
-        </span>
+        </button>
       ))}
+    </div>
+  );
+}
+
+function StarsDisplay({ value }: { value: number }) {
+  return (
+    <span style={{ color: "var(--lemon-700)", letterSpacing: 1 }} aria-label={`Rating ${value}`}>
+      {"★".repeat(value)}
+      <span style={{ color: "var(--oat-light)" }}>{"★".repeat(5 - value)}</span>
     </span>
   );
 }
 
+const todayYmd = () => new Date().toISOString().slice(0, 10);
+
 export default function AdminTestimonialsPage() {
-  const [data, setData] = useState<Testimonial[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Testimonial | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const pageSize = 12;
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
-  const load = async () => {
-    const token = getAdminToken();
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-      if (q) params.set("q", q);
-      if (status) params.set("status", status);
-      const r = await fetch(`${API_BASE}/admin/testimonials?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const json = await r.json();
-      setData(json.data);
-      setTotal(json.total);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Gagal load");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status]);
-
-  const onSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(1);
-    load();
-  };
+  const methods = useForm<TestimonialFormValues>({
+    resolver: zodResolver(testimonialSchema) as never,
+    defaultValues: {
+      customer_name: "",
+      rating: 5,
+      review: "",
+      role: "",
+      company: "",
+      policy_type: "",
+      display_date: todayYmd(),
+      is_featured: false,
+      is_active: true,
+    },
+    mode: "onBlur",
+  });
 
   const openCreate = () => {
     setEditing(null);
-    setForm(EMPTY_FORM);
-    setPhotoFile(null);
+    setFormError(null);
+    setPhotoPreview(null);
+    methods.reset({
+      customer_name: "",
+      rating: 5,
+      review: "",
+      role: "",
+      company: "",
+      policy_type: "",
+      display_date: todayYmd(),
+      is_featured: false,
+      is_active: true,
+    });
+    if (fileRef.current) fileRef.current.value = "";
     setShowForm(true);
   };
 
   const openEdit = (t: Testimonial) => {
     setEditing(t);
-    setForm({
+    setFormError(null);
+    setPhotoPreview(null);
+    methods.reset({
       customer_name: t.customer_name,
       rating: t.rating,
       review: t.review,
       role: t.role ?? "",
       company: t.company ?? "",
-      policy_type: t.policy_type ?? "LIFE",
+      policy_type: (t.policy_type ?? "") as TestimonialFormValues["policy_type"],
       display_date: t.display_date,
       is_featured: t.is_featured,
       is_active: t.is_active,
     });
-    setPhotoFile(null);
+    if (fileRef.current) fileRef.current.value = "";
     setShowForm(true);
   };
 
   const closeForm = () => {
     setShowForm(false);
     setEditing(null);
-    setForm(EMPTY_FORM);
-    setPhotoFile(null);
+    setFormError(null);
+    setPhotoPreview(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (values: TestimonialFormValues) => {
     const token = getAdminToken();
     if (!token) return;
-    if (!form.customer_name.trim()) {
-      alert("Nama customer wajib diisi");
+    const photoFile = (values.photo instanceof FileList ? values.photo[0] : values.photo) as
+      | File
+      | undefined;
+    if (photoFile && photoFile.size > 5 * 1024 * 1024) {
+      methods.setError("photo", { message: "Ukuran foto maksimal 5 MB" });
       return;
     }
-    if (!form.review.trim()) {
-      alert("Isi review wajib diisi");
+    if (
+      photoFile &&
+      !["image/jpeg", "image/png", "image/webp", "image/svg+xml"].includes(photoFile.type)
+    ) {
+      methods.setError("photo", { message: "Format foto harus JPG, PNG, WebP, atau SVG" });
       return;
     }
-    if (form.rating < 1 || form.rating > 5) {
-      alert("Rating harus 1-5");
-      return;
-    }
-    setSaving(true);
+    setSubmitting(true);
+    setFormError(null);
     try {
       const fd = new FormData();
-      fd.append(
-        "data",
-        JSON.stringify({
-          customer_name: form.customer_name.trim(),
-          rating: form.rating,
-          review: form.review.trim(),
-          role: form.role.trim() || null,
-          company: form.company.trim() || null,
-          policy_type: form.policy_type,
-          display_date: form.display_date,
-          is_featured: form.is_featured,
-          is_active: form.is_active,
-        }),
-      );
+      const data = {
+        customer_name: values.customer_name.trim(),
+        rating: Number(values.rating),
+        review: values.review.trim(),
+        role: (values.role ?? "").toString().trim() || null,
+        company: (values.company ?? "").toString().trim() || null,
+        policy_type: values.policy_type || null,
+        display_date: values.display_date,
+        is_featured: values.is_featured,
+        is_active: values.is_active,
+      };
+      fd.append("data", JSON.stringify(data));
       if (photoFile) fd.append("photo", photoFile);
       const url = editing
         ? `${API_BASE}/admin/testimonials/${editing.id}`
@@ -207,314 +230,307 @@ export default function AdminTestimonialsPage() {
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+        throw new ApiError(
+          r.status,
+          j?.error?.code ?? "ERR",
+          j?.error?.message ?? `HTTP ${r.status}`,
+        );
       }
       closeForm();
-      load();
+      setRefreshKey((k) => k + 1);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal simpan");
+      setFormError(e instanceof Error ? e.message : "Gagal simpan");
     } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async (t: Testimonial) => {
-    if (!confirm(`Hapus testimoni dari "${t.customer_name}"?`)) return;
-    const token = getAdminToken();
-    if (!token) return;
-    try {
-      const r = await fetch(`${API_BASE}/admin/testimonials/${t.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok && r.status !== 204) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
-      load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal hapus");
+      setSubmitting(false);
     }
   };
 
   return (
-    <AdminShell>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-        <div>
-          <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
-            ✦ Marketing
-          </p>
-          <h1 className="page-title">Testimoni Customer</h1>
-          <p className="page-subtitle">Testimoni yang tampil di carousel landing page.</p>
-        </div>
-        <button className="clay-button solid-ube" onClick={openCreate}>
-          + Tambah Testimoni
-        </button>
-      </div>
-
-      <form onSubmit={onSearch} style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-        <input
-          type="text"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari nama atau review..."
-          className="clay-input"
-          style={{ flex: 1, minWidth: 200 }}
-        />
-        <select
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
-          className="clay-select"
-          style={{ width: 200 }}
-        >
-          <option value="">Semua status</option>
-          <option value="true">Aktif</option>
-          <option value="false">Nonaktif</option>
-        </select>
-        <button type="submit" className="clay-button solid-ube">
-          Cari
-        </button>
-      </form>
-
-      {error && (
-        <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}>
-          ⚠ {error}
-        </div>
-      )}
-      {loading && <p>Memuat...</p>}
-
-      {!loading && data.length === 0 && !showForm && (
-        <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
-          <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Belum ada testimoni. Klik &quot;Tambah Testimoni&quot; untuk menambahkan.
-          </p>
-        </div>
-      )}
-
-      {showForm && (
-        <div className="clay-card feature" style={{ marginBottom: 24 }}>
-          <h2 className="card-heading" style={{ marginBottom: 16 }}>
-            {editing ? "Edit Testimoni" : "Tambah Testimoni"}
-          </h2>
-          <form onSubmit={save}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <label className="clay-label">Nama Customer *</label>
-                <input
-                  className="clay-input"
-                  value={form.customer_name}
-                  onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <label className="clay-label">Peran / Jabatan</label>
-                <input
-                  className="clay-input"
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
-                  placeholder="cth: Ibu rumah tangga"
-                />
-              </div>
-              <div>
-                <label className="clay-label">Perusahaan / Asal</label>
-                <input
-                  className="clay-input"
-                  value={form.company}
-                  onChange={(e) => setForm({ ...form, company: e.target.value })}
-                  placeholder="cth: PT Contoh, atau —"
-                />
-              </div>
-              <div>
-                <label className="clay-label">Produk Asuransi</label>
-                <select
-                  className="clay-select"
-                  value={form.policy_type}
-                  onChange={(e) => setForm({ ...form, policy_type: e.target.value })}
-                >
-                  {POLICY_OPTIONS.map((p) => (
-                    <option key={p.code} value={p.code}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="clay-label">Rating *</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setForm({ ...form, rating: i })}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: 28,
-                        color: i <= form.rating ? "var(--lemon-700)" : "var(--oat-light)",
-                        padding: 0,
-                      }}
-                    >
-                      ★
-                    </button>
-                  ))}
-                  <span className="caption" style={{ color: "var(--warm-silver)" }}>
-                    {form.rating} / 5
-                  </span>
-                </div>
-              </div>
-              <div>
-                <label className="clay-label">Tanggal Tampil</label>
-                <input
-                  className="clay-input"
-                  type="date"
-                  value={form.display_date}
-                  onChange={(e) => setForm({ ...form, display_date: e.target.value })}
-                />
-              </div>
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label className="clay-label">Review *</label>
-                <textarea
-                  className="clay-textarea"
-                  rows={4}
-                  value={form.review}
-                  onChange={(e) => setForm({ ...form, review: e.target.value })}
-                  required
-                />
-              </div>
-              <div style={{ gridColumn: "1 / -1" }}>
-                <label className="clay-label">Foto Customer (opsional)</label>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/svg+xml"
-                  onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
-                  className="clay-input"
-                  style={{ padding: 8 }}
-                />
-                {editing && (
-                  <p className="caption" style={{ color: "var(--warm-silver)", marginTop: 4 }}>
-                    Biarkan kosong jika tidak ingin mengganti foto.
-                  </p>
-                )}
-              </div>
-            </div>
-            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={form.is_featured}
-                  onChange={(e) => setForm({ ...form, is_featured: e.target.checked })}
-                />
-                Featured (unggulan)
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={form.is_active}
-                  onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                />
-                Aktif (tampil di landing page)
-              </label>
-            </div>
-            <div style={{ marginTop: 20, display: "flex", gap: 8 }}>
-              <button type="submit" className="clay-button solid-ube" disabled={saving}>
-                {saving ? "Menyimpan..." : "Simpan"}
-              </button>
-              <button type="button" className="clay-button ghost" onClick={closeForm} disabled={saving}>
-                Batal
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {!loading && data.length > 0 && (
-        <div className="clay-grid cols-2">
-          {data.map((t) => (
-            <div key={t.id} className="clay-card feature" style={{ padding: 20 }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
-                <div
+    <>
+      <AdminListPage<Testimonial>
+        key={refreshKey}
+        title="Testimoni"
+        endpoint="/admin/testimonials"
+        searchPlaceholder="Cari nama atau review..."
+        statusOptions={["true", "false"]}
+        headerActions={
+          <button className="clay-button solid-ube" onClick={openCreate}>
+            + Tambah Testimoni
+          </button>
+        }
+        emptyMessage='Belum ada testimoni. Klik "+Tambah Testimoni" untuk menambahkan.'
+        columns={[
+          {
+            key: "photo_path",
+            label: "Foto",
+            width: "72px",
+            render: (t) =>
+              t.photo_path ? (
+                <img
+                  src={photoUrl(t.photo_path)}
+                  alt={t.customer_name}
                   style={{
-                    width: 56,
-                    height: 56,
+                    width: 40,
+                    height: 40,
+                    objectFit: "cover",
                     borderRadius: "50%",
-                    overflow: "hidden",
                     background: "var(--warm-cream)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    border: "2px solid var(--oat-border)",
                   }}
-                >
-                  {t.photo_path ? (
-                    <img
-                      src={photoUrl(t.photo_path)}
-                      alt={t.customer_name}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  ) : (
-                    <span style={{ fontSize: 24, color: "var(--warm-silver)" }}>
-                      {t.customer_name.charAt(0).toUpperCase()}
-                    </span>
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <h3 className="feature-title" style={{ marginBottom: 2 }}>
-                    {t.customer_name}
-                  </h3>
-                  <p className="caption" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-                    {t.role ?? "—"}
-                    {t.company ? ` · ${t.company}` : ""}
-                  </p>
-                  <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <Stars rating={t.rating} />
-                    {t.is_featured && (
-                      <span className="clay-badge lemon" style={{ fontSize: "0.7rem" }}>
-                        Featured
-                      </span>
-                    )}
-                    <span className={`clay-badge ${t.is_active ? "matcha" : "muted"}`} style={{ fontSize: "0.7rem" }}>
-                      {t.is_active ? "Aktif" : "Nonaktif"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p
-                className="body"
+                />
+              ) : (
+                <span style={{ color: "var(--warm-silver)" }}>—</span>
+              ),
+          },
+          { key: "customer_name", label: "Nama" },
+          {
+            key: "rating",
+            label: "Rating",
+            width: "110px",
+            render: (t) => <StarsDisplay value={t.rating} />,
+          },
+          {
+            key: "review",
+            label: "Review",
+            render: (t) => (
+              <span
                 style={{
-                  color: "var(--warm-charcoal)",
-                  margin: 0,
                   display: "-webkit-box",
-                  WebkitLineClamp: 4,
+                  WebkitLineClamp: 2,
                   WebkitBoxOrient: "vertical",
                   overflow: "hidden",
                 }}
               >
-                &ldquo;{t.review}&rdquo;
-              </p>
-              <p className="caption" style={{ color: "var(--warm-silver)", margin: "8px 0 0 0" }}>
-                {t.display_date} · {t.policy_type ?? "—"}
-              </p>
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <button className="clay-button solid-ube size-small" onClick={() => openEdit(t)}>
-                  Edit
-                </button>
-                <button className="clay-button solid-pomegranate size-small" onClick={() => remove(t)}>
-                  Hapus
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+                {t.review}
+              </span>
+            ),
+          },
+          {
+            key: "display_date",
+            label: "Tanggal",
+            width: "110px",
+            render: (t) => new Date(t.display_date).toLocaleDateString("id-ID"),
+          },
+          {
+            key: "is_featured",
+            label: "Featured",
+            width: "90px",
+            render: (t) =>
+              t.is_featured ? (
+                <span className="clay-badge lemon">Featured</span>
+              ) : (
+                <span style={{ color: "var(--warm-silver)" }}>—</span>
+              ),
+          },
+          {
+            key: "is_active",
+            label: "Status",
+            width: "110px",
+            render: (t) => (
+              <span className={`clay-badge ${t.is_active ? "matcha" : "muted"}`}>
+                {t.is_active ? "Aktif" : "Nonaktif"}
+              </span>
+            ),
+          },
+        ]}
+        actions={(t) => (
+          <>
+            <button
+              className="clay-button solid-ube size-small"
+              onClick={() => openEdit(t)}
+            >
+              Edit
+            </button>
+            <button
+              className="clay-button solid-pomegranate size-small"
+              onClick={async () => {
+                if (!confirm(`Hapus testimoni dari "${t.customer_name}"?`)) return;
+                const token = getAdminToken();
+                if (!token) return;
+                try {
+                  const r = await fetch(`${API_BASE}/admin/testimonials/${t.id}`, {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  if (!r.ok && r.status !== 204) {
+                    const j = await r.json().catch(() => ({}));
+                    throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+                  }
+                  setRefreshKey((k) => k + 1);
+                } catch (e) {
+                  alert(e instanceof Error ? e.message : "Gagal hapus");
+                }
+              }}
+            >
+              Hapus
+            </button>
+          </>
+        )}
+      />
 
-      <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
-    </AdminShell>
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        title={editing ? "Edit Testimoni" : "Tambah Testimoni"}
+        maxWidth={720}
+        footer={
+          <>
+            <button
+              type="button"
+              className="clay-button ghost"
+              onClick={closeForm}
+              disabled={submitting}
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              form="testimonial-form"
+              className="clay-button solid-ube"
+              disabled={submitting}
+            >
+              {submitting ? "Menyimpan..." : "Simpan"}
+            </button>
+          </>
+        }
+      >
+        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2">
+          <FormError message={formError} />
+          <FormField label="Nama Pelanggan" name="customer_name" required>
+            <input
+              id="customer_name"
+              className="clay-input"
+              autoComplete="off"
+              {...methods.register("customer_name")}
+            />
+          </FormField>
+          <FormField label="Rating" name="rating" required>
+            <Stars
+              value={methods.watch("rating")}
+              onChange={(n) => methods.setValue("rating", n, { shouldValidate: true })}
+            />
+          </FormField>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <FormField label="Review" name="review" required>
+              <textarea
+                id="review"
+                className="clay-textarea"
+                rows={4}
+                {...methods.register("review")}
+              />
+            </FormField>
+          </div>
+          <FormField label="Role / Jabatan" name="role">
+            <input
+              id="role"
+              className="clay-input"
+              autoComplete="off"
+              {...methods.register("role")}
+            />
+          </FormField>
+          <FormField label="Perusahaan" name="company">
+            <input
+              id="company"
+              className="clay-input"
+              autoComplete="off"
+              {...methods.register("company")}
+            />
+          </FormField>
+          <FormField label="Produk" name="policy_type">
+            <select
+              id="policy_type"
+              className="clay-select"
+              {...methods.register("policy_type")}
+            >
+              <option value="">—</option>
+              <option value="LIFE">Asuransi Jiwa</option>
+              <option value="PERSONAL_ACCIDENT">Asuransi Kecelakaan Diri</option>
+              <option value="HEALTH">Asuransi Kesehatan</option>
+            </select>
+          </FormField>
+          <FormField label="Tanggal Tampil" name="display_date" required>
+            <input
+              id="display_date"
+              className="clay-input"
+              type="date"
+              {...methods.register("display_date")}
+            />
+          </FormField>
+          <FormField
+            label={editing ? "Foto (opsional)" : "Foto"}
+            name="photo"
+            hint={editing ? "Biarkan kosong jika tidak ingin mengganti foto." : "JPG/PNG/WebP/SVG, max 5 MB."}
+          >
+            <input
+              ref={(el) => {
+                fileRef.current = el;
+                methods.register("photo").ref(el);
+              }}
+              id="photo"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/svg+xml"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                methods.setValue("photo", f ?? null, { shouldValidate: true });
+                setPhotoPreview(f ? URL.createObjectURL(f) : null);
+              }}
+              className="clay-input"
+              style={{ padding: 8 }}
+            />
+            {photoPreview && (
+              <img
+                src={photoPreview}
+                alt="Preview"
+                style={{
+                  marginTop: 8,
+                  width: 60,
+                  height: 60,
+                  objectFit: "cover",
+                  borderRadius: "50%",
+                }}
+              />
+            )}
+            {editing && !photoPreview && editing.photo_path && (
+              <img
+                src={photoUrl(editing.photo_path)}
+                alt={editing.customer_name}
+                style={{
+                  marginTop: 8,
+                  width: 60,
+                  height: 60,
+                  objectFit: "cover",
+                  borderRadius: "50%",
+                }}
+              />
+            )}
+          </FormField>
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              display: "flex",
+              gap: 20,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={methods.watch("is_featured")}
+                onChange={(e) => methods.setValue("is_featured", e.target.checked)}
+              />
+              Featured (tampil menonjol)
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={methods.watch("is_active")}
+                onChange={(e) => methods.setValue("is_active", e.target.checked)}
+              />
+              Aktif (tampil di landing page)
+            </label>
+          </div>
+        </Form>
+      </Modal>
+    </>
   );
 }

@@ -9,7 +9,7 @@ use axum::{
     Json, Router,
 };
 use rust_decimal::Decimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
@@ -20,6 +20,7 @@ use crate::{
     repo::{Page, PageQuery},
     services::{
         audit::{write as audit_write, AuditEntry},
+        dashboard,
         storage,
     },
     state::AppState,
@@ -29,20 +30,23 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/login", post(login))
         .route("/dashboard/stats", get(dashboard_stats))
+        .route("/dashboard/charts", get(dashboard_charts))
+        .route("/me", get(get_me).patch(update_me))
+        .route("/me/password", axum::routing::post(change_password))
         .route("/registrations", get(list_registrations))
-        .route("/registrations/{id}", get(get_registration))
+        .route("/registrations/:id", get(get_registration))
         .route("/invoices", get(list_invoices))
-        .route("/invoices/{id}", get(get_invoice))
+        .route("/invoices/:id", get(get_invoice))
         .route("/policies", get(list_policies))
-        .route("/policies/{id}", get(get_policy))
-        .route("/policies/{id}/pdf", get(download_policy_pdf))
+        .route("/policies/:id", get(get_policy))
+        .route("/policies/:id/pdf", get(download_policy_pdf))
         .route("/email-logs", get(list_email_logs))
         .route("/audit-logs", get(list_audit_logs))
         .route("/claims", get(list_claims_admin))
-        .route("/claims/{id}", axum::routing::patch(patch_claim))
+        .route("/claims/:id", axum::routing::patch(patch_claim))
         .route("/inquiries", get(list_inquiries_admin))
         .route(
-            "/inquiries/{id}/respond",
+            "/inquiries/:id/respond",
             axum::routing::post(respond_inquiry),
         )
         // Marketing: clients + testimonials — see admin_marketing::router
@@ -64,6 +68,12 @@ async fn login(
     if !verify_password(&req.password, &password_hash)? {
         return Err(AppError::Unauthorized);
     }
+
+    // Best-effort last_login_at update — non-fatal if it fails.
+    let _ = sqlx::query("UPDATE admin_users SET last_login_at = now() WHERE id = $1")
+        .bind(admin_id)
+        .execute(&state.pool)
+        .await;
 
     let token = state
         .tokens
@@ -125,6 +135,159 @@ async fn dashboard_stats(
         total_policies: row.total_policies,
         total_premium_collected: row.total_premium_collected,
     }))
+}
+
+async fn dashboard_charts(
+    State(state): State<AppState>,
+    _: RequireAdmin,
+) -> AppResult<Json<dashboard::DashboardCharts>> {
+    let charts = dashboard::fetch_all(&state.pool).await?;
+    Ok(Json(charts))
+}
+
+// ---- Admin "me" (profile) ----
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+struct AdminMe {
+    id: Uuid,
+    username: String,
+    full_name: Option<String>,
+    email: Option<String>,
+    role: String,
+    is_active: bool,
+    last_login_at: Option<chrono::DateTime<chrono::Utc>>,
+    password_changed_at: Option<chrono::DateTime<chrono::Utc>>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn get_me(
+    State(state): State<AppState>,
+    RequireAdmin(claims): RequireAdmin,
+) -> AppResult<Json<AdminMe>> {
+    let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let row: Option<AdminMe> = sqlx::query_as(
+        r#"SELECT id, username, full_name, email, role, is_active, last_login_at,
+                  password_changed_at, created_at, updated_at
+             FROM admin_users WHERE id = $1"#,
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    row.map(Json).ok_or(AppError::Unauthorized)
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateMeRequest {
+    full_name: Option<String>,
+    email: Option<String>,
+}
+
+async fn update_me(
+    State(state): State<AppState>,
+    RequireAdmin(claims): RequireAdmin,
+    Json(req): Json<UpdateMeRequest>,
+) -> AppResult<Json<AdminMe>> {
+    let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let full = req.full_name.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    let email = req.email.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    if let Some(ref e) = email {
+        if !e.contains('@') {
+            return Err(AppError::Validation("email tidak valid".into()));
+        }
+    }
+    let row: AdminMe = sqlx::query_as(
+        r#"UPDATE admin_users
+              SET full_name = COALESCE($2, full_name),
+                  email     = COALESCE($3, email),
+                  updated_at = now()
+            WHERE id = $1
+        RETURNING id, username, full_name, email, role, is_active, last_login_at,
+                  password_changed_at, created_at, updated_at"#,
+    )
+    .bind(id)
+    .bind(full.as_deref())
+    .bind(email.as_deref())
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| {
+        if let sqlx::Error::Database(db) = &e {
+            if db.constraint().is_some() {
+                return AppError::Conflict("email sudah dipakai admin lain".into());
+            }
+        }
+        AppError::Internal(anyhow::anyhow!("update_me: {e}"))
+    })?;
+
+    audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &claims.sub,
+            action: "admin_profile_updated",
+            entity_type: "admin_user",
+            entity_id: Some(id),
+            metadata: None,
+            ip_address: None,
+        },
+    )
+    .await?;
+
+    Ok(Json(row))
+}
+
+#[derive(Debug, Deserialize)]
+struct ChangePasswordRequest {
+    current_password: String,
+    new_password: String,
+}
+
+async fn change_password(
+    State(state): State<AppState>,
+    RequireAdmin(claims): RequireAdmin,
+    Json(req): Json<ChangePasswordRequest>,
+) -> AppResult<StatusCode> {
+    let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    if req.new_password.len() < 8 {
+        return Err(AppError::Validation("Password baru minimal 8 karakter".into()));
+    }
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT password_hash FROM admin_users WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let (current_hash,) = row.ok_or(AppError::Unauthorized)?;
+    if !verify_password(&req.current_password, &current_hash)? {
+        return Err(AppError::Unauthorized);
+    }
+    let new_hash = crate::auth::password::hash_password(&req.new_password)?;
+    sqlx::query(
+        "UPDATE admin_users SET password_hash = $2, password_changed_at = now(), updated_at = now() WHERE id = $1",
+    )
+    .bind(id)
+    .bind(new_hash)
+    .execute(&state.pool)
+    .await?;
+
+    audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &claims.sub,
+            action: "admin_password_changed",
+            entity_type: "admin_user",
+            entity_id: Some(id),
+            metadata: None,
+            ip_address: None,
+        },
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Serialize, sqlx::FromRow)]

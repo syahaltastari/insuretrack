@@ -2,7 +2,7 @@
 //!
 //!   GET  /api/public/products
 //!   POST /api/public/registrations         (multipart, KTP upload)
-//!   GET  /api/public/registrations/{regNo}
+//!   GET  /api/public/registrations/:regNo
 //!   POST /api/public/payment/webhook
 
 use axum::{
@@ -38,7 +38,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/products", get(list_products))
         .route("/registrations", post(create_registration))
-        .route("/registrations/{reg_no}", get(get_registration))
+        .route("/registrations/:reg_no", get(get_registration))
         .route("/payment/webhook", post(payment_webhook))
         .route("/clients", get(list_clients_public))
         .route("/testimonials", get(list_testimonials_public))

@@ -21,6 +21,10 @@ export function AdminListPage<T extends { id: string }>({
   statusOptions,
   detailBasePath,
   pdfDownloadPath,
+  actions,
+  headerActions,
+  formSlot,
+  emptyMessage = "Tidak ada data.",
 }: {
   title: string;
   endpoint: string;
@@ -29,6 +33,14 @@ export function AdminListPage<T extends { id: string }>({
   statusOptions?: string[];
   detailBasePath?: string;
   pdfDownloadPath?: (row: T) => string | null;
+  /** Per-row action buttons (Edit, Hapus, etc.) rendered in a trailing "Aksi" column. */
+  actions?: (row: T) => ReactNode;
+  /** Extra controls shown in the page header right side (e.g. "+ Tambah"). */
+  headerActions?: ReactNode;
+  /** Optional content rendered between the search bar and the table (e.g. an inline form, or empty when a modal is closed). */
+  formSlot?: ReactNode;
+  /** Override the "Tidak ada data" message. */
+  emptyMessage?: string;
 }) {
   const [data, setData] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -73,11 +85,33 @@ export function AdminListPage<T extends { id: string }>({
     load();
   };
 
+  const showActionsCol = Boolean(actions) || Boolean(pdfDownloadPath);
+  const colCount = columns.length + (showActionsCol ? 1 : 0);
+
   return (
     <AdminShell>
-      <h1 className="page-title">{title}</h1>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h1 className="page-title" style={{ marginBottom: 8 }}>
+            {title}
+          </h1>
+        </div>
+        {headerActions}
+      </div>
 
-      <form onSubmit={onSearch} style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+      <form
+        onSubmit={onSearch}
+        style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}
+      >
         <input
           type="text"
           value={q}
@@ -109,8 +143,13 @@ export function AdminListPage<T extends { id: string }>({
         </button>
       </form>
 
+      {formSlot}
+
       {error && (
-        <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}>
+        <div
+          className="clay-card"
+          style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}
+        >
           ⚠ {error}
         </div>
       )}
@@ -118,34 +157,52 @@ export function AdminListPage<T extends { id: string }>({
 
       {!loading && (
         <>
-          <div style={{ overflow: "auto", borderRadius: "var(--radius-card)" }}>
+          <div className="clay-table-wrap">
             <table className="clay-table">
               <thead>
                 <tr>
                   {columns.map((c) => (
-                    <th key={String(c.key)} style={c.width ? { width: c.width } : undefined}>
+                    <th
+                      key={String(c.key)}
+                      style={c.width ? { width: c.width } : undefined}
+                    >
                       {c.label}
                     </th>
                   ))}
-                  {pdfDownloadPath && <th>Aksi</th>}
+                  {showActionsCol && <th style={{ width: 160 }}>Aksi</th>}
                 </tr>
               </thead>
               <tbody>
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + (pdfDownloadPath ? 1 : 0)} style={{ padding: 32, textAlign: "center", color: "var(--warm-charcoal)" }}>
-                      Tidak ada data.
+                    <td
+                      colSpan={colCount}
+                      style={{
+                        padding: 32,
+                        textAlign: "center",
+                        color: "var(--warm-charcoal)",
+                      }}
+                    >
+                      {emptyMessage}
                     </td>
                   </tr>
                 ) : (
                   data.map((row) => (
                     <tr key={row.id}>
                       {columns.map((c) => {
-                        const v = c.render ? c.render(row) : (row as Record<string, unknown>)[c.key as string];
+                        const v = c.render
+                          ? c.render(row)
+                          : (row as Record<string, unknown>)[c.key as string];
                         return (
                           <td key={String(c.key)}>
                             {detailBasePath ? (
-                              <a href={`${detailBasePath}/${row.id}`} style={{ color: "var(--clay-black)", fontWeight: 500 }}>
+                              <a
+                                href={`${detailBasePath}/${row.id}`}
+                                style={{
+                                  color: "var(--clay-black)",
+                                  fontWeight: 500,
+                                }}
+                              >
                                 {v as ReactNode}
                               </a>
                             ) : (
@@ -154,34 +211,45 @@ export function AdminListPage<T extends { id: string }>({
                           </td>
                         );
                       })}
-                      {pdfDownloadPath && (
+                      {showActionsCol && (
                         <td>
-                          {(() => {
-                            const path = pdfDownloadPath(row);
-                            if (!path) return null;
-                            const token = getAdminToken();
-                            return (
-                              <button
-                                className="clay-button ghost size-small"
-                                onClick={async (e) => {
-                                  e.preventDefault();
-                                  const r = await fetch(`${API_BASE}${path}`, {
-                                    headers: { Authorization: `Bearer ${token}` },
-                                  });
-                                  if (!r.ok) return alert("Gagal download");
-                                  const blob = await r.blob();
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement("a");
-                                  a.href = url;
-                                  a.download = `policy-${row.id}.pdf`;
-                                  a.click();
-                                  URL.revokeObjectURL(url);
-                                }}
-                              >
-                                📄 PDF
-                              </button>
-                            );
-                          })()}
+                          <div
+                            style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+                          >
+                            {pdfDownloadPath &&
+                              (() => {
+                                const path = pdfDownloadPath(row);
+                                if (!path) return null;
+                                const token = getAdminToken();
+                                return (
+                                  <button
+                                    className="clay-button ghost size-small"
+                                    onClick={async (e) => {
+                                      e.preventDefault();
+                                      const r = await fetch(
+                                        `${API_BASE}${path}`,
+                                        {
+                                          headers: {
+                                            Authorization: `Bearer ${token}`,
+                                          },
+                                        },
+                                      );
+                                      if (!r.ok) return alert("Gagal download");
+                                      const blob = await r.blob();
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download = `policy-${row.id}.pdf`;
+                                      a.click();
+                                      URL.revokeObjectURL(url);
+                                    }}
+                                  >
+                                    📄 PDF
+                                  </button>
+                                );
+                              })()}
+                            {actions && actions(row)}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -190,7 +258,12 @@ export function AdminListPage<T extends { id: string }>({
               </tbody>
             </table>
           </div>
-          <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onChange={setPage}
+          />
         </>
       )}
     </AdminShell>

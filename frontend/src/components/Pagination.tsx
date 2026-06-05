@@ -25,6 +25,7 @@ export function Pagination({
         alignItems: "center",
         marginTop: 24,
         justifyContent: "flex-end",
+        flexWrap: "wrap",
       }}
     >
       <span className="caption" style={{ color: "var(--warm-charcoal)", marginRight: "auto" }}>

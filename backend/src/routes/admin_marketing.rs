@@ -27,7 +27,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/clients", get(list_clients).post(create_client))
         .route(
-            "/clients/{id}",
+            "/clients/:id",
             get(get_client)
                 .patch(update_client)
                 .delete(delete_client),
@@ -37,7 +37,7 @@ pub fn router() -> Router<AppState> {
             get(list_testimonials).post(create_testimonial),
         )
         .route(
-            "/testimonials/{id}",
+            "/testimonials/:id",
             get(get_testimonial)
                 .patch(update_testimonial)
                 .delete(delete_testimonial),

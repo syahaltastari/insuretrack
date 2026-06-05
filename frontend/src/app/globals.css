@@ -278,7 +278,7 @@ a:hover {
   background: var(--clay-black);
   color: var(--pure-white);
   /* Subtle lift (absolute px, not %) + tiny scale + gentle tilt. */
-  transform: translateY(-3px) scale(1.025) rotateZ(-1.5deg);
+  /* transform: translateY(-3px) scale(1.025) rotateZ(-1.5deg); */
   /* Soft elevation shadow that lifts with the button. */
   box-shadow:
     0 10px 20px rgba(0, 0, 0, 0.10),
@@ -516,6 +516,7 @@ a:hover {
   border-radius: var(--radius-card);
   overflow: hidden;
   box-shadow: var(--shadow-clay);
+  table-layout: fixed;
 }
 .clay-table thead {
   background: var(--oat-light);
@@ -529,10 +530,24 @@ a:hover {
   text-transform: uppercase;
   color: var(--warm-charcoal);
 }
+.clay-table th,
+.clay-table td {
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .clay-table td {
   padding: 12px 16px;
   border-top: 1px solid var(--oat-light);
   vertical-align: top;
+}
+.clay-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border-radius: var(--radius-card);
+}
+.clay-table-wrap .clay-table {
+  min-width: 640px;
 }
 .clay-table tr {
   transition: background-color 180ms ease;
@@ -871,5 +886,316 @@ a:hover {
 @media (max-width: 991px) and (min-width: 768px) {
   .display-hero {
     font-size: clamp(2.75rem, 7vw, 4.25rem) !important;
+  }
+}
+
+/* ============================================================
+   Form helpers (RHF + zod integration)
+   ============================================================ */
+.clay-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.clay-form-field .clay-input,
+.clay-form-field .clay-select,
+.clay-form-field .clay-textarea {
+  width: 100%;
+}
+.clay-required {
+  color: var(--pomegranate-400);
+}
+.clay-hint {
+  font-size: 0.75rem;
+  color: var(--warm-silver);
+  margin: 4px 0 0 0;
+}
+.clay-error {
+  font-size: 0.75rem;
+  color: var(--pomegranate-400);
+  margin: 4px 0 0 0;
+  font-weight: 500;
+}
+
+/* ============================================================
+   Modal (native <dialog>)
+   ============================================================ */
+.clay-modal {
+  border: none;
+  border-radius: var(--radius-feature);
+  padding: 0;
+  background: var(--pure-white);
+  width: 100%;
+  max-height: 90vh;
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.20),
+    0 4px 8px rgba(0, 0, 0, 0.08);
+  color: var(--clay-black);
+}
+.clay-modal::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.clay-modal[open] {
+  animation: clay-modal-in 180ms ease-out;
+}
+.clay-modal[open]::backdrop {
+  animation: clay-backdrop-in 180ms ease-out;
+}
+@keyframes clay-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes clay-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.clay-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px 28px 16px;
+  border-bottom: 1px solid var(--oat-light);
+}
+.clay-modal-header h2 {
+  margin: 0;
+}
+.clay-modal-close {
+  background: transparent;
+  border: 1px solid var(--oat-border);
+  border-radius: var(--radius-pill);
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--warm-charcoal);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.clay-modal-close:hover {
+  background: var(--oat-light);
+}
+.clay-modal-body {
+  padding: 20px 28px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.clay-modal-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 16px 28px 24px;
+  border-top: 1px solid var(--oat-light);
+}
+@media (max-width: 767px) {
+  .clay-modal {
+    margin: 16px !important;
+    max-width: calc(100vw - 32px) !important;
+    width: calc(100vw - 32px);
+  }
+  .clay-modal-header,
+  .clay-modal-body,
+  .clay-modal-footer {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+
+/* ============================================================
+   Admin top bar + user menu (added in profile-menu phase)
+   ============================================================ */
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px;
+  background: var(--pure-white);
+  border-bottom: 1px solid var(--oat-border);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.admin-topbar-left,
+.admin-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.admin-topbar .brand-mobile {
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  display: none;
+}
+.hamburger {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--oat-border);
+  border-radius: var(--radius-sharp);
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--clay-black);
+}
+.hamburger:hover {
+  background: var(--oat-light);
+}
+@media (max-width: 767px) {
+  .admin-topbar .brand-mobile {
+    display: inline;
+  }
+  .hamburger {
+    display: inline-flex;
+  }
+}
+.user-menu {
+  position: relative;
+}
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: 1px solid var(--oat-border);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px 4px 4px;
+  cursor: pointer;
+  color: var(--clay-black);
+  font: inherit;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.user-menu-trigger:hover {
+  background: var(--oat-light);
+}
+.user-menu-trigger.open {
+  background: var(--oat-light);
+  border-color: var(--dark-border);
+}
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--ube-300);
+  color: var(--ube-900);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+.user-menu-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+.user-menu-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.user-menu-role {
+  font-size: 0.7rem;
+  color: var(--warm-silver);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.user-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 200px;
+  background: var(--pure-white);
+  border: 1px solid var(--oat-border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.10);
+  padding: 6px;
+  z-index: 40;
+}
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sharp);
+  color: var(--clay-black);
+  text-decoration: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+}
+.user-menu-item:hover {
+  background: var(--oat-light);
+}
+.user-menu-item.danger {
+  color: var(--pomegranate-400);
+}
+@media (max-width: 767px) {
+  .user-menu-meta {
+    display: none;
+  }
+  .user-menu-trigger {
+    padding: 4px;
+  }
+}
+
+/* ============================================================
+   Mobile sidebar drawer (added in profile-menu phase)
+   ============================================================ */
+@media (max-width: 767px) {
+  .shell-grid {
+    grid-template-columns: 1fr;
+  }
+  .shell-aside {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 80vw;
+    max-width: 280px;
+    height: 100vh;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 220ms ease;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.12);
+    overflow-y: auto;
+  }
+  .shell-aside.open {
+    transform: translateX(0);
+  }
+  .shell-aside-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 45;
+  }
+}
+
+/* ============================================================
+   Grid helpers (responsive form layouts)
+   ============================================================ */
+.clay-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+}
+.clay-form-grid.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 767px) {
+  .clay-form-grid.cols-2 {
+    grid-template-columns: 1fr;
   }
 }

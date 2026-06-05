@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+// Skip static prerender — Next.js 15 + React 19 RC incompatibility.
+export const dynamic = "force-dynamic";
+
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { PortalShell } from "@/components/PortalShell";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Form, FormField, FormError } from "@/lib/forms";
 import { API_BASE } from "@/lib/api";
 import { getCustomerToken } from "@/lib/auth";
 
@@ -18,57 +25,76 @@ type Inquiry = {
   responded_at: string | null;
 };
 
+const inquirySchema = z.object({
+  subject: z
+    .string()
+    .trim()
+    .min(5, "Subject minimal 5 karakter")
+    .max(200, "Subject maksimal 200 karakter"),
+  message: z
+    .string()
+    .trim()
+    .min(10, "Pesan minimal 10 karakter")
+    .max(5000, "Pesan maksimal 5000 karakter"),
+});
+type InquiryFormValues = z.infer<typeof inquirySchema>;
+
 export default function PortalInquiriesPage() {
   const [data, setData] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const methods = useForm<InquiryFormValues>({
+    resolver: zodResolver(inquirySchema) as never,
+    defaultValues: { subject: "", message: "" },
+    mode: "onSubmit",
+  });
 
   const load = () => {
     const token = getCustomerToken();
     if (!token) return;
     setLoading(true);
+    setError(null);
     fetch(`${API_BASE}/customer/inquiries?page=1&page_size=50`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((j) => setData(j.data ?? []))
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!subject.trim() || !message.trim()) {
-      setError("Subject dan pesan wajib diisi.");
-      return;
-    }
+  const onSubmit = async (values: InquiryFormValues) => {
+    const token = getCustomerToken();
     setSubmitting(true);
     try {
-      const token = getCustomerToken();
       const r = await fetch(`${API_BASE}/customer/inquiries`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subject, message }),
+        body: JSON.stringify({ subject: values.subject.trim(), message: values.message.trim() }),
       });
-      const json = await r.json();
+      const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json?.error?.message ?? "Gagal kirim inquiry");
-      setSubject("");
-      setMessage("");
-      load();
+      methods.reset({ subject: "", message: "" });
+      setRefreshKey((k) => k + 1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Gagal");
+      methods.setError("root", { message: err instanceof Error ? err.message : "Gagal" });
     } finally {
       setSubmitting(false);
     }
   };
+
+  const rootErr = methods.formState.errors.root?.message;
 
   return (
     <PortalShell>
@@ -78,42 +104,57 @@ export default function PortalInquiriesPage() {
       <h1 className="page-title">Hubungi Admin</h1>
       <p className="page-subtitle">Tanya jawab tentang polis Anda. Admin akan merespon via email.</p>
 
-      <form
+      <Form
+        methods={methods}
         onSubmit={onSubmit}
         className="clay-card feature"
-        style={{ marginBottom: 32, maxWidth: 640 }}
+        // Styling handled inline below
       >
-        <h2 className="feature-title" style={{ marginBottom: 16 }}>Buat Pertanyaan Baru</h2>
-        {error && (
-          <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5", marginBottom: 12 }}>
-            ⚠ {error}
-          </div>
-        )}
-        <input
-          placeholder="Subject"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          className="clay-input"
-          style={{ marginBottom: 12 }}
-        />
-        <textarea
-          placeholder="Pesan Anda..."
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          className="clay-textarea"
-          style={{ marginBottom: 12 }}
-        />
+        <h2 className="feature-title" style={{ marginBottom: 16 }}>
+          Buat Pertanyaan Baru
+        </h2>
+        <FormError message={rootErr ?? null} />
+
+        <FormField label="Subject" name="subject" required>
+          <input
+            id="subject"
+            className="clay-input"
+            autoComplete="off"
+            {...methods.register("subject")}
+          />
+        </FormField>
+
+        <FormField label="Pesan" name="message" required>
+          <textarea
+            id="message"
+            className="clay-textarea"
+            rows={4}
+            {...methods.register("message")}
+          />
+        </FormField>
+
         <button
           type="submit"
           disabled={submitting}
           className="clay-button solid-ube"
+          style={{ marginTop: 8 }}
         >
           {submitting ? "Mengirim..." : "Kirim →"}
         </button>
-      </form>
+      </Form>
 
-      <h2 className="section-heading" style={{ fontSize: "1.5rem", marginBottom: 16 }}>Riwayat</h2>
+      <h2 className="section-heading" style={{ fontSize: "1.5rem", marginBottom: 16, marginTop: 32 }}>
+        Riwayat
+      </h2>
       {loading && <p>Memuat...</p>}
+      {error && (
+        <div
+          className="clay-card"
+          style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}
+        >
+          ⚠ {error}
+        </div>
+      )}
       {!loading && data.length === 0 && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 32 }}>
           <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
@@ -123,12 +164,16 @@ export default function PortalInquiriesPage() {
       )}
       {!loading &&
         data.map((inq) => (
-          <div
-            key={inq.id}
-            className="clay-card"
-            style={{ marginBottom: 12 }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div key={inq.id} className="clay-card" style={{ marginBottom: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
               <strong style={{ fontSize: "1.05rem" }}>{inq.subject}</strong>
               <StatusBadge status={inq.status} />
             </div>
@@ -154,7 +199,13 @@ export default function PortalInquiriesPage() {
               >
                 <p
                   className="caption"
-                  style={{ color: "var(--matcha-600)", fontWeight: 600, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}
+                  style={{
+                    color: "var(--matcha-600)",
+                    fontWeight: 600,
+                    margin: 0,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
                 >
                   Jawaban Admin
                 </p>

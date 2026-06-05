@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@/components/Icon";
+import { AdminUserMenu, fetchAdminProfile, type AdminProfile } from "@/components/AdminUserMenu";
 import { clearAdminToken, getAdminToken } from "@/lib/auth";
 
 const navItems: Array<{ href: string; label: string; icon: IconName }> = [
@@ -23,6 +24,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [profile, setProfile] = useState<AdminProfile | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const token = getAdminToken();
@@ -31,6 +34,24 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       return;
     }
     setReady(true);
+    fetchAdminProfile().then(setProfile);
+  }, [router]);
+
+  // Close mobile sidebar on route change.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  // If token is cleared (e.g. another tab logged out), kick back to login.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "insuretrack_admin_token" && !e.newValue) {
+        clearAdminToken();
+        router.replace("/admin/login");
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [router]);
 
   if (!ready) {
@@ -43,14 +64,26 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell-grid">
-      <aside className="shell-aside">
-        <div className="brand" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {sidebarOpen && (
+        <div
+          className="shell-aside-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside className={`shell-aside ${sidebarOpen ? "open" : ""}`}>
+        <div
+          className="brand"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
           <Icon name="ShieldCheck" size="md" style={{ color: "var(--ube-800)" }} />
           <span>InsureTrack Admin</span>
         </div>
         <nav>
           {navItems.map((item) => {
-            const active = pathname === item.href || (pathname?.startsWith(item.href + "/") ?? false);
+            const active =
+              pathname === item.href ||
+              (pathname?.startsWith(item.href + "/") ?? false);
             return (
               <Link
                 key={item.href}
@@ -64,19 +97,26 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <button
-          onClick={() => {
-            clearAdminToken();
-            router.replace("/admin/login");
-          }}
-          className="clay-button ghost size-small"
-          style={{ marginTop: 32, width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-        >
-          <Icon name="LogOut" size="sm" />
-          <span>Logout</span>
-        </button>
       </aside>
-      <main className="shell-main">{children}</main>
+      <div>
+        <header className="admin-topbar">
+          <div className="admin-topbar-left">
+            <button
+              type="button"
+              className="hamburger"
+              aria-label="Buka menu"
+              onClick={() => setSidebarOpen((o) => !o)}
+            >
+              ☰
+            </button>
+            <span className="brand-mobile">InsureTrack</span>
+          </div>
+          <div className="admin-topbar-right">
+            <AdminUserMenu profile={profile} />
+          </div>
+        </header>
+        <main className="shell-main">{children}</main>
+      </div>
     </div>
   );
 }

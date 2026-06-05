@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-// Admin pages are interactive client components; skip static prerendering.
+// Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
-import { AdminShell } from "@/components/AdminShell";
-import { Pagination } from "@/components/Pagination";
-import { API_BASE } from "@/lib/api";
+
+import { useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { AdminListPage } from "@/components/AdminListPage";
+import { Modal } from "@/components/Modal";
+import { Form, FormField, FormError } from "@/lib/forms";
+import { emailSchema, urlOptionalSchema, optionalString } from "@/lib/schemas/common";
+import { API_BASE, ApiError } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
 
 type Client = {
@@ -25,29 +30,39 @@ type Client = {
   updated_at: string;
 };
 
-type FormState = {
-  name: string;
-  industry: string;
-  website: string;
-  contact_person: string;
-  contact_email: string;
-  contact_phone: string;
-  sort_order: string;
-  is_active: boolean;
-  notes: string;
-};
+/**
+ * Phone: optional. Empty string → undefined. When present, must be 10–15 digits.
+ */
+const optionalPhone = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z
+    .string()
+    .transform((s) => s.replace(/[\s\-+()]/g, ""))
+    .refine((s) => /^\d{10,15}$/.test(s), { message: "Nomor telepon harus 10–15 digit" })
+    .optional(),
+);
 
-const EMPTY_FORM: FormState = {
-  name: "",
-  industry: "",
-  website: "",
-  contact_person: "",
-  contact_email: "",
-  contact_phone: "",
-  sort_order: "0",
-  is_active: true,
-  notes: "",
-};
+const clientSchema = z.object({
+  name: z.string().trim().min(1, "Nama klien wajib diisi").max(120, "Maksimal 120 karakter"),
+  industry: optionalString(80),
+  website: urlOptionalSchema,
+  contact_person: optionalString(120),
+  contact_email: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    emailSchema.optional(),
+  ),
+  contact_phone: optionalPhone,
+  sort_order: z.coerce
+    .number({ invalid_type_error: "Urutan harus angka" })
+    .int("Urutan harus bilangan bulat")
+    .min(0, "Urutan tidak boleh negatif")
+    .default(0),
+  is_active: z.boolean().default(true),
+  notes: optionalString(2000),
+  logo: z.any().optional(),
+});
+
+type ClientFormValues = z.infer<typeof clientSchema>;
 
 function logoUrl(logo_path: string): string {
   if (!logo_path) return "";
@@ -57,118 +72,114 @@ function logoUrl(logo_path: string): string {
 }
 
 export default function AdminClientsPage() {
-  const [data, setData] = useState<Client[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [saving, setSaving] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const pageSize = 12;
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
-  const load = async () => {
-    const token = getAdminToken();
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-      if (q) params.set("q", q);
-      if (status) params.set("status", status);
-      const r = await fetch(`${API_BASE}/admin/clients?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const json = await r.json();
-      setData(json.data);
-      setTotal(json.total);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Gagal load");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status]);
-
-  const onSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(1);
-    load();
-  };
+  const methods = useForm<ClientFormValues>({
+    resolver: zodResolver(clientSchema) as never,
+    defaultValues: {
+      name: "",
+      industry: "",
+      website: "",
+      contact_person: "",
+      contact_email: "",
+      contact_phone: "",
+      sort_order: 0,
+      is_active: true,
+      notes: "",
+    },
+    mode: "onBlur",
+  });
 
   const openCreate = () => {
     setEditing(null);
-    setForm(EMPTY_FORM);
-    setLogoFile(null);
+    setFormError(null);
+    setLogoPreview(null);
+    methods.reset({
+      name: "",
+      industry: "",
+      website: "",
+      contact_person: "",
+      contact_email: "",
+      contact_phone: "",
+      sort_order: 0,
+      is_active: true,
+      notes: "",
+    });
+    if (fileRef.current) fileRef.current.value = "";
     setShowForm(true);
   };
 
   const openEdit = (c: Client) => {
     setEditing(c);
-    setForm({
+    setFormError(null);
+    setLogoPreview(null);
+    methods.reset({
       name: c.name,
       industry: c.industry ?? "",
       website: c.website ?? "",
       contact_person: c.contact_person ?? "",
       contact_email: c.contact_email ?? "",
       contact_phone: c.contact_phone ?? "",
-      sort_order: String(c.sort_order),
+      sort_order: c.sort_order,
       is_active: c.is_active,
       notes: c.notes ?? "",
     });
-    setLogoFile(null);
+    if (fileRef.current) fileRef.current.value = "";
     setShowForm(true);
   };
 
   const closeForm = () => {
     setShowForm(false);
     setEditing(null);
-    setForm(EMPTY_FORM);
-    setLogoFile(null);
+    setFormError(null);
+    setLogoPreview(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (values: ClientFormValues) => {
     const token = getAdminToken();
     if (!token) return;
-    if (!form.name.trim()) {
-      alert("Nama klien wajib diisi");
-      return;
-    }
+    const logoFile = (values.logo instanceof FileList ? values.logo[0] : values.logo) as
+      | File
+      | undefined;
     if (!editing && !logoFile) {
-      alert("Logo klien wajib diupload");
+      methods.setError("logo", { message: "Logo wajib diupload" });
       return;
     }
-    setSaving(true);
+    if (logoFile && logoFile.size > 5 * 1024 * 1024) {
+      methods.setError("logo", { message: "Ukuran logo maksimal 5 MB" });
+      return;
+    }
+    if (logoFile && !["image/jpeg", "image/png", "image/webp", "image/svg+xml"].includes(logoFile.type)) {
+      methods.setError("logo", { message: "Format logo harus JPG, PNG, WebP, atau SVG" });
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
     try {
       const fd = new FormData();
-      fd.append(
-        "data",
-        JSON.stringify({
-          name: form.name.trim(),
-          industry: form.industry.trim() || null,
-          website: form.website.trim() || null,
-          contact_person: form.contact_person.trim() || null,
-          contact_email: form.contact_email.trim() || null,
-          contact_phone: form.contact_phone.trim() || null,
-          sort_order: Number(form.sort_order) || 0,
-          is_active: form.is_active,
-          notes: form.notes.trim() || null,
-        }),
-      );
+      const data = {
+        name: values.name.trim(),
+        industry: (values.industry ?? "").toString().trim() || null,
+        website: (values.website ?? "").toString().trim() || null,
+        contact_person: (values.contact_person ?? "").toString().trim() || null,
+        contact_email: (values.contact_email ?? "").toString().trim() || null,
+        contact_phone: (values.contact_phone ?? "").toString().trim() || null,
+        sort_order: Number(values.sort_order) || 0,
+        is_active: values.is_active,
+        notes: (values.notes ?? "").toString().trim() || null,
+      };
+      fd.append("data", JSON.stringify(data));
       if (logoFile) fd.append("logo", logoFile);
-      const url = editing ? `${API_BASE}/admin/clients/${editing.id}` : `${API_BASE}/admin/clients`;
+      const url = editing
+        ? `${API_BASE}/admin/clients/${editing.id}`
+        : `${API_BASE}/admin/clients`;
       const method = editing ? "PATCH" : "POST";
       const r = await fetch(url, {
         method,
@@ -177,256 +188,277 @@ export default function AdminClientsPage() {
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+        throw new ApiError(
+          r.status,
+          j?.error?.code ?? "ERR",
+          j?.error?.message ?? `HTTP ${r.status}`,
+        );
       }
       closeForm();
-      load();
+      setRefreshKey((k) => k + 1);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal simpan");
+      setFormError(e instanceof Error ? e.message : "Gagal simpan");
     } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async (c: Client) => {
-    if (!confirm(`Hapus klien "${c.name}"?`)) return;
-    const token = getAdminToken();
-    if (!token) return;
-    try {
-      const r = await fetch(`${API_BASE}/admin/clients/${c.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok && r.status !== 204) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
-      load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Gagal hapus");
+      setSubmitting(false);
     }
   };
 
   return (
-    <AdminShell>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-        <div>
-          <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
-            ✦ Marketing
-          </p>
-          <h1 className="page-title">Klien Korporat</h1>
-          <p className="page-subtitle">Logo klien yang tampil di carousel landing page.</p>
-        </div>
-        <button className="clay-button solid-ube" onClick={openCreate}>
-          + Tambah Klien
-        </button>
-      </div>
-
-      <form onSubmit={onSearch} style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-        <input
-          type="text"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari nama atau industri..."
-          className="clay-input"
-          style={{ flex: 1, minWidth: 200 }}
-        />
-        <select
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
-          className="clay-select"
-          style={{ width: 200 }}
-        >
-          <option value="">Semua status</option>
-          <option value="true">Aktif</option>
-          <option value="false">Nonaktif</option>
-        </select>
-        <button type="submit" className="clay-button solid-ube">
-          Cari
-        </button>
-      </form>
-
-      {error && (
-        <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}>
-          ⚠ {error}
-        </div>
-      )}
-      {loading && <p>Memuat...</p>}
-
-      {!loading && data.length === 0 && !showForm && (
-        <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
-          <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Belum ada klien. Klik &quot;Tambah Klien&quot; untuk menambahkan.
-          </p>
-        </div>
-      )}
-
-      {showForm && (
-        <div className="clay-card feature" style={{ marginBottom: 24 }}>
-          <h2 className="card-heading" style={{ marginBottom: 16 }}>
-            {editing ? "Edit Klien" : "Tambah Klien"}
-          </h2>
-          <form onSubmit={save}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <label className="clay-label">Nama Klien *</label>
-                <input
-                  className="clay-input"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <label className="clay-label">Industri</label>
-                <input
-                  className="clay-input"
-                  value={form.industry}
-                  onChange={(e) => setForm({ ...form, industry: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="clay-label">Website</label>
-                <input
-                  className="clay-input"
-                  type="url"
-                  value={form.website}
-                  onChange={(e) => setForm({ ...form, website: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
-              <div>
-                <label className="clay-label">Urutan Tampil</label>
-                <input
-                  className="clay-input"
-                  type="number"
-                  value={form.sort_order}
-                  onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="clay-label">Contact Person</label>
-                <input
-                  className="clay-input"
-                  value={form.contact_person}
-                  onChange={(e) => setForm({ ...form, contact_person: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="clay-label">Email Kontak</label>
-                <input
-                  className="clay-input"
-                  type="email"
-                  value={form.contact_email}
-                  onChange={(e) => setForm({ ...form, contact_email: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="clay-label">Telepon Kontak</label>
-                <input
-                  className="clay-input"
-                  value={form.contact_phone}
-                  onChange={(e) => setForm({ ...form, contact_phone: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="clay-label">Logo {!editing && "*"}</label>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/svg+xml"
-                  onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
-                  className="clay-input"
-                  style={{ padding: 8 }}
-                />
-                {editing && (
-                  <p className="caption" style={{ color: "var(--warm-silver)", marginTop: 4 }}>
-                    Biarkan kosong jika tidak ingin mengganti logo.
-                  </p>
-                )}
-              </div>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <label className="clay-label">Catatan Internal</label>
-              <textarea
-                className="clay-textarea"
-                rows={2}
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              />
-            </div>
-            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="checkbox"
-                id="active"
-                checked={form.is_active}
-                onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-              />
-              <label htmlFor="active">Aktif (tampil di landing page)</label>
-            </div>
-            <div style={{ marginTop: 20, display: "flex", gap: 8 }}>
-              <button type="submit" className="clay-button solid-ube" disabled={saving}>
-                {saving ? "Menyimpan..." : "Simpan"}
-              </button>
-              <button type="button" className="clay-button ghost" onClick={closeForm} disabled={saving}>
-                Batal
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {!loading && data.length > 0 && (
-        <div className="clay-grid cols-3">
-          {data.map((c) => (
-            <div key={c.id} className="clay-card feature" style={{ padding: 16 }}>
-              <div
-                style={{
-                  height: 100,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "var(--warm-cream)",
-                  borderRadius: 12,
-                  marginBottom: 12,
-                  padding: 8,
-                }}
-              >
+    <>
+      <AdminListPage<Client>
+        key={refreshKey}
+        title="Klien Korporat"
+        endpoint="/admin/clients"
+        searchPlaceholder="Cari nama atau industri..."
+        statusOptions={["true", "false"]}
+        headerActions={
+          <button className="clay-button solid-ube" onClick={openCreate}>
+            + Tambah Klien
+          </button>
+        }
+        emptyMessage="Belum ada klien. Klik “+Tambah Klien” untuk menambahkan."
+        columns={[
+          {
+            key: "logo_path",
+            label: "Logo",
+            width: "72px",
+            render: (c) =>
+              c.logo_path ? (
                 <img
                   src={logoUrl(c.logo_path)}
                   alt={c.name}
-                  style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    objectFit: "contain",
+                    background: "var(--warm-cream)",
+                    borderRadius: 6,
+                    padding: 4,
+                  }}
                 />
-              </div>
-              <h3 className="feature-title" style={{ marginBottom: 4 }}>{c.name}</h3>
-              {c.industry && (
-                <p className="caption" style={{ color: "var(--warm-silver)", margin: "0 0 8px 0" }}>
-                  {c.industry}
-                </p>
-              )}
-              <p className="caption" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-                Urutan: {c.sort_order} ·{" "}
-                <span className={`clay-badge ${c.is_active ? "matcha" : "muted"}`}>
-                  {c.is_active ? "Aktif" : "Nonaktif"}
-                </span>
-              </p>
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <button className="clay-button solid-ube size-small" onClick={() => openEdit(c)}>
-                  Edit
-                </button>
-                <button className="clay-button solid-pomegranate size-small" onClick={() => remove(c)}>
-                  Hapus
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+              ) : (
+                <span style={{ color: "var(--warm-silver)" }}>—</span>
+              ),
+          },
+          { key: "name", label: "Nama" },
+          {
+            key: "industry",
+            label: "Industri",
+            render: (c) => c.industry ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
+          },
+          { key: "sort_order", label: "Urutan", width: "80px" },
+          {
+            key: "is_active",
+            label: "Status",
+            width: "110px",
+            render: (c) => (
+              <span className={`clay-badge ${c.is_active ? "matcha" : "muted"}`}>
+                {c.is_active ? "Aktif" : "Nonaktif"}
+              </span>
+            ),
+          },
+        ]}
+        actions={(c) => (
+          <>
+            <button
+              className="clay-button solid-ube size-small"
+              onClick={() => openEdit(c)}
+            >
+              Edit
+            </button>
+            <button
+              className="clay-button solid-pomegranate size-small"
+              onClick={async () => {
+                if (!confirm(`Hapus klien "${c.name}"?`)) return;
+                const token = getAdminToken();
+                if (!token) return;
+                try {
+                  const r = await fetch(`${API_BASE}/admin/clients/${c.id}`, {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  if (!r.ok && r.status !== 204) {
+                    const j = await r.json().catch(() => ({}));
+                    throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+                  }
+                  setRefreshKey((k) => k + 1);
+                } catch (e) {
+                  alert(e instanceof Error ? e.message : "Gagal hapus");
+                }
+              }}
+            >
+              Hapus
+            </button>
+          </>
+        )}
+      />
 
-      <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
-    </AdminShell>
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        title={editing ? "Edit Klien" : "Tambah Klien"}
+        maxWidth={720}
+        footer={
+          <>
+            <button
+              type="button"
+              className="clay-button ghost"
+              onClick={closeForm}
+              disabled={submitting}
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              form="client-form"
+              className="clay-button solid-ube"
+              disabled={submitting}
+            >
+              {submitting ? "Menyimpan..." : "Simpan"}
+            </button>
+          </>
+        }
+      >
+        <Form methods={methods} onSubmit={onSubmit} className="clay-form-grid cols-2">
+          <FormError message={formError} />
+          <FormField label="Nama Klien" name="name" required>
+            <input
+              id="name"
+              className="clay-input"
+              autoComplete="off"
+              {...methods.register("name")}
+            />
+          </FormField>
+          <FormField label="Industri" name="industry">
+            <input
+              id="industry"
+              className="clay-input"
+              autoComplete="off"
+              {...methods.register("industry")}
+            />
+          </FormField>
+          <FormField label="Website" name="website" hint="https://...">
+            <input
+              id="website"
+              className="clay-input"
+              type="url"
+              autoComplete="off"
+              {...methods.register("website")}
+            />
+          </FormField>
+          <FormField label="Urutan Tampil" name="sort_order">
+            <input
+              id="sort_order"
+              className="clay-input"
+              type="number"
+              min={0}
+              {...methods.register("sort_order")}
+            />
+          </FormField>
+          <FormField label="Contact Person" name="contact_person">
+            <input
+              id="contact_person"
+              className="clay-input"
+              autoComplete="off"
+              {...methods.register("contact_person")}
+            />
+          </FormField>
+          <FormField label="Email Kontak" name="contact_email">
+            <input
+              id="contact_email"
+              className="clay-input"
+              type="email"
+              autoComplete="off"
+              {...methods.register("contact_email")}
+            />
+          </FormField>
+          <FormField label="Telepon Kontak" name="contact_phone" hint="10–15 digit">
+            <input
+              id="contact_phone"
+              className="clay-input"
+              type="tel"
+              autoComplete="off"
+              {...methods.register("contact_phone")}
+            />
+          </FormField>
+          <FormField
+            label={editing ? "Logo (opsional)" : "Logo"}
+            name="logo"
+            required={!editing}
+            hint={
+              editing
+                ? "Biarkan kosong jika tidak ingin mengganti logo."
+                : "JPG/PNG/WebP/SVG, max 5 MB."
+            }
+          >
+            <input
+              ref={(el) => {
+                fileRef.current = el;
+                methods.register("logo").ref(el);
+              }}
+              id="logo"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/svg+xml"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                methods.setValue("logo", f ?? null, { shouldValidate: true });
+                setLogoPreview(f ? URL.createObjectURL(f) : null);
+              }}
+              className="clay-input"
+              style={{ padding: 8 }}
+            />
+            {logoPreview && (
+              <img
+                src={logoPreview}
+                alt="Preview"
+                style={{
+                  marginTop: 8,
+                  maxHeight: 60,
+                  maxWidth: "100%",
+                  objectFit: "contain",
+                  background: "var(--warm-cream)",
+                  padding: 4,
+                  borderRadius: 6,
+                }}
+              />
+            )}
+            {editing && !logoPreview && (
+              <img
+                src={logoUrl(editing.logo_path)}
+                alt={editing.name}
+                style={{
+                  marginTop: 8,
+                  maxHeight: 60,
+                  maxWidth: "100%",
+                  objectFit: "contain",
+                  background: "var(--warm-cream)",
+                  padding: 4,
+                  borderRadius: 6,
+                }}
+              />
+            )}
+          </FormField>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <FormField label="Catatan Internal" name="notes">
+              <textarea
+                id="notes"
+                className="clay-textarea"
+                rows={2}
+                {...methods.register("notes")}
+              />
+            </FormField>
+          </div>
+          <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              id="is_active"
+              type="checkbox"
+              checked={methods.watch("is_active")}
+              onChange={(e) => methods.setValue("is_active", e.target.checked)}
+            />
+            <label htmlFor="is_active">Aktif (tampil di landing page)</label>
+          </div>
+        </Form>
+      </Modal>
+    </>
   );
 }

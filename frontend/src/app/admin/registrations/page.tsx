@@ -1,5 +1,8 @@
 "use client";
 
+// Skip static prerender — Next.js 15 + React 19 RC incompatibility.
+export const dynamic = "force-dynamic";
+
 import { AdminListPage } from "@/components/AdminListPage";
 import { StatusBadge } from "@/components/StatusBadge";
 

@@ -3,6 +3,9 @@
 # ----- Stage 1: deps -----
 FROM node:22-alpine AS deps
 WORKDIR /app
+# RHF peer-dep dengan React 19 RC (uuid-tagged) konflik di strict mode.
+# Set legacy-peer-deps via .npmrc sehingga berlaku untuk `npm ci` & `npm install`.
+COPY .npmrc ./
 COPY package.json package-lock.json* ./
 RUN npm ci
 

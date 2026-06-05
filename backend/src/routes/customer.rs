@@ -5,14 +5,14 @@
 //!   POST /api/customer/password/reset
 //!   GET  /api/customer/me                 (dashboard summary)
 //!   GET  /api/customer/policies           (own policies)
-//!   GET  /api/customer/policies/{id}
-//!   GET  /api/customer/policies/{id}/pdf
+//!   GET  /api/customer/policies/:id
+//!   GET  /api/customer/policies/:id/pdf
 //!   POST /api/customer/claims            (multipart, claim form)
 //!   GET  /api/customer/claims
-//!   GET  /api/customer/claims/{id}
+//!   GET  /api/customer/claims/:id
 //!   POST /api/customer/inquiries
 //!   GET  /api/customer/inquiries
-//!   GET  /api/customer/inquiries/{id}
+//!   GET  /api/customer/inquiries/:id
 
 use axum::{
     body::Body,
@@ -49,12 +49,12 @@ pub fn router() -> Router<AppState> {
         .route("/password/reset", post(password_reset))
         .route("/me", get(me))
         .route("/policies", get(list_policies))
-        .route("/policies/{id}", get(get_policy))
-        .route("/policies/{id}/pdf", get(download_policy_pdf))
+        .route("/policies/:id", get(get_policy))
+        .route("/policies/:id/pdf", get(download_policy_pdf))
         .route("/claims", get(list_claims).post(create_claim))
-        .route("/claims/{id}", get(get_claim))
+        .route("/claims/:id", get(get_claim))
         .route("/inquiries", get(list_inquiries).post(create_inquiry))
-        .route("/inquiries/{id}", get(get_inquiry))
+        .route("/inquiries/:id", get(get_inquiry))
 }
 
 #[derive(sqlx::FromRow)]
