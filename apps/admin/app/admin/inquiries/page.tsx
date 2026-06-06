@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { AdminShell } from "@/components/AdminShell";
-import { StatusBadge } from "@insuretrack/ui";
+import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
 import { FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
 import { getAdminToken } from "@insuretrack/api-client";
@@ -214,7 +214,13 @@ export default function AdminInquiriesPage() {
           ⚠ {error}
         </div>
       )}
-      {loading && <p>Memuat...</p>}
+      {loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <SkeletonCard rows={3} />
+          <SkeletonCard rows={3} />
+          <SkeletonCard rows={3} />
+        </div>
+      )}
 
       {!loading && data.length === 0 && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>

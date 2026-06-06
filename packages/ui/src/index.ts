@@ -5,6 +5,7 @@
 export { Icon, Icons, type IconName, type IconSize, type IconProps } from "./components/Icon";
 export { Pagination } from "./components/Pagination";
 export { SafeImage } from "./components/SafeImage";
+export { Skeleton, SkeletonText, SkeletonCard, SkeletonTable } from "./components/Skeleton";
 export { StatusBadge } from "./components/StatusBadge";
 export {
   ChartCard,

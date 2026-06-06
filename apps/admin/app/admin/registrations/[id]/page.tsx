@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AdminShell } from "@/components/AdminShell";
-import { StatusBadge } from "@insuretrack/ui";
+import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
 import { API_BASE, ApiError, getAdminToken } from "@insuretrack/api-client";
 
 type RegistrationDetail = {
@@ -204,10 +204,11 @@ export default function RegistrationDetailPage() {
       </div>
 
       {loading && (
-        <div className="clay-card feature" style={{ padding: 32, textAlign: "center" }}>
-          <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Memuat...
-          </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <SkeletonCard rows={3} />
+          <SkeletonCard rows={3} />
+          <SkeletonCard rows={2} />
+          <SkeletonCard rows={2} />
         </div>
       )}
 

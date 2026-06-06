@@ -4,7 +4,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { toast } from "sonner";
 import { Inbox, Download } from "lucide-react";
 import { AdminShell } from "@/components/AdminShell";
-import { Pagination } from "@insuretrack/ui";
+import { Pagination, SkeletonTable } from "@insuretrack/ui";
 import { API_BASE } from "@insuretrack/api-client";
 import { getAdminToken } from "@insuretrack/api-client";
 
@@ -178,7 +178,7 @@ export function AdminListPage<T extends { id: string }>({
           ⚠ {error}
         </div>
       )}
-      {loading && <p>Memuat...</p>}
+      {loading && <SkeletonTable rows={5} columns={columns.length + (showActionsCol ? 1 : 0)} />}
 
       {!loading && data.length === 0 && (
         <div

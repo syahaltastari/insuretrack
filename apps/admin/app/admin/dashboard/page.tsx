@@ -18,6 +18,8 @@ import {
   Pie,
   PieChart,
   ResponsiveContainer,
+  Skeleton,
+  SkeletonCard,
   Tooltip,
   XAxis,
   YAxis,
@@ -260,7 +262,32 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {!stats && !error && <p>Memuat...</p>}
+      {!stats && !error && (
+        <>
+          <div className="clay-grid cols-3" style={{ marginBottom: 32 }}>
+            {SWATCHES.map((s) => (
+              <div
+                key={s.key}
+                className="clay-card feature"
+                style={{ borderLeft: `6px solid ${s.color}`, padding: 24 }}
+              >
+                <Skeleton width="60%" height={12} style={{ marginBottom: 12 }} />
+                <Skeleton width="40%" height={28} />
+              </div>
+            ))}
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: 20,
+            }}
+          >
+            <SkeletonCard rows={6} style={{ minHeight: 240 }} />
+            <SkeletonCard rows={6} style={{ minHeight: 240 }} />
+          </div>
+        </>
+      )}
 
       {stats && (
         <>

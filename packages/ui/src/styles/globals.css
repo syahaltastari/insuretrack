@@ -7,6 +7,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Skeleton loading placeholders
+   ============================================================ */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.skeleton {
+  background: var(--oat-light);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+.skeleton-circle {
+  border-radius: 50%;
+}
+.skeleton-card {
+  /* Tumpang tindih dengan .clay-card.feature; pulse animation tetap
+     jalan karena di-trigger via class .skeleton pada child elements. */
+  min-height: 100px;
+}
+
 /* ----- Font (Plus Jakarta Sans sebagai substitute Roobert yang proprietary;
        Space Mono persis dengan spec) ----- */
 :root {
