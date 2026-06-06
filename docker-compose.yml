@@ -48,17 +48,35 @@ services:
       - backend_uploads:/var/uploads
     restart: unless-stopped
 
-  # Frontend Next.js. Build context = monorepo root (transitional, sampai
-  # Phase 6 di-split jadi apps/portal + apps/admin).
-  frontend:
+  # Portal Next.js (customer surface). Build context = monorepo root
+  # supaya pnpm resolve workspace deps (packages/ui, packages/forms,
+  # packages/api-client).
+  portal:
     build:
       context: .
-      dockerfile: frontend/Dockerfile
+      dockerfile: apps/portal/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
-    container_name: insurance_frontend
+    container_name: insurance_portal
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${PORTAL_PORT:-3000}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Admin Next.js (backoffice surface). Build context = monorepo root,
+  # sama pattern dengan portal. Port host 3001, container 3001.
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
+    container_name: insurance_admin
+    ports:
+      - "${ADMIN_PORT:-3001}:3001"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
     depends_on:

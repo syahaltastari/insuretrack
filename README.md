@@ -26,10 +26,10 @@ End-to-end online policy registration & issuance system. Auto-accept insurance p
 
 ```bash
 # 1. Copy env templates
-cp apps/backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env.local
+cp apps/backend/.env.example apps/backend/.env
+cp .env.example .env
 
-# 2. Build & start all three services
+# 2. Build & start all four services (db + backend + portal + admin)
 docker compose up -d --build
 
 # 3. Verify
@@ -37,9 +37,9 @@ curl http://localhost:8080/health
 # → {"status":"ok","service":"insuretrack-backend","version":"0.1.0"}
 
 # Open:
-# → http://localhost:3000            (public landing + registration)
-# → http://localhost:3000/admin      (admin login: admin / admin123)
+# → http://localhost:3000            (portal: public landing + registration)
 # → http://localhost:3000/portal     (customer login / activation)
+# → http://localhost:3001/admin      (admin login: admin / admin123)
 ```
 
 On first start, Postgres automatically applies the four migrations in `apps/backend/migrations/` (alphabetical order):
