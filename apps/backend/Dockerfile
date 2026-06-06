@@ -2,9 +2,11 @@
 
 # ----- Stage 1: build -----
 # edition2024 stabil di Rust 1.85. Beberapa dependency (time 0.3.47,
-# idna_adapter 1.2.2, dll.) membutuhkan rustc ≥ 1.88. Kita pakai 1.90
-# untuk margin dan future-proof.
-FROM rust:1.90-slim-bookworm AS builder
+# idna_adapter 1.2.2, dll.) membutuhkan rustc ≥ 1.88. AWS SDK crates
+# (aws-config, aws-sdk-s3, aws-smithy-*) versi terbaru di-resolve dari
+# crates.io butuh rustc ≥ 1.91.1. Kita pin ke 1.92 untuk margin — setiap
+# kali `cargo update` menarik AWS SDK lebih baru, naikin tag ini.
+FROM rust:1.92-slim-bookworm AS builder
 
 WORKDIR /app
 

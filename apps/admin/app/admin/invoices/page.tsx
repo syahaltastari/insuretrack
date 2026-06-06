@@ -15,6 +15,7 @@ type Row = {
   due_date: string;
   status: string;
   paid_at: string | null;
+  pdf_path: string | null;
   created_at: string;
 };
 
@@ -24,6 +25,7 @@ export default function Page() {
       title="Invoice"
       endpoint="/admin/invoices"
       statusOptions={["UNPAID", "PAID", "EXPIRED", "CANCELLED"]}
+      pdfDownloadPath={(r) => (r.pdf_path ? `/admin/invoices/${r.id}/pdf` : null)}
       columns={[
         { key: "invoice_no", label: "No. Invoice" },
         { key: "registration_no", label: "No. Reg", hideOnMobile: true },

@@ -132,6 +132,9 @@ export default function PortalDashboard() {
             <Link href="/portal/policies" className="clay-button solid-ube">
               Lihat Polis →
             </Link>
+            <Link href="/portal/invoices" className="clay-button solid-ube">
+              Lihat Invoice →
+            </Link>
             <Link href="/portal/claims/new" className="clay-button solid-slushie">
               Ajukan Klaim →
             </Link>

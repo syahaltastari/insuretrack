@@ -87,6 +87,7 @@ pub fn router() -> Router<AppState> {
         .route("/registrations/:id", get(get_registration))
         .route("/invoices", get(list_invoices))
         .route("/invoices/:id", get(get_invoice))
+        .route("/invoices/:id/pdf", get(download_invoice_pdf))
         .route("/policies", get(list_policies))
         .route("/policies/:id", get(get_policy))
         .route("/policies/:id/pdf", get(download_policy_pdf))
@@ -526,6 +527,7 @@ struct InvoiceRow {
     due_date: chrono::NaiveDate,
     status: String,
     paid_at: Option<chrono::DateTime<chrono::Utc>>,
+    pdf_path: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -547,7 +549,7 @@ async fn list_invoices(
         let rows: Vec<InvoiceRow> = sqlx::query_as(
             r#"
             SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
-                   i.premium_amount, i.due_date, i.status, i.paid_at, i.created_at
+                   i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
               FROM invoices i
               JOIN registrations r ON r.id = i.registration_id
               JOIN customers c     ON c.id = r.customer_id
@@ -616,7 +618,7 @@ async fn list_invoices(
     let data: Vec<InvoiceRow> = sqlx::query_as(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
-               i.premium_amount, i.due_date, i.status, i.paid_at, i.created_at
+               i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
           JOIN customers c     ON c.id = r.customer_id
@@ -652,7 +654,7 @@ async fn get_invoice(
     let row: Option<InvoiceRow> = sqlx::query_as(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
-               i.premium_amount, i.due_date, i.status, i.paid_at, i.created_at
+               i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
           JOIN customers c     ON c.id = r.customer_id
@@ -664,6 +666,40 @@ async fn get_invoice(
     .await?;
 
     row.map(Json).ok_or(AppError::NotFound("invoice".into()))
+}
+
+async fn download_invoice_pdf(
+    State(state): State<AppState>,
+    _: RequireAdmin,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let row: Option<(Option<String>, String)> =
+        sqlx::query_as("SELECT pdf_path, invoice_no FROM invoices WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let (pdf_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
+    let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("invoice pdf".into()))?;
+
+    let bytes = state
+        .storage
+        .read_bytes(&pdf_path)
+        .await?;
+    let body = Body::from(bytes);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/pdf"),
+    );
+    let disp = format!("attachment; filename=\"{invoice_no}.pdf\"");
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&disp).map_err(|e| {
+            AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}"))
+        })?,
+    );
+    Ok((StatusCode::OK, headers, body).into_response())
 }
 
 #[derive(Serialize, sqlx::FromRow)]

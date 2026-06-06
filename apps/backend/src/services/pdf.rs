@@ -1,9 +1,14 @@
-//! Render e-Policy PDF (spec FS-08).
+//! Render PDF: e-Policy (spec FS-08) dan Invoice.
 //!
-//! Sections per spec:
+//! Sections untuk e-Policy per spec:
 //!   - Policy Information: policy_no, registration_no, effective_date, expiry_date
 //!   - Customer Information: NIK, name, birth date, address
 //!   - Coverage Information: product, sum assured, premium
+//!
+//! Sections untuk Invoice:
+//!   - Invoice Information: invoice_no, registration_no, status, created_at
+//!   - Bill To: NIK, name, birth date, address
+//!   - Coverage & Payment: product, sum assured, premium, due_date
 
 use chrono::NaiveDate;
 use printpdf::{BuiltinFont, Mm, PdfDocument};
@@ -147,4 +152,121 @@ fn draw_kv(
     let line = format!("{key:<20}: {value}");
     layer.use_text(line, 10.0_f32, Mm(20.0_f32), Mm(*y), reg);
     *y -= 6.0;
+}
+
+// ============================================================================
+// Invoice PDF
+// ============================================================================
+
+pub struct InvoicePdfInput<'a> {
+    pub invoice_no: &'a str,
+    pub registration_no: &'a str,
+    pub customer_nik: &'a str,
+    pub customer_name: &'a str,
+    pub customer_birth_date: NaiveDate,
+    pub customer_address: &'a str,
+    pub product_name: &'a str,
+    pub sum_assured: Decimal,
+    pub premium: Decimal,
+    pub due_date: NaiveDate,
+    pub status: &'a str,
+    pub created_at: NaiveDate,
+}
+
+pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> {
+    let (doc, page1, layer1) =
+        PdfDocument::new("Invoice", Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
+    let layer = doc.get_page(page1).get_layer(layer1);
+
+    let bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("font bold: {e}")))?;
+    let reg = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("font reg: {e}")))?;
+
+    let mut y: f32 = 280.0;
+    layer.use_text("INVOICE", 22.0_f32, Mm(20.0_f32), Mm(y), &bold);
+    y -= 12.0;
+    layer.use_text(
+        "InsureTrack — Tagihan Premi Asuransi",
+        10.0_f32,
+        Mm(20.0_f32),
+        Mm(y),
+        &reg,
+    );
+    y -= 14.0;
+
+    draw_section(&layer, &bold, &reg, "Invoice Information", &mut y);
+    draw_kv(&layer, &reg, "Invoice No", input.invoice_no, &mut y);
+    draw_kv(
+        &layer,
+        &reg,
+        "Registration No",
+        input.registration_no,
+        &mut y,
+    );
+    draw_kv(&layer, &reg, "Status", input.status, &mut y);
+    draw_kv(
+        &layer,
+        &reg,
+        "Issued At",
+        &input.created_at.to_string(),
+        &mut y,
+    );
+    draw_kv(
+        &layer,
+        &reg,
+        "Due Date",
+        &input.due_date.to_string(),
+        &mut y,
+    );
+    y -= 6.0;
+
+    draw_section(&layer, &bold, &reg, "Bill To", &mut y);
+    draw_kv(&layer, &reg, "NIK", input.customer_nik, &mut y);
+    draw_kv(&layer, &reg, "Name", input.customer_name, &mut y);
+    draw_kv(
+        &layer,
+        &reg,
+        "Birth Date",
+        &input.customer_birth_date.to_string(),
+        &mut y,
+    );
+    draw_kv(&layer, &reg, "Address", input.customer_address, &mut y);
+    y -= 6.0;
+
+    draw_section(&layer, &bold, &reg, "Coverage & Payment", &mut y);
+    draw_kv(&layer, &reg, "Product", input.product_name, &mut y);
+    draw_kv(
+        &layer,
+        &reg,
+        "Sum Assured",
+        &format!("Rp {}", input.sum_assured),
+        &mut y,
+    );
+    draw_kv(
+        &layer,
+        &reg,
+        "Premium",
+        &format!("Rp {}", input.premium),
+        &mut y,
+    );
+
+    y -= 14.0;
+    layer.use_text(
+        "Mohon selesaikan pembayaran sebelum Due Date untuk mengaktifkan polis Anda.",
+        8.0_f32,
+        Mm(20.0_f32),
+        Mm(y),
+        &reg,
+    );
+
+    let mut buf = BufWriter::new(Vec::<u8>::new());
+    doc.save(&mut buf)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("pdf save: {e}")))?;
+    let bytes = buf
+        .into_inner()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("pdf buffer: {e}")))?;
+    Ok(bytes)
 }

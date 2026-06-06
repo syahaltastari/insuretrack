@@ -38,10 +38,11 @@ use crate::{
     },
     error::{AppError, AppResult},
     repo::{Page, PageQuery},
-    routes::public::{calculate_premium, validate_registration, RegistrationData},
+    routes::public::{calculate_premium, product_name_from_code, validate_registration, RegistrationData},
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
+        pdf::{render_invoice as render_invoice_pdf, InvoicePdfInput},
     },
     state::AppState,
 };
@@ -60,6 +61,9 @@ pub fn router() -> Router<AppState> {
         .route("/policies", get(list_policies))
         .route("/policies/:id", get(get_policy))
         .route("/policies/:id/pdf", get(download_policy_pdf))
+        .route("/invoices", get(list_invoices))
+        .route("/invoices/:id", get(get_invoice))
+        .route("/invoices/:id/pdf", get(download_invoice_pdf))
         .route("/claims", get(list_claims).post(create_claim))
         .route("/claims/:id", get(get_claim))
         .route("/inquiries", get(list_inquiries).post(create_inquiry))
@@ -1037,21 +1041,53 @@ async fn submit_insurance_application(
     .await?;
 
     let invoice_no = next_id(&mut tx, EntityType::Invoice).await?;
-    sqlx::query(
+    let invoice_id: (Uuid,) = sqlx::query_as(
         r#"
         INSERT INTO invoices
           (invoice_no, registration_id, premium_amount, due_date, status)
         VALUES ($1, $2, $3, $4, 'UNPAID')
+        RETURNING id
         "#,
     )
     .bind(&invoice_no)
     .bind(reg_id.0)
     .bind(premium_amount)
     .bind(due_date)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
+    let invoice_id = invoice_id.0;
 
     tx.commit().await?;
+
+    // Render invoice PDF + save ke storage. UPDATE pdf_path di luar tx
+    // (mirror pattern payment_webhook di public.rs:292 — agar policy/invoice
+    // row tetap exist kalau storage atau email gagal).
+    let product_name = product_name_from_code(&data.product);
+    let pdf_bytes = render_invoice_pdf(&InvoicePdfInput {
+        invoice_no: &invoice_no,
+        registration_no: &registration_no,
+        customer_nik: &data.nik,
+        customer_name: &data.full_name,
+        customer_birth_date: data.birth_date,
+        customer_address: &data.address,
+        product_name,
+        sum_assured: data.sum_assured,
+        premium: premium_amount,
+        due_date,
+        status: "UNPAID",
+        created_at: Utc::now().date_naive(),
+    })?;
+    let pdf_ref = state
+        .storage
+        .save_invoice_pdf(invoice_id, &pdf_bytes)
+        .await?;
+    let pdf_path = pdf_ref.key;
+
+    sqlx::query("UPDATE invoices SET pdf_path = $1 WHERE id = $2")
+        .bind(&pdf_path)
+        .bind(invoice_id)
+        .execute(&state.pool)
+        .await?;
 
     let _ = send_email(
         &state.pool,
@@ -1081,12 +1117,12 @@ async fn submit_insurance_application(
             recipient: &customer_email,
             subject: "Invoice Notification",
             body: &format!(
-                "Invoice {}: premi Rp {}, jatuh tempo {}. Bayar via portal payment gateway.",
+                "Invoice {}: premi Rp {}, jatuh tempo {}. Bayar via portal payment gateway. Invoice PDF terlampir di email ini.",
                 invoice_no, premium_amount, due_date
             ),
             related_entity_type: Some("invoice"),
-            related_entity_id: None,
-            attachment_path: None,
+            related_entity_id: Some(invoice_id),
+            attachment_path: Some(pdf_path.clone()),
         },
     )
     .await?;
@@ -1101,10 +1137,28 @@ async fn submit_insurance_application(
             metadata: Some(serde_json::json!({
                 "registration_no": registration_no,
                 "invoice_no": invoice_no,
+                "invoice_id": invoice_id.to_string(),
                 "product": data.product,
                 "sum_assured": data.sum_assured.to_string(),
                 "premium": premium_amount.to_string(),
                 "via": "customer_portal",
+            })),
+            ip_address: None,
+        },
+    )
+    .await;
+
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: "system",
+            action: "invoice_generated",
+            entity_type: "invoice",
+            entity_id: Some(invoice_id),
+            metadata: Some(serde_json::json!({
+                "invoice_no": invoice_no,
+                "registration_no": registration_no,
+                "pdf_path": pdf_path,
             })),
             ip_address: None,
         },
@@ -1116,4 +1170,144 @@ async fn submit_insurance_application(
         "invoice_no": invoice_no,
         "status": "PENDING",
     })))
+}
+
+// ---- /invoices (customer-owned) ----
+//
+// Customer dapat melihat daftar invoice miliknya dan re-download PDF.
+// Ownership check via JOIN invoices -> registrations -> customers.customer_id.
+
+#[derive(Serialize, sqlx::FromRow)]
+struct InvoiceRow {
+    id: Uuid,
+    invoice_no: String,
+    registration_no: String,
+    premium_amount: Decimal,
+    due_date: chrono::NaiveDate,
+    status: String,
+    paid_at: Option<chrono::DateTime<chrono::Utc>>,
+    pdf_path: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn list_invoices(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+    Query(q): Query<PageQuery>,
+) -> AppResult<Json<Page<InvoiceRow>>> {
+    let customer_id = customer_id_from(&claims)?;
+    let page = q.page();
+    let page_size = q.page_size();
+    let offset = q.offset();
+    let limit = q.limit();
+    let status = q.status.clone().unwrap_or_default();
+
+    let total: (i64,) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*)
+          FROM invoices i
+          JOIN registrations r ON r.id = i.registration_id
+         WHERE r.customer_id = $1
+           AND ($2 = '' OR i.status = $2)
+        "#,
+    )
+    .bind(customer_id)
+    .bind(&status)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let data: Vec<InvoiceRow> = sqlx::query_as(
+        r#"
+        SELECT i.id, i.invoice_no, r.registration_no,
+               i.premium_amount, i.due_date, i.status, i.paid_at,
+               i.pdf_path, i.created_at
+          FROM invoices i
+          JOIN registrations r ON r.id = i.registration_id
+         WHERE r.customer_id = $1
+           AND ($2 = '' OR i.status = $2)
+         ORDER BY i.due_date ASC, i.created_at DESC
+         LIMIT $3 OFFSET $4
+        "#,
+    )
+    .bind(customer_id)
+    .bind(&status)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(Page {
+        data,
+        page,
+        page_size,
+        total: total.0,
+    }))
+}
+
+async fn get_invoice(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+    Path(id): Path<Uuid>,
+) -> AppResult<Json<InvoiceRow>> {
+    let customer_id = customer_id_from(&claims)?;
+    let row: Option<InvoiceRow> = sqlx::query_as(
+        r#"
+        SELECT i.id, i.invoice_no, r.registration_no,
+               i.premium_amount, i.due_date, i.status, i.paid_at,
+               i.pdf_path, i.created_at
+          FROM invoices i
+          JOIN registrations r ON r.id = i.registration_id
+         WHERE r.customer_id = $1 AND i.id = $2
+        "#,
+    )
+    .bind(customer_id)
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    row.map(Json).ok_or(AppError::NotFound("invoice".into()))
+}
+
+async fn download_invoice_pdf(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let customer_id = customer_id_from(&claims)?;
+    let row: Option<(Option<String>, String)> = sqlx::query_as(
+        r#"
+        SELECT i.pdf_path, i.invoice_no
+          FROM invoices i
+          JOIN registrations r ON r.id = i.registration_id
+         WHERE r.customer_id = $1 AND i.id = $2
+        "#,
+    )
+    .bind(customer_id)
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (pdf_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
+    let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("invoice pdf".into()))?;
+
+    let bytes = state
+        .storage
+        .read_bytes(&pdf_path)
+        .await?;
+    let body = Body::from(bytes);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/pdf"),
+    );
+    // Gunakan filename dinamis `{invoice_no}.pdf` — lebih mudah ditemukan
+    // di folder Download customer dibanding UUID.
+    let disp = format!("attachment; filename=\"{invoice_no}.pdf\"");
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&disp).map_err(|e| {
+            AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}"))
+        })?,
+    );
+    Ok((StatusCode::OK, headers, body).into_response())
 }

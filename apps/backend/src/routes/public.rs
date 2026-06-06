@@ -436,7 +436,9 @@ pub fn calculate_premium(product: &str, sum_assured: Decimal, coverage_term: i32
     (sum_assured * rate * years).round_dp(2)
 }
 
-fn product_name_from_code(code: &str) -> &str {
+pub fn product_name_from_code(code: &str) -> &str {
+    // pub supaya customer.rs::submit_insurance_application bisa lookup
+    // product name untuk InvoicePdfInput.
     match code {
         "LIFE" => "Life Insurance",
         "PERSONAL_ACCIDENT" => "Personal Accident Insurance",

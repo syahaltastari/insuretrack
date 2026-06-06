@@ -1,7 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
 // Pagination — pakai clay-button + ghost variant.
 export function Pagination({
   page,
