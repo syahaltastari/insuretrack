@@ -334,48 +334,11 @@ async fn payment_webhook(
     )
     .await?;
 
-    // Issue activation token (sent via PORTAL_ACTIVATION email).
-    let activation_token = state.tokens.issue(
-        &customer_id_from_registration(&state, registration_id).await?.to_string(),
-        crate::auth::Role::Customer,
-        Some("activation".to_string()),
-        60 * 60 * 24, // 24 jam
-    )?;
-    let activation_url = format!(
-        "{}/portal/activate?token={}",
-        state.config.app_base_url, activation_token
-    );
-    send_email(
-        &state.pool,
-        &*state.storage,
-        &state.resend,
-        Email {
-            email_type: EmailType::PortalActivation,
-            recipient: &email,
-            subject: "Activate your Customer Portal",
-            body: &format!(
-                "Halo {}, polis {} telah aktif. Aktivasi portal Anda: {}",
-                full_name, policy_no, activation_url
-            ),
-            related_entity_type: Some("customer"),
-            related_entity_id: None,
-            attachment_path: None,
-        },
-    )
-    .await?;
+    // Activation email sudah dikirim saat customer registrasi akun
+    // (POST /api/public/customers), bukan di sini. Jadi tidak kirim
+    // ulang saat payment webhook fire. Lihat register_customer untuk
+    // activation flow.
 
-    audit_write(
-        &state.pool,
-        AuditEntry {
-            actor: "payment_gateway",
-            action: "payment_received",
-            entity_type: "invoice",
-            entity_id: Some(invoice_id),
-            metadata: Some(json!({ "invoice_no": body.invoice_no })),
-            ip_address: None,
-        },
-    )
-    .await?;
     audit_write(
         &state.pool,
         AuditEntry {
