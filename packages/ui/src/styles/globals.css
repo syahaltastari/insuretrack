@@ -650,6 +650,15 @@ a:hover {
   background: var(--pure-white);
   border-right: 1px solid var(--oat-border);
   padding: 24px 20px;
+  /* Sticky: sidebar tetap di tempat saat main content di-scroll.
+     align-self: start override grid stretch default agar aside tidak
+     stretch ke tinggi main (yang akan menggagalkan sticky). */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 .shell-aside .brand {
   font-size: 1.25rem;
