@@ -34,10 +34,11 @@ The `db`, `backend`, `portal`, and `admin` services are declared in `docker-comp
 The only runnable artifact today is the database. Backend/frontend commands will be added when those services land.
 
 ```bash
-# Start the database (creates volume on first run, auto-loads db/init.sql)
+# Start the database (creates volume on first run; sqlx::migrate! applies
+# apps/backend/migrations/*.sql at backend startup)
 docker compose up -d db
 
-# Tail logs (e.g. to watch init.sql apply)
+# Tail logs (e.g. to watch migrations apply)
 docker compose logs -f db
 
 # Stop, preserving the pgdata volume
@@ -78,7 +79,10 @@ Backend services per the spec (to be built in Fase 2): Registration, Invoicing, 
 
 ## Data Model (PostgreSQL)
 
-Schema is the source of truth in `db/init.sql`. Lifecycle flow:
+Schema is the source of truth in `apps/backend/migrations/` (7 incremental
+SQL files: 0001_initial, 0002_id_sequences, 0003_constraints, 0004_seed,
+0005_clients_testimonials, 0006_normalize_seed_paths, 0007_admin_profile).
+Applied at backend startup via `sqlx::migrate!`. Lifecycle flow:
 
 ```
 customers ─┬─→ registrations ─┬─→ invoices ─(paid via webhook)─→ policies ─┬─→ claims ─→ claim_documents
@@ -91,20 +95,20 @@ admin_users (separate; not linked to customers)                            │
 audit_logs (actor/action/entity/metadata/ip; writes from all services)    │
 ```
 
-Key design points visible in `db/init.sql`:
-- Every table uses `UUID PRIMARY KEY DEFAULT uuid_generate_v4()`; the `uuid-ossp` extension is enabled at the top of the script.
+Key design points visible in `apps/backend/migrations/`:
+- Every table uses `UUID PRIMARY KEY DEFAULT uuid_generate_v4()`; the `uuid-ossp` extension is enabled in `0001_initial.sql`.
 - `customers` carry the unique `nik` (16-char Indonesian national ID) and an `email` (also unique); the password hash and `portal_status` (`PENDING|ACTIVE`) are nullable until portal access is provisioned.
 - Reference actions are deliberately mixed: `registrations` cascade from `customers`; `policies` uses `RESTRICT` against `registrations` (you must not delete a registration that has a policy); `inquiries.policy_id` uses `SET NULL` so the inquiry survives policy deletion.
 - `audit_logs.metadata` is `JSONB` — keep structured data in there, not in adjacent string columns.
 - `email_logs` and `audit_logs` are append-only by convention; no UPDATE statements should target them.
-- A single seed `admin_users` row (`username = 'admin'`) is inserted at the end of `init.sql` for early testing — its bcrypt hash is a placeholder, regenerate before any real use.
+- A single seed `admin_users` row (`username = 'admin'`) is inserted in `0004_seed.sql` for early testing — its argon2id hash is a placeholder, regenerate before any real use.
 - Identifier formats (`registration_no`, `invoice_no`, `policy_no`, `claim_no`, `inquiry_no`) and the status state machines are defined in §9 and §10 of the spec PDF — check there before inventing a new prefix or transition.
 
 ## Conventions Specific to This Repo
 
-- SQL comments in `db/init.sql` and labels in `docker-compose.yml` are written in **Bahasa Indonesia**; spec PDF and code identifiers are in English. Match the file's existing language when adding comments.
-- Schema changes go in `db/init.sql` as additive statements. Because the script is mounted at `/docker-entrypoint-initdb.d/`, it only runs on first volume creation — to re-apply after edits: `docker compose down -v && docker compose up -d db`.
-- Hardcoded credentials in `docker-compose.yml` are placeholders for local dev only; real deployments must override via env or secrets (see spec §12). `JWT_SECRET` in compose is a dev-only literal — replace per environment and add `PAYMENT_WEBHOOK_SECRET` (currently missing) before Fase 2.
+- SQL comments in `apps/backend/migrations/*.sql` and labels in `docker-compose.yml` are written in **Bahasa Indonesia**; spec PDF and code identifiers are in English. Match the file's existing language when adding comments.
+- Schema changes go in `apps/backend/migrations/` as a new numbered file (e.g. `0008_<feature>.sql`). sqlx::migrate! applies them in order at backend startup; never edit a migration that has been deployed.
+- Hardcoded credentials in `docker-compose.yml` are placeholders for local dev only; real deployments must override via env or secrets (see spec §12). `JWT_SECRET` in compose is a dev-only literal — replace per environment.
 
 ## Spec Quick Reference
 
