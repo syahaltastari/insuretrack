@@ -24,10 +24,10 @@ Full requirements live in **`Technical Specification Document Digital Insurance 
 The repository is in **Phase 1** (database only). Per the `docker-compose.yml` comments and `profiles: ["skip_for_now"]` flags:
 
 - **Fase 1 ✅ (current):** PostgreSQL with schema + seed.
-- **Fase 2 (next):** Rust backend at `./apps/backend` — service stubs not yet present.
-- **Fase 3:** Next.js frontend at `./frontend` — service stubs not yet present.
+- **Fase 2 ✅:** Rust backend at `./apps/backend` — implemented (port 8080).
+- **Fase 3 ✅:** Next.js surfaces at `./apps/portal` (port 3000) + `./apps/admin` (port 3001) — implemented.
 
-The `backend` and `frontend` services are declared in `docker-compose.yml` but disabled behind the `skip_for_now` profile so they don't fail to build before their source trees exist. When implementing them, drop the `profiles` line (or run `docker compose --profile skip_for_now up`).
+The `db`, `backend`, `portal`, and `admin` services are declared in `docker-compose.yml`. Run `docker compose up -d` to start all four.
 
 ## Development Commands
 
@@ -178,7 +178,7 @@ Every entry below MUST produce a row in `audit_logs` (`actor`, `action`, `entity
 
 ## Design System (frontend)
 
-Visual system inspired by Clay.com — see `DESIGN.md` for the full spec. Implemented in `frontend/src/app/globals.css` + `frontend/src/app/layout.tsx`. All UI must use these tokens/classes; do not introduce ad-hoc inline styles for color, radius, or shadow.
+Visual system inspired by Clay.com — see `DESIGN.md` for the full spec. Implemented in `packages/ui/src/styles/globals.css` (di-import via `@insuretrack/ui/styles/globals.css` di layout masing-masing app). All UI must use these tokens/classes; do not introduce ad-hoc inline styles for color, radius, or shadow.
 
 ### Fonts
 - **Body/UI:** Plus Jakarta Sans (substitute for proprietary Roobert; both geometric with rich OpenType features)

@@ -224,7 +224,7 @@ docker compose exec -T backend ls -la /var/uploads/policies/ 2>/dev/null || echo
 │   ├── api-client/        # @insuretrack/api-client
 │   ├── forms/             # @insuretrack/forms (RHF + zod)
 │   └── ui/                # @insuretrack/ui (design system + globals.css)
-├── frontend/              # transitional: source for apps/{portal,admin}
+├── apps/{portal,admin}    # (sebelumnya frontend/ di Phase 9 dihapus)
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── page.tsx + register/                  (public: FS-01, FS-02)
@@ -275,8 +275,8 @@ npm run dev    # http://localhost:3000
 
 | Spec | Implemented in |
 |---|---|
-| FS-01 Landing page | `frontend/src/app/page.tsx` |
-| FS-02 Customer Registration | `frontend/src/app/register/page.tsx`, `apps/backend/src/routes/public.rs::create_registration` |
+| FS-01 Landing page | `apps/portal/app/page.tsx` |
+| FS-02 Customer Registration | `apps/portal/app/register/page.tsx`, `apps/backend/src/routes/public.rs::create_registration` |
 | FS-03 Registration number gen | `apps/backend/src/domain/identifier.rs` |
 | FS-04 Invoice generation | `apps/backend/src/routes/public.rs::create_registration` |
 | FS-05 Email notifications (8 types) | `apps/backend/src/services/email.rs`, triggered from public/admin/customer routes |
@@ -284,15 +284,15 @@ npm run dev    # http://localhost:3000
 | FS-07 Policy Issuance | `apps/backend/src/routes/public.rs::payment_webhook` (pipeline) |
 | FS-08 e-Policy PDF | `apps/backend/src/services/pdf.rs` + `services/storage.rs::save_policy_pdf` |
 | FS-09 Admin auth | `apps/backend/src/routes/admin.rs::login` |
-| FS-10 Dashboard | `apps/backend/src/routes/admin.rs::dashboard_stats`, `frontend/src/app/admin/dashboard/page.tsx` |
-| FS-11..13 Reg/Invoice/Policy mgmt | `apps/backend/src/routes/admin.rs::list_*` + `frontend/src/app/admin/{registrations,invoices,policies}/page.tsx` |
-| FS-14 Email Log | `apps/backend/src/routes/admin.rs::list_email_logs`, `frontend/src/app/admin/email-logs/page.tsx` |
-| FS-15 Audit Trail | `apps/backend/src/services/audit.rs` (called from all state-changing operations), `frontend/src/app/admin/audit-logs/page.tsx` |
-| FS-16 Customer Portal Auth | `apps/backend/src/routes/customer.rs::{activate,login}`, `frontend/src/app/portal/{login,activate}/page.tsx` |
-| FS-17 Portal Dashboard | `apps/backend/src/routes/customer.rs::me`, `frontend/src/app/portal/dashboard/page.tsx` |
-| FS-18 Policy Viewing | `apps/backend/src/routes/customer.rs::{list_policies,download_policy_pdf}`, `frontend/src/app/portal/policies/page.tsx` |
-| FS-19 Claims Submission | `apps/backend/src/routes/customer.rs::create_claim`, `frontend/src/app/portal/claims/{page,new/page}.tsx` |
-| FS-20 Policy Inquiries | `apps/backend/src/routes/customer.rs::create_inquiry`, `frontend/src/app/portal/inquiries/page.tsx` |
+| FS-10 Dashboard | `apps/backend/src/routes/admin.rs::dashboard_stats`, `apps/admin/app/admin/dashboard/page.tsx` |
+| FS-11..13 Reg/Invoice/Policy mgmt | `apps/backend/src/routes/admin.rs::list_*` + `apps/admin/app/admin/{registrations,invoices,policies}/page.tsx` |
+| FS-14 Email Log | `apps/backend/src/routes/admin.rs::list_email_logs`, `apps/admin/app/admin/email-logs/page.tsx` |
+| FS-15 Audit Trail | `apps/backend/src/services/audit.rs` (called from all state-changing operations), `apps/admin/app/admin/audit-logs/page.tsx` |
+| FS-16 Customer Portal Auth | `apps/backend/src/routes/customer.rs::{activate,login}`, `apps/portal/app/portal/{login,activate}/page.tsx` |
+| FS-17 Portal Dashboard | `apps/backend/src/routes/customer.rs::me`, `apps/portal/app/portal/dashboard/page.tsx` |
+| FS-18 Policy Viewing | `apps/backend/src/routes/customer.rs::{list_policies,download_policy_pdf}`, `apps/portal/app/portal/policies/page.tsx` |
+| FS-19 Claims Submission | `apps/backend/src/routes/customer.rs::create_claim`, `apps/portal/app/portal/claims/{page,new/page}.tsx` |
+| FS-20 Policy Inquiries | `apps/backend/src/routes/customer.rs::create_inquiry`, `apps/portal/app/portal/inquiries/page.tsx` |
 
 ## Status (per milestone)
 

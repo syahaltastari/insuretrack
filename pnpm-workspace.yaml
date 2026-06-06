@@ -2,4 +2,3 @@ packages:
   - "apps/*"
   - "packages/*"
   - "!apps/backend"  # Rust workspace, bukan pnpm
-  - "frontend"  # transitional: replaced by apps/portal + apps/admin in Phase 3-4
