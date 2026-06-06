@@ -20,6 +20,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
+    auth::{hash_password, Role, TokenService},
     domain::identifier::{next_id, EntityType},
     dto::product_catalog,
     error::{AppError, AppResult},
@@ -36,6 +37,7 @@ use tokio::fs;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/products", get(list_products))
+        .route("/customers", post(register_customer))
         .route("/registrations", post(create_registration))
         .route("/registrations/:reg_no", get(get_registration))
         .route("/payment/webhook", post(payment_webhook))
@@ -890,4 +892,133 @@ async fn serve_upload(
         HeaderValue::from_static("public, max-age=3600"),
     );
     Ok(resp)
+}
+
+// ---- POST /customers (account creation only, no insurance yet) ----
+
+#[derive(Debug, Deserialize)]
+pub struct RegisterCustomerRequest {
+    pub email: String,
+    pub password: String,
+    pub full_name: String,
+    pub mobile_number: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RegisterCustomerResponse {
+    pub customer_id: Uuid,
+    pub email: String,
+    /// One-time activation link. Customer sets password via POST
+    /// /api/customer/activate. Link expires in 24h.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activation_url: Option<String>,
+}
+
+async fn register_customer(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterCustomerRequest>,
+) -> AppResult<Json<RegisterCustomerResponse>> {
+    // Validate
+    let email = req.email.trim().to_lowercase();
+    if !email.contains('@') {
+        return Err(AppError::Validation("email tidak valid".into()));
+    }
+    if req.password.len() < 8 {
+        return Err(AppError::Validation("password minimal 8 karakter".into()));
+    }
+    if req.full_name.trim().is_empty() {
+        return Err(AppError::Validation("nama wajib diisi".into()));
+    }
+    let mobile_clean: String = req.mobile_number.chars().filter(|c| c.is_ascii_digit() || *c == '+').collect();
+    if mobile_clean.len() < 10 || mobile_clean.len() > 15 {
+        return Err(AppError::Validation("nomor HP tidak valid (10-15 digit)".into()));
+    }
+
+    // Check email uniqueness
+    let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM customers WHERE email = $1")
+        .bind(&email)
+        .fetch_optional(&state.pool)
+        .await?;
+    if exists.is_some() {
+        return Err(AppError::Conflict("email sudah terdaftar".into()));
+    }
+
+    // Create customer (PENDING, no insurance fields yet)
+    let customer_id = Uuid::new_v4();
+    let password_hash = hash_password(&req.password)?;
+    sqlx::query(
+        r#"
+        INSERT INTO customers
+          (id, full_name, email, mobile_number, password_hash, portal_status)
+        VALUES ($1, $2, $3, $4, $5, 'PENDING')
+        "#,
+    )
+    .bind(customer_id)
+    .bind(req.full_name.trim())
+    .bind(&email)
+    .bind(&mobile_clean)
+    .bind(&password_hash)
+    .execute(&state.pool)
+    .await?;
+
+    // Audit
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &email,
+            action: "customer_registered",
+            entity_type: "customer",
+            entity_id: Some(customer_id),
+            metadata: Some(json!({ "via": "public_endpoint" })),
+            ip_address: None,
+        },
+    )
+    .await;
+
+    // Issue activation token (JWT, purpose="activation", 24h)
+    let activation_token = state.tokens.issue(
+        &customer_id.to_string(),
+        Role::Customer,
+        Some("activation".to_string()),
+        60 * 60 * 24,
+    )?;
+    let activation_url = format!(
+        "{}/portal/activate?token={}",
+        state.config.app_base_url.trim_end_matches('/'),
+        activation_token
+    );
+
+    // Send activation email (fire-and-forget; status tracked in email_logs)
+    let body = format!(
+        "Halo {},\n\n\
+         Akun InsureTrack portal kamu sudah dibuat. Klik link di bawah untuk \
+         aktivasi dan set password (link berlaku 24 jam):\n\n\
+         {}\n\n\
+         Setelah aktivasi, kamu bisa langsung apply asuransi, lihat invoice, \
+         dan track status polis dari portal.\n\n\
+         -- Tim InsureTrack",
+        req.full_name.trim(),
+        activation_url
+    );
+    let _ = send_email(
+        &state.pool,
+        &*state.storage,
+        &state.resend,
+        Email {
+            email_type: EmailType::PortalActivation,
+            recipient: &email,
+            subject: "Aktivasi Akun InsureTrack Portal",
+            body: &body,
+            related_entity_type: Some("customer"),
+            related_entity_id: Some(customer_id),
+            attachment_path: None,
+        },
+    )
+    .await;
+
+    Ok(Json(RegisterCustomerResponse {
+        customer_id,
+        email,
+        activation_url: Some(activation_url),
+    }))
 }
