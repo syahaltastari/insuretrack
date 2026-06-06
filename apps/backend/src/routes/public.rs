@@ -27,7 +27,6 @@ use crate::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
         pdf::{render as render_pdf, PolicyPdfInput},
-        storage,
     },
     state::AppState,
 };
@@ -136,14 +135,11 @@ async fn create_registration(
 
     // 1. Save KTP file (outside txn is fine — but we want path stored).
     let customer_id = Uuid::new_v4();
-    let ktp_path = storage::save_ktp(
-        &state.config.upload_dir,
-        customer_id,
-        &ktp_name,
-        &ktp_ct,
-        &ktp_bytes,
-    )
-    .await?;
+    let ktp_ref = state
+        .storage
+        .save_ktp(customer_id, &ktp_name, &ktp_ct, &ktp_bytes)
+        .await?;
+    let ktp_path = ktp_ref.key;
 
     // 2. INSERT customer
     sqlx::query(
@@ -485,7 +481,11 @@ async fn payment_webhook(
         sum_assured,
         premium,
     })?;
-    let pdf_path = storage::save_policy_pdf(&state.config.upload_dir, policy_id, &pdf_bytes).await?;
+    let pdf_ref = state
+        .storage
+        .save_policy_pdf(policy_id, &pdf_bytes)
+        .await?;
+    let pdf_path = pdf_ref.key;
 
     // Save pdf_path to policy row (separate update; idempotent).
     sqlx::query("UPDATE policies SET pdf_path = $1 WHERE id = $2")

@@ -16,7 +16,11 @@ use sqlx::postgres::PgPoolOptions;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::{config::Config, state::AppState};
+use crate::{
+    config::Config,
+    services::{resend::ResendClient, storage},
+    state::AppState,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,7 +42,17 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("running migrations");
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let state = AppState::new(pool, cfg.clone());
+    tracing::info!("initializing storage backend: {}", cfg.storage_backend);
+    let storage = storage::build_storage(&cfg).await?;
+
+    tracing::info!("initializing Resend client");
+    let resend = ResendClient::new(
+        cfg.resend_api_key.clone(),
+        cfg.resend_from_email.clone(),
+        cfg.resend_from_name.clone(),
+    )?;
+
+    let state = AppState::new(pool, cfg.clone(), storage, resend);
 
     let app = routes::build(state)
         .layer(TraceLayer::new_for_http())

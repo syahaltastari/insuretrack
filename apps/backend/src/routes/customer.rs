@@ -41,7 +41,6 @@ use crate::{
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
-        storage,
     },
     state::AppState,
 };
@@ -418,12 +417,11 @@ async fn download_policy_pdf(
     let (pdf_path_opt,) = row.ok_or(AppError::NotFound("policy".into()))?;
     let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("policy pdf".into()))?;
 
-    let abs = storage::absolute_path(&state.config.upload_dir, &pdf_path);
-    let file = tokio::fs::File::open(&abs)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("open pdf: {e}")))?;
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
+    let bytes = state
+        .storage
+        .read_bytes(&pdf_path)
+        .await?;
+    let body = Body::from(bytes);
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -654,7 +652,11 @@ async fn create_claim(
     tx.commit().await?;
 
     for (fname, mime_t, bytes) in &doc_files {
-        let rel = storage::save_claim_doc(&state.config.upload_dir, claim_id, fname, mime_t, bytes).await?;
+        let doc_ref = state
+            .storage
+            .save_claim_doc(claim_id, fname, mime_t, bytes)
+            .await?;
+        let rel = doc_ref.key;
         sqlx::query(
             r#"INSERT INTO claim_documents (claim_id, file_name, file_path) VALUES ($1, $2, $3)"#,
         )

@@ -58,5 +58,13 @@ printpdf = "0.7"
 # Misc streaming
 tokio-util = { version = "0.7", features = ["io"] }
 
+# S3-compatible storage (Cloudflare R2, AWS S3, MinIO, etc.)
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-credential-types = "1.2"
+aws-sdk-s3 = "1.80"
+
+# HTTP client (for Resend API + future external calls)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 [dev-dependencies]
 # Optional di MVP; tambahkan testcontainers di M6 jika diaktifkan

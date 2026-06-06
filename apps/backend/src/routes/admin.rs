@@ -836,12 +836,11 @@ async fn download_policy_pdf(
     let (pdf_path_opt,) = row.ok_or(AppError::NotFound("policy".into()))?;
     let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("policy pdf".into()))?;
 
-    let abs = storage::absolute_path(&state.config.upload_dir, &pdf_path);
-    let file = tokio::fs::File::open(&abs)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("open pdf: {e}")))?;
-    let stream = ReaderStream::new(file);
-    let body = Body::from_stream(stream);
+    let bytes = state
+        .storage
+        .read_bytes(&pdf_path)
+        .await?;
+    let body = Body::from(bytes);
 
     let mut headers = HeaderMap::new();
     headers.insert(
