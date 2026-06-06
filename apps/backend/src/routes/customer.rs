@@ -38,6 +38,7 @@ use crate::{
     },
     error::{AppError, AppResult},
     repo::{Page, PageQuery},
+    routes::public::{calculate_premium, validate_registration, RegistrationData},
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
@@ -55,6 +56,7 @@ pub fn router() -> Router<AppState> {
             post(password_reset_consume),
         )
         .route("/me", get(me))
+        .route("/registrations", post(submit_insurance_application))
         .route("/policies", get(list_policies))
         .route("/policies/:id", get(get_policy))
         .route("/policies/:id/pdf", get(download_policy_pdf))
@@ -900,4 +902,218 @@ async fn create_inquiry(
             status: "OPEN".to_string(),
         }),
     ))
+}
+
+// ---- POST /registrations (insurance application, requires customer auth) ----
+//
+// Setelah flow split, customer membuat akun via POST /api/public/customers
+// (Task 3). Setelah aktivasi email + login, customer bisa submit
+// aplikasi asuransi dari portal. Endpoint ini requires customer JWT.
+//
+// Behavior:
+// - Customer ID dari JWT (bukan dari request body)
+// - Multipart: data (JSON) + id_card (file KTP)
+// - UPDATE customer record dengan field insurance-spesifik
+//   (nik, ktp, address, dll.) — sebelumnya NULL setelah account creation
+// - Create registration + invoice
+// - Send RegistrationSuccess + InvoiceNotification emails
+
+async fn submit_insurance_application(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+    mut multipart: Multipart,
+) -> AppResult<Json<serde_json::Value>> {
+    let customer_id = claims.sub.parse::<Uuid>().map_err(|_| AppError::Unauthorized)?;
+    let customer_email = claims.sub.clone();
+
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT portal_status FROM customers WHERE id = $1",
+    )
+    .bind(customer_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let status = row.ok_or(AppError::NotFound("customer".into()))?.0;
+    if status != "ACTIVE" {
+        return Err(AppError::Forbidden);
+    }
+
+    let mut data_field: Option<String> = None;
+    let mut ktp_field: Option<(String, String, Vec<u8>)> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Validation(format!("multipart: {e}")))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "data" => {
+                data_field = Some(
+                    field
+                        .text()
+                        .await
+                        .map_err(|e| AppError::Validation(format!("data field: {e}")))?,
+                );
+            }
+            "id_card" => {
+                let file_name = field
+                    .file_name()
+                    .unwrap_or("ktp")
+                    .to_string();
+                let content_type = field
+                    .content_type()
+                    .unwrap_or("application/octet-stream")
+                    .to_string();
+                let bytes = field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::Validation(format!("id_card bytes: {e}")))?;
+                ktp_field = Some((file_name, content_type, bytes.to_vec()));
+            }
+            _ => {}
+        }
+    }
+
+    let data_json = data_field.ok_or_else(|| AppError::Validation("missing 'data' field".into()))?;
+    let (ktp_name, ktp_ct, ktp_bytes) =
+        ktp_field.ok_or_else(|| AppError::Validation("missing 'id_card' file".into()))?;
+    let data: RegistrationData = serde_json::from_str(&data_json)
+        .map_err(|e| AppError::Validation(format!("invalid data JSON: {e}")))?;
+    validate_registration(&data)?;
+
+    let mut tx = state.pool.begin().await?;
+
+    let ktp_ref = state
+        .storage
+        .save_ktp(customer_id, &ktp_name, &ktp_ct, &ktp_bytes)
+        .await?;
+    let ktp_path = ktp_ref.key;
+
+    sqlx::query(
+        r#"
+        UPDATE customers
+           SET nik = $1, birth_place = $2, birth_date = $3, gender = $4,
+               address = $5, rt_rw = $6, village = $7, district = $8,
+               city = $9, province = $10, postal_code = $11, mobile_number = $12,
+               id_card_path = $13, updated_at = now()
+         WHERE id = $14
+        "#,
+    )
+    .bind(&data.nik)
+    .bind(&data.birth_place)
+    .bind(data.birth_date)
+    .bind(&data.gender)
+    .bind(&data.address)
+    .bind(&data.rt_rw)
+    .bind(&data.village)
+    .bind(&data.district)
+    .bind(&data.city)
+    .bind(&data.province)
+    .bind(&data.postal_code)
+    .bind(&data.mobile_number)
+    .bind(&ktp_path)
+    .bind(customer_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let registration_no = next_id(&mut tx, EntityType::Registration).await?;
+    let premium_amount = calculate_premium(&data.product, data.sum_assured, data.coverage_term);
+    let due_date = (Utc::now() + chrono::Duration::days(7)).date_naive();
+
+    let reg_id: (Uuid,) = sqlx::query_as(
+        r#"
+        INSERT INTO registrations
+          (registration_no, customer_id, product, sum_assured, coverage_term, status)
+        VALUES ($1, $2, $3, $4, $5, 'PENDING')
+        RETURNING id
+        "#,
+    )
+    .bind(&registration_no)
+    .bind(customer_id)
+    .bind(&data.product)
+    .bind(data.sum_assured)
+    .bind(data.coverage_term)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let invoice_no = next_id(&mut tx, EntityType::Invoice).await?;
+    sqlx::query(
+        r#"
+        INSERT INTO invoices
+          (invoice_no, registration_id, premium_amount, due_date, status)
+        VALUES ($1, $2, $3, $4, 'UNPAID')
+        "#,
+    )
+    .bind(&invoice_no)
+    .bind(reg_id.0)
+    .bind(premium_amount)
+    .bind(due_date)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    let _ = send_email(
+        &state.pool,
+        &*state.storage,
+        &state.resend,
+        Email {
+            email_type: EmailType::RegistrationSuccess,
+            recipient: &customer_email,
+            subject: "Registration Received",
+            body: &format!(
+                "Halo {}, pendaftaran Anda ({}) telah kami terima. Silakan lakukan pembayaran atas invoice {} sebelum {}.",
+                data.full_name, registration_no, invoice_no, due_date
+            ),
+            related_entity_type: Some("registration"),
+            related_entity_id: Some(reg_id.0),
+            attachment_path: None,
+        },
+    )
+    .await?;
+
+    let _ = send_email(
+        &state.pool,
+        &*state.storage,
+        &state.resend,
+        Email {
+            email_type: EmailType::InvoiceNotification,
+            recipient: &customer_email,
+            subject: "Invoice Notification",
+            body: &format!(
+                "Invoice {}: premi Rp {}, jatuh tempo {}. Bayar via portal payment gateway.",
+                invoice_no, premium_amount, due_date
+            ),
+            related_entity_type: Some("invoice"),
+            related_entity_id: None,
+            attachment_path: None,
+        },
+    )
+    .await?;
+
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &customer_email,
+            action: "registration_created",
+            entity_type: "registration",
+            entity_id: Some(reg_id.0),
+            metadata: Some(serde_json::json!({
+                "registration_no": registration_no,
+                "invoice_no": invoice_no,
+                "product": data.product,
+                "sum_assured": data.sum_assured.to_string(),
+                "premium": premium_amount.to_string(),
+                "via": "customer_portal",
+            })),
+            ip_address: None,
+        },
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({
+        "registration_no": registration_no,
+        "invoice_no": invoice_no,
+        "status": "PENDING",
+    })))
 }

@@ -38,7 +38,6 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/products", get(list_products))
         .route("/customers", post(register_customer))
-        .route("/registrations", post(create_registration))
         .route("/registrations/:reg_no", get(get_registration))
         .route("/payment/webhook", post(payment_webhook))
         .route("/clients", get(list_clients_public))
@@ -52,232 +51,6 @@ async fn list_products() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "data": product_catalog() }))
 }
 
-// ---- POST /registrations (multipart) ----
-
-#[derive(Debug, Deserialize)]
-struct RegistrationData {
-    nik: String,
-    full_name: String,
-    birth_place: String,
-    birth_date: chrono::NaiveDate,
-    gender: String,
-    address: String,
-    rt_rw: String,
-    village: String,
-    district: String,
-    city: String,
-    province: String,
-    postal_code: String,
-    email: String,
-    mobile_number: String,
-    product: String,
-    sum_assured: Decimal,
-    coverage_term: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct CreateRegistrationResponse {
-    registration_no: String,
-    invoice_no: String,
-    status: String,
-}
-
-async fn create_registration(
-    State(state): State<AppState>,
-    mut multipart: Multipart,
-) -> AppResult<impl IntoResponse> {
-    // Parse multipart: form field `data` (JSON) + file field `id_card`.
-    let mut data_field: Option<String> = None;
-    let mut ktp_field: Option<(String, String, Vec<u8>)> = None; // (filename, content_type, bytes)
-
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| AppError::Validation(format!("multipart: {e}")))?
-    {
-        let name = field.name().unwrap_or("").to_string();
-        match name.as_str() {
-            "data" => {
-                data_field = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| AppError::Validation(format!("data field: {e}")))?,
-                );
-            }
-            "id_card" => {
-                let file_name = field
-                    .file_name()
-                    .unwrap_or("ktp")
-                    .to_string();
-                let content_type = field
-                    .content_type()
-                    .unwrap_or("application/octet-stream")
-                    .to_string();
-                let bytes = field
-                    .bytes()
-                    .await
-                    .map_err(|e| AppError::Validation(format!("id_card bytes: {e}")))?;
-                ktp_field = Some((file_name, content_type, bytes.to_vec()));
-            }
-            _ => { /* ignore unknown fields */ }
-        }
-    }
-
-    let data_json = data_field.ok_or_else(|| AppError::Validation("missing 'data' field".into()))?;
-    let (ktp_name, ktp_ct, ktp_bytes) =
-        ktp_field.ok_or_else(|| AppError::Validation("missing 'id_card' file".into()))?;
-
-    let data: RegistrationData = serde_json::from_str(&data_json)
-        .map_err(|e| AppError::Validation(format!("invalid data JSON: {e}")))?;
-    validate_registration(&data)?;
-
-    // Persist customer + registration + invoice atomically.
-    let mut tx = state.pool.begin().await?;
-
-    // 1. Save KTP file (outside txn is fine — but we want path stored).
-    let customer_id = Uuid::new_v4();
-    let ktp_ref = state
-        .storage
-        .save_ktp(customer_id, &ktp_name, &ktp_ct, &ktp_bytes)
-        .await?;
-    let ktp_path = ktp_ref.key;
-
-    // 2. INSERT customer
-    sqlx::query(
-        r#"
-        INSERT INTO customers
-          (id, nik, full_name, birth_place, birth_date, gender,
-           address, rt_rw, village, district, city, province, postal_code,
-           email, mobile_number, id_card_path, portal_status)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'PENDING')
-        "#,
-    )
-    .bind(customer_id)
-    .bind(&data.nik)
-    .bind(&data.full_name)
-    .bind(&data.birth_place)
-    .bind(data.birth_date)
-    .bind(&data.gender)
-    .bind(&data.address)
-    .bind(&data.rt_rw)
-    .bind(&data.village)
-    .bind(&data.district)
-    .bind(&data.city)
-    .bind(&data.province)
-    .bind(&data.postal_code)
-    .bind(&data.email)
-    .bind(&data.mobile_number)
-    .bind(&ktp_path)
-    .execute(&mut *tx)
-    .await?;
-
-    // 3. Generate registration_no & create registration
-    let registration_no = next_id(&mut tx, EntityType::Registration).await?;
-    let premium_amount = calculate_premium(&data.product, data.sum_assured, data.coverage_term);
-    let due_date = (Utc::now() + Duration::days(7)).date_naive();
-
-    let reg_id: (Uuid,) = sqlx::query_as(
-        r#"
-        INSERT INTO registrations
-          (registration_no, customer_id, product, sum_assured, coverage_term, status)
-        VALUES ($1, $2, $3, $4, $5, 'PENDING')
-        RETURNING id
-        "#,
-    )
-    .bind(&registration_no)
-    .bind(customer_id)
-    .bind(&data.product)
-    .bind(data.sum_assured)
-    .bind(data.coverage_term)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    // 4. Generate invoice_no & create invoice
-    let invoice_no = next_id(&mut tx, EntityType::Invoice).await?;
-    sqlx::query(
-        r#"
-        INSERT INTO invoices
-          (invoice_no, registration_id, premium_amount, due_date, status)
-        VALUES ($1, $2, $3, $4, 'UNPAID')
-        "#,
-    )
-    .bind(&invoice_no)
-    .bind(reg_id.0)
-    .bind(premium_amount)
-    .bind(due_date)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-
-    // 5. Side effects outside txn (idempotent enqueue).
-    send_email(
-        &state.pool,
-        &*state.storage,
-        &state.resend,
-        Email {
-            email_type: EmailType::RegistrationSuccess,
-            recipient: &data.email,
-            subject: "Registration Received",
-            body: &format!(
-                "Halo {}, pendaftaran Anda ({}) telah kami terima. Silakan lakukan pembayaran atas invoice {} sebelum {}.",
-                data.full_name, registration_no, invoice_no, due_date
-            ),
-            related_entity_type: Some("registration"),
-            related_entity_id: Some(reg_id.0),
-            attachment_path: None,
-        },
-    )
-    .await?;
-
-    send_email(
-        &state.pool,
-        &*state.storage,
-        &state.resend,
-        Email {
-            email_type: EmailType::InvoiceNotification,
-            recipient: &data.email,
-            subject: "Invoice Notification",
-            body: &format!(
-                "Invoice {}: premi Rp {}, jatuh tempo {}. Bayar via portal payment gateway.",
-                invoice_no, premium_amount, due_date
-            ),
-            related_entity_type: Some("invoice"),
-            related_entity_id: None,
-            attachment_path: None,
-        },
-    )
-    .await?;
-
-    audit_write(
-        &state.pool,
-        AuditEntry {
-            actor: &data.email,
-            action: "registration_created",
-            entity_type: "registration",
-            entity_id: Some(reg_id.0),
-            metadata: Some(json!({
-                "registration_no": registration_no,
-                "invoice_no": invoice_no,
-                "product": data.product,
-                "sum_assured": data.sum_assured,
-                "premium": premium_amount,
-            })),
-            ip_address: None,
-        },
-    )
-    .await?;
-
-    Ok((
-        StatusCode::CREATED,
-        Json(CreateRegistrationResponse {
-            registration_no,
-            invoice_no,
-            status: "PENDING".to_string(),
-        }),
-    ))
-}
 
 // ---- GET /registrations/{regNo} ----
 
@@ -287,6 +60,29 @@ struct RegistrationStatus {
     status: String,
     invoice_status: String,
     policy_no: Option<String>,
+}
+
+// Shared insurance application data (dipakai oleh customer.rs handler).
+// `pub` supaya customer.rs bisa deserialize request yang sama shape-nya.
+#[derive(Debug, Deserialize)]
+pub struct RegistrationData {
+    pub nik: String,
+    pub full_name: String,
+    pub birth_place: String,
+    pub birth_date: chrono::NaiveDate,
+    pub gender: String,
+    pub address: String,
+    pub rt_rw: String,
+    pub village: String,
+    pub district: String,
+    pub city: String,
+    pub province: String,
+    pub postal_code: String,
+    pub email: String,
+    pub mobile_number: String,
+    pub product: String,
+    pub sum_assured: Decimal,
+    pub coverage_term: i32,
 }
 
 async fn get_registration(
@@ -605,7 +401,7 @@ async fn payment_webhook(
 
 // ---- helpers ----
 
-fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
+pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
     if !is_16_digits(&d.nik) {
         return Err(AppError::Validation("nik must be exactly 16 digits".into()));
     }
@@ -663,7 +459,7 @@ fn is_email_valid(s: &str) -> bool {
         && !domain.ends_with('.')
 }
 
-fn calculate_premium(product: &str, sum_assured: Decimal, coverage_term: i32) -> Decimal {
+pub fn calculate_premium(product: &str, sum_assured: Decimal, coverage_term: i32) -> Decimal {
     // Pricing rule (placeholder): LIFE = 1.0% per tahun, PA = 0.5% per tahun,
     // HEALTH = 1.5% per tahun dari sum_assured. Spec menyebut "configured pricing
     // rule" — di MVP, hard-coded; production: tabel `pricing_rules` atau config.
