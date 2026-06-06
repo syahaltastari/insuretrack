@@ -44,6 +44,9 @@ import {
   Clock,
   Send,
   LogOut,
+  // Sidebar toggle
+  PanelLeftClose,
+  PanelLeftOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -91,6 +94,8 @@ export const Icons: Record<string, LucideIcon> = {
   Clock,
   Send,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 };
 
 export type IconName = keyof typeof Icons;

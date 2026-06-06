@@ -20,12 +20,16 @@ const navItems: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/admin/audit-logs", label: "Audit Trail", icon: "ScrollText" },
 ];
 
+const SIDEBAR_MINIMIZED_KEY = "admin_sidebar_minimized";
+
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
+  const [minimizedHydrated, setMinimizedHydrated] = useState(false);
 
   useEffect(() => {
     const token = getAdminToken();
@@ -36,6 +40,27 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     setReady(true);
     fetchAdminProfile().then(setProfile);
   }, [router]);
+
+  // Load minimized state from localStorage on mount (SSR-safe).
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_MINIMIZED_KEY);
+      if (stored === "true") setMinimized(true);
+    } catch {
+      // localStorage unavailable (private mode, etc.) — ignore
+    }
+    setMinimizedHydrated(true);
+  }, []);
+
+  // Persist minimized state to localStorage.
+  useEffect(() => {
+    if (!minimizedHydrated) return;
+    try {
+      window.localStorage.setItem(SIDEBAR_MINIMIZED_KEY, minimized ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [minimized, minimizedHydrated]);
 
   // Close mobile sidebar on route change.
   useEffect(() => {
@@ -71,13 +96,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           aria-hidden="true"
         />
       )}
-      <aside className={`shell-aside ${sidebarOpen ? "open" : ""}`}>
+      <aside className={`shell-aside ${sidebarOpen ? "open" : ""} ${minimized ? "minimized" : ""}`.trim()}>
         <div
           className="brand"
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
+          style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: minimized ? "center" : "flex-start" }}
         >
           <Icon name="ShieldCheck" size="md" style={{ color: "var(--ube-800)" }} />
-          <span>InsureTrack Admin</span>
+          {!minimized && <span>InsureTrack Admin</span>}
         </div>
         <nav>
           {navItems.map((item) => {
@@ -89,10 +114,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={active ? "active" : ""}
+                title={minimized ? item.label : undefined}
                 style={{ display: "flex", alignItems: "center", gap: 10 }}
               >
                 <Icon name={item.icon} size="sm" />
-                <span>{item.label}</span>
+                {!minimized && <span>{item.label}</span>}
               </Link>
             );
           })}
@@ -108,6 +134,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               onClick={() => setSidebarOpen((o) => !o)}
             >
               ☰
+            </button>
+            <button
+              type="button"
+              className="hamburger"
+              aria-label={minimized ? "Expand sidebar" : "Minimize sidebar"}
+              title={minimized ? "Expand sidebar" : "Minimize sidebar"}
+              onClick={() => setMinimized((m) => !m)}
+            >
+              <Icon name={minimized ? "PanelLeftOpen" : "PanelLeftClose"} size="sm" />
             </button>
             <span className="brand-mobile">InsureTrack</span>
           </div>

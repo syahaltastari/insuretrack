@@ -13,10 +13,15 @@ const navItems: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/portal/inquiries", label: "Pertanyaan", icon: "MessageCircle" },
 ];
 
+const SIDEBAR_MINIMIZED_KEY = "portal_sidebar_minimized";
+
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
+  const [minimizedHydrated, setMinimizedHydrated] = useState(false);
 
   useEffect(() => {
     const token = getCustomerToken();
@@ -26,6 +31,29 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     }
     setReady(true);
   }, [router]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_MINIMIZED_KEY);
+      if (stored === "true") setMinimized(true);
+    } catch {
+      // ignore
+    }
+    setMinimizedHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!minimizedHydrated) return;
+    try {
+      window.localStorage.setItem(SIDEBAR_MINIMIZED_KEY, minimized ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [minimized, minimizedHydrated]);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
 
   if (!ready) {
     return (
@@ -37,10 +65,20 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell-grid">
-      <aside className="shell-aside">
-        <div className="brand" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {sidebarOpen && (
+        <div
+          className="shell-aside-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside className={`shell-aside ${sidebarOpen ? "open" : ""} ${minimized ? "minimized" : ""}`.trim()}>
+        <div
+          className="brand"
+          style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: minimized ? "center" : "flex-start" }}
+        >
           <Icon name="ShieldCheck" size="md" style={{ color: "var(--matcha-600)" }} />
-          <span>InsureTrack Portal</span>
+          {!minimized && <span>InsureTrack Portal</span>}
         </div>
         <nav>
           {navItems.map((item) => {
@@ -50,10 +88,11 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={active ? "active" : ""}
+                title={minimized ? item.label : undefined}
                 style={{ display: "flex", alignItems: "center", gap: 10 }}
               >
                 <Icon name={item.icon} size="sm" />
-                <span>{item.label}</span>
+                {!minimized && <span>{item.label}</span>}
               </Link>
             );
           })}
@@ -64,13 +103,38 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             router.replace("/portal/login");
           }}
           className="clay-button ghost size-small"
+          title={minimized ? "Logout" : undefined}
           style={{ marginTop: 32, width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
         >
           <Icon name="LogOut" size="sm" />
-          <span>Logout</span>
+          {!minimized && <span>Logout</span>}
         </button>
       </aside>
-      <main className="shell-main">{children}</main>
+      <div>
+        <header className="admin-topbar">
+          <div className="admin-topbar-left">
+            <button
+              type="button"
+              className="hamburger"
+              aria-label="Buka menu"
+              onClick={() => setSidebarOpen((o) => !o)}
+            >
+              ☰
+            </button>
+            <button
+              type="button"
+              className="hamburger"
+              aria-label={minimized ? "Expand sidebar" : "Minimize sidebar"}
+              title={minimized ? "Expand sidebar" : "Minimize sidebar"}
+              onClick={() => setMinimized((m) => !m)}
+            >
+              <Icon name={minimized ? "PanelLeftOpen" : "PanelLeftClose"} size="sm" />
+            </button>
+            <span className="brand-mobile">InsureTrack Portal</span>
+          </div>
+        </header>
+        <main className="shell-main">{children}</main>
+      </div>
     </div>
   );
 }

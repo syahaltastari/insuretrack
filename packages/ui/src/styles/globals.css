@@ -680,6 +680,40 @@ a:hover {
   height: 100vh;
   max-height: 100vh;
   overflow-y: auto;
+  transition: width 200ms ease, padding 200ms ease;
+}
+/* Sidebar minimize (icon-only). Brand text + nav labels hidden,
+   width shrink ke 64px, padding diperkecil. Grid auto-adjust. */
+.shell-aside.minimized {
+  width: 64px;
+  padding: 24px 8px;
+}
+.shell-aside.minimized .brand span {
+  display: none;
+}
+.shell-aside.minimized nav a {
+  justify-content: center;
+  padding: 10px;
+}
+.shell-aside.minimized nav a span {
+  display: none;
+}
+.shell-grid:has(.shell-aside.minimized) {
+  grid-template-columns: 64px 1fr;
+}
+/* Mobile: minimize di-ignore (selalu full-width sidebar / top menu). */
+@media (max-width: 767px) {
+  .shell-aside.minimized {
+    width: auto;
+    padding: 24px 20px;
+  }
+  .shell-aside.minimized .brand span,
+  .shell-aside.minimized nav a span {
+    display: inline;
+  }
+  .shell-grid:has(.shell-aside.minimized) {
+    grid-template-columns: 1fr;
+  }
 }
 .shell-aside .brand {
   font-size: 1.25rem;
