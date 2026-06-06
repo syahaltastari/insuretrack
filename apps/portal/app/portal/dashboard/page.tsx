@@ -64,6 +64,53 @@ export default function PortalDashboard() {
 
       {me && (
         <>
+          {/* CTA: kalau user belum punya polis aktif, tampilkan banner
+              prominent untuk apply asuransi. */}
+          {me.active_policy_count === 0 && (
+            <div
+              className="clay-card feature swatch-matcha"
+              style={{
+                marginTop: 24,
+                marginBottom: 32,
+                padding: 32,
+                display: "flex",
+                alignItems: "center",
+                gap: 24,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <p
+                  className="uppercase-label"
+                  style={{ color: "var(--matcha-300)", marginBottom: 8 }}
+                >
+                  ✦ Mulai perlindungan Anda
+                </p>
+                <h2
+                  className="display-secondary"
+                  style={{ color: "var(--pure-white)", fontSize: "1.75rem", marginBottom: 8 }}
+                >
+                  Ajukan Asuransi Sekarang
+                </h2>
+                <p
+                  className="body"
+                  style={{ color: "var(--matcha-300)", margin: 0 }}
+                >
+                  Pilih produk (Jiwa / Kecelakaan Diri / Kesehatan), isi data,
+                  upload KTP, dan polis terbit dalam hitungan menit setelah
+                  pembayaran.
+                </p>
+              </div>
+              <Link
+                href="/portal/insurance/new"
+                className="clay-button solid-ube size-large"
+                style={{ flexShrink: 0 }}
+              >
+                Ajukan Sekarang →
+              </Link>
+            </div>
+          )}
+
           <div className="clay-grid cols-2" style={{ marginTop: 24, marginBottom: 32 }}>
             <Card label="Polis Aktif" value={me.active_policy_count} color="var(--matcha-600)" />
             <Card
@@ -79,6 +126,9 @@ export default function PortalDashboard() {
             Aksi Cepat
           </h2>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <Link href="/portal/insurance/new" className="clay-button solid-ube">
+              + Ajukan Asuransi
+            </Link>
             <Link href="/portal/policies" className="clay-button solid-ube">
               Lihat Polis →
             </Link>
