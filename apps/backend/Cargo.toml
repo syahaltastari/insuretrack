@@ -66,5 +66,8 @@ aws-sdk-s3 = "1.80"
 # HTTP client (for Resend API + future external calls)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# Base64 (untuk Resend PDF attachments)
+base64 = "0.22"
+
 [dev-dependencies]
 # Optional di MVP; tambahkan testcontainers di M6 jika diaktifkan

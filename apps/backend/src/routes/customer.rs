@@ -675,6 +675,8 @@ async fn create_claim(
 
     send_email(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         Email {
             email_type: EmailType::ClaimReceived,
             recipient: &customer_email,

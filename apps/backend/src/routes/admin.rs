@@ -1267,6 +1267,8 @@ async fn patch_claim(
 
     crate::services::email::send(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::ClaimStatusUpdate,
             recipient: &customer_email,
@@ -1484,6 +1486,8 @@ async fn respond_inquiry(
 
     crate::services::email::send(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::InquiryResponse,
             recipient: &row.customer_email,

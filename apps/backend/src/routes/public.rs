@@ -212,6 +212,8 @@ async fn create_registration(
     // 5. Side effects outside txn (idempotent enqueue).
     send_email(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         Email {
             email_type: EmailType::RegistrationSuccess,
             recipient: &data.email,
@@ -229,6 +231,8 @@ async fn create_registration(
 
     send_email(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         Email {
             email_type: EmailType::InvoiceNotification,
             recipient: &data.email,
@@ -497,6 +501,8 @@ async fn payment_webhook(
     // Queue emails
     send_email(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         Email {
             email_type: EmailType::PaymentSuccess,
             recipient: &email,
@@ -516,6 +522,8 @@ async fn payment_webhook(
 
     send_email(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         Email {
             email_type: EmailType::EPolicyDelivery,
             recipient: &email,
@@ -541,6 +549,8 @@ async fn payment_webhook(
     );
     send_email(
         &state.pool,
+        &*state.storage,
+        &state.resend,
         Email {
             email_type: EmailType::PortalActivation,
             recipient: &email,
