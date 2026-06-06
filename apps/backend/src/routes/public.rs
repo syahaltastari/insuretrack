@@ -876,6 +876,15 @@ async fn serve_upload(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("build response: {e}")))?;
     resp.headers_mut()
         .insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
+    // Content-Disposition: inline tells browser untuk display file di
+    // tab (PDF viewer built-in) instead of triggering download. Tanpa
+    // header ini, browser default ke 'attachment' untuk non-image
+    // types seperti PDF, menyebabkan auto-download saat navigasi atau
+    // <img src="...pdf"> di-load.
+    resp.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("inline"),
+    );
     resp.headers_mut().insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=3600"),
