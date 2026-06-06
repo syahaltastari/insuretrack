@@ -27,7 +27,7 @@ services:
   # Backend Rust (Axum). Aktif sejak M0.
   backend:
     build:
-      context: ./backend
+      context: ./apps/backend
       dockerfile: Dockerfile
     container_name: insurance_backend
     ports:

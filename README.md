@@ -26,7 +26,7 @@ End-to-end online policy registration & issuance system. Auto-accept insurance p
 
 ```bash
 # 1. Copy env templates
-cp backend/.env.example backend/.env
+cp apps/backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
 
 # 2. Build & start all three services
@@ -42,7 +42,7 @@ curl http://localhost:8080/health
 # → http://localhost:3000/portal     (customer login / activation)
 ```
 
-On first start, Postgres automatically applies the four migrations in `backend/migrations/` (alphabetical order):
+On first start, Postgres automatically applies the four migrations in `apps/backend/migrations/` (alphabetical order):
 1. `0001_initial.sql` — 10 core tables + indexes
 2. `0002_id_sequences.sql` — per-month counter (REG/INV/POL/CLM/INQ)
 3. `0003_constraints.sql` — product/gender enums, mobile/NIK regex
@@ -207,17 +207,24 @@ docker compose exec -T backend ls -la /var/uploads/policies/ 2>/dev/null || echo
 
 ```
 .
-├── backend/
-│   ├── migrations/        # sqlx: 0001_initial, 0002_id_sequences, 0003_constraints, 0004_seed
-│   ├── src/
-│   │   ├── auth/          # JWT, password (Argon2id), middleware extractors
-│   │   ├── domain/        # entities, state machines (can_transition), identifier generator
-│   │   ├── routes/        # public, admin, customer
-│   │   ├── services/      # audit, email (mock), pdf, storage
-│   │   ├── repo/          # pagination helper
-│   │   ├── config.rs, error.rs, main.rs, state.rs, dto/
-│   ├── Cargo.toml, Dockerfile, .env.example
-├── frontend/
+├── apps/
+│   ├── backend/           # Rust + Axum REST API
+│   │   ├── migrations/    # sqlx: 0001_initial, 0002_id_sequences, 0003_constraints, 0004_seed
+│   │   ├── src/
+│   │   │   ├── auth/      # JWT, password (Argon2id), middleware extractors
+│   │   │   ├── domain/    # entities, state machines (can_transition), identifier generator
+│   │   │   ├── routes/    # public, admin, customer
+│   │   │   ├── services/  # audit, email (mock), pdf, storage
+│   │   │   ├── repo/      # pagination helper
+│   │   │   ├── config.rs, error.rs, main.rs, state.rs, dto/
+│   │   ├── Cargo.toml, Dockerfile, .env.example
+│   ├── portal/            # (scaffold) Next.js, port 3000, customer-facing
+│   └── admin/             # (scaffold) Next.js, port 3001, backoffice
+├── packages/
+│   ├── api-client/        # @insuretrack/api-client
+│   ├── forms/             # @insuretrack/forms (RHF + zod)
+│   └── ui/                # @insuretrack/ui (design system + globals.css)
+├── frontend/              # transitional: source for apps/{portal,admin}
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── page.tsx + register/                  (public: FS-01, FS-02)
@@ -269,23 +276,23 @@ npm run dev    # http://localhost:3000
 | Spec | Implemented in |
 |---|---|
 | FS-01 Landing page | `frontend/src/app/page.tsx` |
-| FS-02 Customer Registration | `frontend/src/app/register/page.tsx`, `backend/src/routes/public.rs::create_registration` |
-| FS-03 Registration number gen | `backend/src/domain/identifier.rs` |
-| FS-04 Invoice generation | `backend/src/routes/public.rs::create_registration` |
-| FS-05 Email notifications (8 types) | `backend/src/services/email.rs`, triggered from public/admin/customer routes |
-| FS-06 Payment Webhook (idempotent) | `backend/src/routes/public.rs::payment_webhook` |
-| FS-07 Policy Issuance | `backend/src/routes/public.rs::payment_webhook` (pipeline) |
-| FS-08 e-Policy PDF | `backend/src/services/pdf.rs` + `services/storage.rs::save_policy_pdf` |
-| FS-09 Admin auth | `backend/src/routes/admin.rs::login` |
-| FS-10 Dashboard | `backend/src/routes/admin.rs::dashboard_stats`, `frontend/src/app/admin/dashboard/page.tsx` |
-| FS-11..13 Reg/Invoice/Policy mgmt | `backend/src/routes/admin.rs::list_*` + `frontend/src/app/admin/{registrations,invoices,policies}/page.tsx` |
-| FS-14 Email Log | `backend/src/routes/admin.rs::list_email_logs`, `frontend/src/app/admin/email-logs/page.tsx` |
-| FS-15 Audit Trail | `backend/src/services/audit.rs` (called from all state-changing operations), `frontend/src/app/admin/audit-logs/page.tsx` |
-| FS-16 Customer Portal Auth | `backend/src/routes/customer.rs::{activate,login}`, `frontend/src/app/portal/{login,activate}/page.tsx` |
-| FS-17 Portal Dashboard | `backend/src/routes/customer.rs::me`, `frontend/src/app/portal/dashboard/page.tsx` |
-| FS-18 Policy Viewing | `backend/src/routes/customer.rs::{list_policies,download_policy_pdf}`, `frontend/src/app/portal/policies/page.tsx` |
-| FS-19 Claims Submission | `backend/src/routes/customer.rs::create_claim`, `frontend/src/app/portal/claims/{page,new/page}.tsx` |
-| FS-20 Policy Inquiries | `backend/src/routes/customer.rs::create_inquiry`, `frontend/src/app/portal/inquiries/page.tsx` |
+| FS-02 Customer Registration | `frontend/src/app/register/page.tsx`, `apps/backend/src/routes/public.rs::create_registration` |
+| FS-03 Registration number gen | `apps/backend/src/domain/identifier.rs` |
+| FS-04 Invoice generation | `apps/backend/src/routes/public.rs::create_registration` |
+| FS-05 Email notifications (8 types) | `apps/backend/src/services/email.rs`, triggered from public/admin/customer routes |
+| FS-06 Payment Webhook (idempotent) | `apps/backend/src/routes/public.rs::payment_webhook` |
+| FS-07 Policy Issuance | `apps/backend/src/routes/public.rs::payment_webhook` (pipeline) |
+| FS-08 e-Policy PDF | `apps/backend/src/services/pdf.rs` + `services/storage.rs::save_policy_pdf` |
+| FS-09 Admin auth | `apps/backend/src/routes/admin.rs::login` |
+| FS-10 Dashboard | `apps/backend/src/routes/admin.rs::dashboard_stats`, `frontend/src/app/admin/dashboard/page.tsx` |
+| FS-11..13 Reg/Invoice/Policy mgmt | `apps/backend/src/routes/admin.rs::list_*` + `frontend/src/app/admin/{registrations,invoices,policies}/page.tsx` |
+| FS-14 Email Log | `apps/backend/src/routes/admin.rs::list_email_logs`, `frontend/src/app/admin/email-logs/page.tsx` |
+| FS-15 Audit Trail | `apps/backend/src/services/audit.rs` (called from all state-changing operations), `frontend/src/app/admin/audit-logs/page.tsx` |
+| FS-16 Customer Portal Auth | `apps/backend/src/routes/customer.rs::{activate,login}`, `frontend/src/app/portal/{login,activate}/page.tsx` |
+| FS-17 Portal Dashboard | `apps/backend/src/routes/customer.rs::me`, `frontend/src/app/portal/dashboard/page.tsx` |
+| FS-18 Policy Viewing | `apps/backend/src/routes/customer.rs::{list_policies,download_policy_pdf}`, `frontend/src/app/portal/policies/page.tsx` |
+| FS-19 Claims Submission | `apps/backend/src/routes/customer.rs::create_claim`, `frontend/src/app/portal/claims/{page,new/page}.tsx` |
+| FS-20 Policy Inquiries | `apps/backend/src/routes/customer.rs::create_inquiry`, `frontend/src/app/portal/inquiries/page.tsx` |
 
 ## Status (per milestone)
 
@@ -300,9 +307,9 @@ npm run dev    # http://localhost:3000
 ## Spec Quick Reference
 
 - **Identifier formats (spec §9):** `REG|INV|POL|CLM|INQ-YYYYMM-NNNNNN`, sequence resets monthly, allocation transactional
-- **State machines (spec §10):** enforced in `backend/src/domain/*.rs` (DB CHECK only validates value membership, not transition legality)
-- **8 email types (FS-05):** all triggered; see `backend/src/services/email.rs::EmailType`
-- **11 audit events (FS-15):** all covered; see `backend/src/services/audit.rs` callers
+- **State machines (spec §10):** enforced in `apps/backend/src/domain/*.rs` (DB CHECK only validates value membership, not transition legality)
+- **8 email types (FS-05):** all triggered; see `apps/backend/src/services/email.rs::EmailType`
+- **11 audit events (FS-15):** all covered; see `apps/backend/src/services/audit.rs` callers
 
 ## Iterasi Berikutnya (post-MVP)
 

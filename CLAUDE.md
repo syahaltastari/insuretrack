@@ -24,7 +24,7 @@ Full requirements live in **`Technical Specification Document Digital Insurance 
 The repository is in **Phase 1** (database only). Per the `docker-compose.yml` comments and `profiles: ["skip_for_now"]` flags:
 
 - **Fase 1 ✅ (current):** PostgreSQL with schema + seed.
-- **Fase 2 (next):** Rust backend at `./backend` — service stubs not yet present.
+- **Fase 2 (next):** Rust backend at `./apps/backend` — service stubs not yet present.
 - **Fase 3:** Next.js frontend at `./frontend` — service stubs not yet present.
 
 The `backend` and `frontend` services are declared in `docker-compose.yml` but disabled behind the `skip_for_now` profile so they don't fail to build before their source trees exist. When implementing them, drop the `profiles` line (or run `docker compose --profile skip_for_now up`).

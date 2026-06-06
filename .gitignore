@@ -129,7 +129,7 @@ test-results/
 # ──────────── Uploaded files (KTP, claim docs, e-policy PDFs) ────────────
 # These are runtime artifacts — never commit user data.
 /uploads/
-backend/uploads/
+apps/backend/uploads/
 
 # ──────────── OS / misc ────────────
 *.bak
