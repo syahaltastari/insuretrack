@@ -3,13 +3,12 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { API_BASE, ApiError } from "@insuretrack/api-client";
-import { Navbar } from "@/components/Navbar";
+import { API_BASE, ApiError, getCustomerToken } from "@insuretrack/api-client";
 import { Reveal } from "@/components/Reveal";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import {
@@ -54,7 +53,7 @@ const registerSchema = z.object({
 });
 type RegisterValues = z.infer<typeof registerSchema>;
 
-export default function RegisterPage() {
+export default function InsuranceNewPage() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -63,6 +62,16 @@ export default function RegisterPage() {
     registration_no: string;
     invoice_no: string;
   } | null>(null);
+
+  // Auth guard: redirect to login kalau belum authenticated. Customer
+  // insurance application requires customer JWT (backend enforces via
+  // RequireCustomer middleware di POST /api/customer/registrations).
+  useEffect(() => {
+    const token = getCustomerToken();
+    if (!token) {
+      router.replace("/portal/login?next=/portal/insurance/new");
+    }
+  }, [router]);
 
   const methods = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema) as never,
@@ -104,6 +113,11 @@ export default function RegisterPage() {
     }
     setSubmitting(true);
     setFormError(null);
+    const token = getCustomerToken();
+    if (!token) {
+      router.replace("/portal/login?next=/portal/insurance/new");
+      return;
+    }
     try {
       const fd = new FormData();
       fd.append(
@@ -129,8 +143,9 @@ export default function RegisterPage() {
         }),
       );
       fd.append("id_card", ktp);
-      const r = await fetch(`${API_BASE}/public/registrations`, {
+      const r = await fetch(`${API_BASE}/customer/registrations`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
         body: fd,
       });
       const json = await r.json().catch(() => ({}));
@@ -152,7 +167,6 @@ export default function RegisterPage() {
   if (result) {
     return (
       <>
-        <Navbar />
         <main
           className="clay-section"
           style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}
@@ -206,7 +220,6 @@ export default function RegisterPage() {
 
   return (
     <>
-      <Navbar />
       <main className="clay-section" style={{ minHeight: "100vh", paddingTop: 48 }}>
         <div className="clay-container" style={{ maxWidth: 720 }}>
           <Reveal>
