@@ -139,18 +139,19 @@ function LoginInner() {
             </div>
 
             <Link
-              href="/register"
+              href="/portal/register"
               className="clay-button ghost"
               style={{ width: "100%", justifyContent: "center" }}
             >
-              ✦ Daftar Sebagai Customer Baru
+              ✦ Daftar Akun Portal
             </Link>
 
             <p
               className="caption"
               style={{ textAlign: "center", marginTop: 16, color: "var(--warm-silver)" }}
             >
-              Aktivasi akun via link di email setelah polis terbit.
+              Aktivasi akun via link di email. Setelah aktif, baru bisa apply
+              asuransi dari portal.
             </p>
           </Form>
 
