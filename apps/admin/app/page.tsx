@@ -1,11 +1,15 @@
-// Placeholder — akan di-replace dengan redirect / dashboard di Phase 6.
-export default function AdminIndex() {
-  return (
-    <main className="clay-container clay-section">
-      <h1 className="display-secondary">InsureTrack Admin</h1>
-      <p className="body-large" style={{ color: "var(--warm-charcoal)" }}>
-        Coming soon — admin dashboard dipindahkan dari frontend/ di Phase 6.
-      </p>
-    </main>
-  );
+import { redirect } from "next/navigation";
+
+// Skip static prerender — Next.js 15 + React 19 RC incompatibility.
+export const dynamic = "force-dynamic";
+
+/**
+ * Root index — server-side redirect ke halaman login admin.
+ *
+ * Setelah login berhasil, AdminShell guard di tujuan page akan
+ * bounce ke /admin/dashboard jika token valid ditemukan di
+ * localStorage.
+ */
+export default function RootIndex() {
+  redirect("/admin/login");
 }
