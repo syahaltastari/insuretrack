@@ -2,7 +2,7 @@
 // Reference: DESIGN.md + globals.css design tokens
 
 import Link from "next/link";
-import { Icon, type IconName } from "@insuretrack/ui";
+import { Icon, SafeImage, type IconName } from "@insuretrack/ui";
 import { Navbar } from "@/components/Navbar";
 import { Reveal, StaggerGroup } from "@/components/Reveal";
 import { Carousel } from "@/components/Carousel";
@@ -167,7 +167,7 @@ export default async function HomePage() {
             <Reveal from="up" delay={280}>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
                 <Link
-                  href="/register"
+                  href="/portal/register"
                   className="clay-button solid-ube size-large pill"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
                 >
@@ -346,9 +346,16 @@ export default async function HomePage() {
                       background: "var(--pure-white)",
                     }}
                   >
-                    <img
+                    {/* SafeImage: kalau URL bukan image (mis. PDF ktp.pdf
+                        yang salah di-upload), render inisial klien sebagai
+                        fallback. Tanpa ini, browser fetch PDF as image →
+                        IDM trigger "Duplicate download link" popup. */}
+                    <SafeImage
                       src={c.logo_url}
                       alt={c.name}
+                      initials={c.name}
+                      size={88}
+                      rounded={false}
                       style={{
                         maxWidth: "100%",
                         maxHeight: "100%",
@@ -463,7 +470,7 @@ export default async function HomePage() {
                 Pendaftaran memakan waktu kurang dari 5 menit.
               </p>
               <Link
-                href="/register"
+                href="/portal/register"
                 className="clay-button solid-white size-large pill"
                 style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
               >

@@ -40,7 +40,7 @@ export function Navbar() {
     if (getCustomerToken()) {
       router.push("/portal/dashboard");
     } else {
-      router.push("/portal/login?next=/register");
+      router.push("/portal/login?next=/portal/dashboard");
     }
   };
 
