@@ -334,7 +334,7 @@ export default function AdminTestimonialsPage() {
           {
             key: "is_featured",
             label: "Featured",
-            width: "90px",
+            width: "120px",
             hideOnMobile: true,
             render: (t) =>
               t.is_featured ? (

@@ -600,6 +600,11 @@ a:hover {
   text-transform: uppercase;
   border-radius: var(--radius-badge);
   font-feature-settings: "ss03", "ss10", "ss11", "ss12";
+  /* Single-word content ('Featured', 'Active') tidak pecah ke baris
+     baru. Multi-word ('Under Review') tetap wrap normal sesuai
+     boundary kata (white-space: nowrap hanya mencegah pemecahan
+     di tengah kata). */
+  white-space: nowrap;
 }
 .clay-badge.muted { background: var(--oat-light); color: var(--warm-charcoal); }
 .clay-badge.matcha { background: var(--matcha-300); color: var(--matcha-800); }
