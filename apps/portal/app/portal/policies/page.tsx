@@ -5,7 +5,6 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { PortalShell } from "@/components/PortalShell";
 import { StatusBadge } from "@insuretrack/ui";
 import { API_BASE } from "@insuretrack/api-client";
 import { getCustomerToken } from "@insuretrack/api-client";
@@ -57,7 +56,7 @@ export default function PortalPoliciesPage() {
   };
 
   return (
-    <PortalShell>
+    <>
       <p className="uppercase-label" style={{ color: "var(--matcha-600)", marginBottom: 8 }}>
         ✦ Polis Saya
       </p>
@@ -115,6 +114,6 @@ export default function PortalPoliciesPage() {
           </table>
         </div>
       )}
-    </PortalShell>
+    </>
   );
 }

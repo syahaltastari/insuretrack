@@ -5,7 +5,6 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { PortalShell } from "@/components/PortalShell";
 import { StatusBadge } from "@insuretrack/ui";
 import { API_BASE } from "@insuretrack/api-client";
 import { getCustomerToken } from "@insuretrack/api-client";
@@ -42,7 +41,7 @@ export default function PortalClaimsPage() {
   }, []);
 
   return (
-    <PortalShell>
+    <>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>
           <p className="uppercase-label" style={{ color: "var(--pomegranate-400)", marginBottom: 8 }}>
@@ -101,6 +100,6 @@ export default function PortalClaimsPage() {
           </table>
         </div>
       )}
-    </PortalShell>
+    </>
   );
 }

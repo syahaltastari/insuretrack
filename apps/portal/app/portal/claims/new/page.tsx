@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { PortalShell } from "@/components/PortalShell";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
 import { getCustomerToken } from "@insuretrack/api-client";
@@ -123,7 +122,7 @@ export default function NewClaimPage() {
   };
 
   return (
-    <PortalShell>
+    <>
       <p className="uppercase-label" style={{ color: "var(--pomegranate-400)", marginBottom: 8 }}>
         ✦ Klaim Baru
       </p>
@@ -224,6 +223,6 @@ export default function NewClaimPage() {
           </button>
         </Form>
       )}
-    </PortalShell>
+    </>
   );
 }

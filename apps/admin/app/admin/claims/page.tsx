@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AdminShell } from "@/components/AdminShell";
 import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
 import { FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
@@ -194,7 +193,7 @@ export default function AdminClaimsPage() {
   }, [refreshKey]);
 
   return (
-    <AdminShell>
+    <>
       <p className="uppercase-label" style={{ color: "var(--pomegranate-400)", marginBottom: 8 }}>
         ✦ Review Klaim
       </p>
@@ -228,6 +227,6 @@ export default function AdminClaimsPage() {
       )}
 
       {!loading && data.map((c) => <ClaimCard key={c.id} claim={c} onUpdated={() => setRefreshKey((k) => k + 1)} />)}
-    </AdminShell>
+    </>
   );
 }

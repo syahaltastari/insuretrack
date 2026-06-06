@@ -4,7 +4,6 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
-import { AdminShell } from "@/components/AdminShell";
 import {
   Bar,
   BarChart,
@@ -209,7 +208,7 @@ export default function AdminDashboard() {
   }, [load]);
 
   return (
-    <AdminShell>
+    <>
       <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
         ✦ Ringkasan Operasional
       </p>
@@ -570,6 +569,6 @@ export default function AdminDashboard() {
           )}
         </>
       )}
-    </AdminShell>
+    </>
   );
 }

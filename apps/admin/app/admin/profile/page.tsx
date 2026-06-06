@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AdminShell } from "@/components/AdminShell";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema, passwordSchema } from "@insuretrack/forms";
 import { API_BASE, ApiError } from "@insuretrack/api-client";
@@ -171,7 +170,7 @@ export default function AdminProfilePage() {
   const passwordRootErr = passwordMethods.formState.errors.root?.message;
 
   return (
-    <AdminShell>
+    <>
       <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
         ✦ Akun Saya
       </p>
@@ -336,6 +335,6 @@ export default function AdminProfilePage() {
           </div>
         </>
       )}
-    </AdminShell>
+    </>
   );
 }

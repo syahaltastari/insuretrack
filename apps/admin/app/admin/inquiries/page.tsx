@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AdminShell } from "@/components/AdminShell";
 import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
 import { FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
@@ -197,7 +196,7 @@ export default function AdminInquiriesPage() {
   }, [refreshKey]);
 
   return (
-    <AdminShell>
+    <>
       <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
         ✦ Review Inquiry
       </p>
@@ -234,6 +233,6 @@ export default function AdminInquiriesPage() {
         data.map((inq) => (
           <InquiryCard key={inq.id} inquiry={inq} onUpdated={() => setRefreshKey((k) => k + 1)} />
         ))}
-    </AdminShell>
+    </>
   );
 }

@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { PortalShell } from "@/components/PortalShell";
 import { StatusBadge } from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
@@ -97,7 +96,7 @@ export default function PortalInquiriesPage() {
   const rootErr = methods.formState.errors.root?.message;
 
   return (
-    <PortalShell>
+    <>
       <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
         ✦ Pertanyaan
       </p>
@@ -214,6 +213,6 @@ export default function PortalInquiriesPage() {
             )}
           </div>
         ))}
-    </PortalShell>
+    </>
   );
 }

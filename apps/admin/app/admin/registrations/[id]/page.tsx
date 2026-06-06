@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AdminShell } from "@/components/AdminShell";
 import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
 import { API_BASE, ApiError, getAdminToken } from "@insuretrack/api-client";
 
@@ -177,7 +176,7 @@ export default function RegistrationDetailPage() {
   }, [id]);
 
   return (
-    <AdminShell>
+    <>
       <div style={{ marginBottom: 24 }}>
         <Link
           href="/admin/registrations"
@@ -323,6 +322,6 @@ export default function RegistrationDetailPage() {
           </SectionCard>
         </div>
       )}
-    </AdminShell>
+    </>
   );
 }
