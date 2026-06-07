@@ -1,0 +1,1099 @@
+{
+  "info": {
+    "name": "InsureTrack API",
+    "description": "Complete API collection for the InsureTrack digital insurance platform.\n\n**Import instructions:**\n1. Open Postman → File → Import → select this file.\n2. After import, edit the `base_url` variable to point to your backend (default `http://localhost:8080/api`).\n3. Hit **Customer → Login** to populate `customer_token`, then **Admin → Login** for `admin_token`. Tokens auto-save via the test scripts.\n\n**Folder layout:**\n- `01 — Public` (no auth): products, registration, payment webhook, marketing content.\n- `02 — Customer` (Bearer): activate, login, profile, policies, invoices, claims, inquiries.\n- `03 — Admin` (Bearer): dashboard, registrations, invoices, policies, claims, inquiries, marketing CRUD, email/audit logs.\n- `04 — Webhook`: payment webhook (X-Webhook-Secret header).\n\n**Variables:**\n- `base_url` — backend base (e.g., `http://localhost:8080/api`)\n- `customer_token` — auto-populated by Customer/Login\n- `admin_token` — auto-populated by Admin/Login\n- `webhook_secret` — must match `PAYMENT_WEBHOOK_SECRET` in backend `.env`\n- `customer_id` / `policy_id` / `invoice_id` / etc. — sample UUIDs to override in requests that need path params",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080/api", "type": "string" },
+    { "key": "customer_token", "value": "", "type": "string" },
+    { "key": "admin_token", "value": "", "type": "string" },
+    { "key": "webhook_secret", "value": "dev_webhook_secret_change_me", "type": "string" },
+    { "key": "customer_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "registration_no", "value": "REG-202606-000001", "type": "string" },
+    { "key": "policy_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "invoice_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "invoice_no", "value": "INV-202606-000001", "type": "string" },
+    { "key": "claim_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "inquiry_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "client_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "testimonial_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "activation_token", "value": "", "type": "string" },
+    { "key": "reset_token", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 — Public",
+      "description": "Endpoints that do not require authentication. Used by the public landing page and external payment gateway.",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/public/products",
+              "host": ["{{base_url}}"],
+              "path": ["public", "products"]
+            }
+          }
+        },
+        {
+          "name": "Register Customer (Account Creation)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"Password123\",\n  \"mobile_number\": \"081234567890\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/public/customers",
+              "host": ["{{base_url}}"],
+              "path": ["public", "customers"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.customer_id) { pm.collectionVariables.set('customer_id', json.customer_id); }",
+                  "// Optional: extract activation URL token for later use in Customer/Activate",
+                  "if (json.activation_url) {",
+                  "  const m = json.activation_url.match(/token=([^&]+)/);",
+                  "  if (m) { pm.collectionVariables.set('activation_token', m[1]); }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Registration Status by Reg No",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/public/registrations/:reg_no",
+              "host": ["{{base_url}}"],
+              "path": ["public", "registrations", ":reg_no"],
+              "variable": [
+                { "key": "reg_no", "value": "{{registration_no}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Public Clients (Landing Page)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/public/clients",
+              "host": ["{{base_url}}"],
+              "path": ["public", "clients"]
+            }
+          }
+        },
+        {
+          "name": "List Public Testimonials (Landing Page)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/public/testimonials",
+              "host": ["{{base_url}}"],
+              "path": ["public", "testimonials"]
+            }
+          }
+        },
+        {
+          "name": "Serve Upload (Static File)",
+          "description": "Serves uploaded files (KTP, client logos, testimonial photos, e-policy PDF, invoice PDF). Path is the storage key (e.g., `policies/<uuid>.pdf`).",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/public/uploads/policies/example.pdf",
+              "host": ["{{base_url}}"],
+              "path": ["public", "uploads", "policies", "example.pdf"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Customer",
+      "description": "Endpoints that require a customer JWT (Bearer token from POST /customer/login).",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{customer_token}}" }]
+      },
+      "item": [
+        {
+          "name": "Activate Account (from email link)",
+          "description": "Single-use activation. Password was already set during registration; this just flips portal_status from PENDING to ACTIVE.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"token\": \"{{activation_token}}\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/activate",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "activate"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.token) { pm.collectionVariables.set('customer_token', json.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"username\": \"test@example.com\", \"password\": \"Password123\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/login",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.token) { pm.collectionVariables.set('customer_token', json.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Request Password Reset",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"email\": \"test@example.com\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/password/reset",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "password", "reset"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.reset_token) { pm.collectionVariables.set('reset_token', json.reset_token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consume Password Reset (Set New Password)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"token\": \"{{reset_token}}\", \"new_password\": \"NewPassword456\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/password/reset/consume",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "password", "reset", "consume"]
+            }
+          }
+        },
+        {
+          "name": "Get My Profile (Dashboard Summary)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/me",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "me"]
+            }
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Test User Updated\",\n  \"email\": \"test@example.com\",\n  \"mobile_number\": \"081234567890\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/me",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "me"]
+            }
+          }
+        },
+        {
+          "name": "Change Password (while logged in)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"Password123\",\n  \"new_password\": \"NewPassword456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/password/change",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "password", "change"]
+            }
+          }
+        },
+        {
+          "name": "Submit Insurance Application",
+          "description": "Multipart upload. The `data` field is a JSON string; `id_card` is the KTP file (JPG/PNG/PDF, max 5 MB).",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "data",
+                  "type": "text",
+                  "value": "{\n  \"nik\": \"3201234567890001\",\n  \"full_name\": \"Test User\",\n  \"birth_place\": \"Jakarta\",\n  \"birth_date\": \"1990-01-15\",\n  \"gender\": \"MALE\",\n  \"address\": \"Jl. Sudirman No. 1\",\n  \"rt_rw\": \"001/002\",\n  \"village\": \"Karet\",\n  \"district\": \"Setiabudi\",\n  \"city\": \"Jakarta Selatan\",\n  \"province\": \"DKI Jakarta\",\n  \"postal_code\": \"12920\",\n  \"email\": \"test@example.com\",\n  \"mobile_number\": \"081234567890\",\n  \"product\": \"LIFE\",\n  \"sum_assured\": \"100000000\",\n  \"coverage_term\": 10\n}"
+                },
+                {
+                  "key": "id_card",
+                  "type": "file",
+                  "src": "/path/to/ktp.jpg"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/registrations",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "registrations"]
+            }
+          }
+        },
+        {
+          "name": "List My Policies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/policies?page=1&page_size=20&status=",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "policies"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Policy by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/policies/:id",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "policies", ":id"],
+              "variable": [
+                { "key": "id", "value": "{{policy_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download E-Policy PDF",
+          "description": "Returns application/pdf. Use Postman's 'Send and Download' to save the file.",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/pdf" }],
+            "url": {
+              "raw": "{{base_url}}/customer/policies/:id/pdf",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "policies", ":id", "pdf"],
+              "variable": [
+                { "key": "id", "value": "{{policy_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List My Invoices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/invoices?page=1&page_size=20&status=",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "invoices"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Invoice by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/invoices/:id",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "invoices", ":id"],
+              "variable": [
+                { "key": "id", "value": "{{invoice_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download Invoice PDF",
+          "description": "Returns application/pdf.",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/pdf" }],
+            "url": {
+              "raw": "{{base_url}}/customer/invoices/:id/pdf",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "invoices", ":id", "pdf"],
+              "variable": [
+                { "key": "id", "value": "{{invoice_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List My Claims",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/claims?page=1&page_size=20&status=",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "claims"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Claim by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/claims/:id",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "claims", ":id"],
+              "variable": [
+                { "key": "id", "value": "{{claim_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Claim (Multipart)",
+          "description": "`data` is JSON; `documents` is one or more files (JPG/PNG/PDF, max 5 MB each).",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "data",
+                  "type": "text",
+                  "value": "{\n  \"policy_id\": \"{{policy_id}}\",\n  \"claim_type\": \"DEATH_BENEFIT\",\n  \"incident_date\": \"2026-06-01\",\n  \"claimed_amount\": \"50000000\",\n  \"description\": \"Kronologis kejadian...\"\n}"
+                },
+                {
+                  "key": "documents",
+                  "type": "file",
+                  "src": "/path/to/evidence.pdf"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/claims",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "claims"]
+            }
+          }
+        },
+        {
+          "name": "List My Inquiries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/inquiries?page=1&page_size=20&status=",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "inquiries"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Inquiry by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/customer/inquiries/:id",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "inquiries", ":id"],
+              "variable": [
+                { "key": "id", "value": "{{inquiry_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Inquiry",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy_id\": \"{{policy_id}}\",\n  \"subject\": \"Pertanyaan tentang klaim\",\n  \"message\": \"Saya ingin tanya tentang prosedur klaim medis.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/inquiries",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "inquiries"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Admin",
+      "description": "Endpoints that require an admin JWT (Bearer token from POST /admin/login).",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+      },
+      "item": [
+        {
+          "name": "Login",
+          "description": "Default seed credentials: username `admin`, password `admin`.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"username\": \"admin\", \"password\": \"admin\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/login",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.token) { pm.collectionVariables.set('admin_token', json.token); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get My Admin Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/me",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "me"]
+            }
+          }
+        },
+        {
+          "name": "Update My Admin Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Admin User\",\n  \"email\": \"admin@insuretrack.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/me",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "me"]
+            }
+          }
+        },
+        {
+          "name": "Change My Admin Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"admin\",\n  \"new_password\": \"NewAdmin123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/me/password",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "me", "password"]
+            }
+          }
+        },
+        {
+          "name": "Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/dashboard/stats",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "dashboard", "stats"]
+            }
+          }
+        },
+        {
+          "name": "Dashboard Charts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/dashboard/charts?months=6",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "dashboard", "charts"],
+              "query": [{ "key": "months", "value": "6" }]
+            }
+          }
+        },
+        {
+          "name": "List Registrations",
+          "description": "Supports CSV export via `?format=csv` query param.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/registrations?page=1&page_size=20&q=&status=",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "registrations"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "format", "value": "", "disabled": true, "description": "Set to 'csv' to download as CSV" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Registration Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/registrations/:id",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "registrations", ":id"],
+              "variable": [
+                { "key": "id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Invoices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/invoices?page=1&page_size=20&q=&status=",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "invoices"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "format", "value": "", "disabled": true, "description": "Set to 'csv' to download as CSV" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/invoices/:id",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "invoices", ":id"],
+              "variable": [
+                { "key": "id", "value": "{{invoice_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download Invoice PDF",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/pdf" }],
+            "url": {
+              "raw": "{{base_url}}/admin/invoices/:id/pdf",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "invoices", ":id", "pdf"],
+              "variable": [
+                { "key": "id", "value": "{{invoice_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Policies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/policies?page=1&page_size=20&q=&status=",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "policies"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "format", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Policy Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/policies/:id",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "policies", ":id"],
+              "variable": [
+                { "key": "id", "value": "{{policy_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download E-Policy PDF",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/pdf" }],
+            "url": {
+              "raw": "{{base_url}}/admin/policies/:id/pdf",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "policies", ":id", "pdf"],
+              "variable": [
+                { "key": "id", "value": "{{policy_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Claims (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/claims?page=1&page_size=20&q=&status=",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "claims"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Claim Status",
+          "description": "Valid transitions: SUBMITTED → UNDER_REVIEW → APPROVED → PAID, or to REJECTED at any point before APPROVED.",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\",\n  \"decision_note\": \"Dokumen lengkap, klaim disetujui.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/claims/:id",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "claims", ":id"],
+              "variable": [
+                { "key": "id", "value": "{{claim_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Inquiries (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/inquiries?page=1&page_size=20&q=&status=",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "inquiries"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Respond to Inquiry",
+          "description": "Set `close: true` to set status to CLOSED (instead of ANSWERED).",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"Terima kasih atas pertanyaannya. Berikut jawaban tim kami...\",\n  \"close\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/inquiries/:id/respond",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "inquiries", ":id", "respond"],
+              "variable": [
+                { "key": "id", "value": "{{inquiry_id}}", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Email Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/email-logs?page=1&page_size=20&status=",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "email-logs"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/audit-logs?page=1&page_size=20&entity_type=",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "audit-logs"],
+              "query": [
+                { "key": "page", "value": "1", "disabled": true },
+                { "key": "page_size", "value": "20", "disabled": true },
+                { "key": "entity_type", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Marketing — Clients",
+          "item": [
+            {
+              "name": "List Clients",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/clients?page=1&page_size=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "clients"],
+                  "query": [
+                    { "key": "page", "value": "1", "disabled": true },
+                    { "key": "page_size", "value": "20", "disabled": true }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get Client",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/clients/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "clients", ":id"],
+                  "variable": [{ "key": "id", "value": "{{client_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Create Client (Multipart with Logo)",
+              "description": "`data` is JSON; `logo` is the image file (JPG/PNG/WebP/SVG, max 2 MB).",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "data",
+                      "type": "text",
+                      "value": "{\n  \"name\": \"PT Example Corp\",\n  \"industry\": \"Perbankan\",\n  \"website\": \"https://example.com\",\n  \"contact_person\": \"John Doe\",\n  \"contact_email\": \"john@example.com\",\n  \"contact_phone\": \"+62-21-555-0100\",\n  \"sort_order\": 10\n}"
+                    },
+                    {
+                      "key": "logo",
+                      "type": "file",
+                      "src": "/path/to/logo.png"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/clients",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "clients"]
+                }
+              }
+            },
+            {
+              "name": "Update Client (Multipart, Logo Optional)",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "data",
+                      "type": "text",
+                      "value": "{\n  \"name\": \"PT Example Corp (Updated)\",\n  \"sort_order\": 5\n}"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/clients/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "clients", ":id"],
+                  "variable": [{ "key": "id", "value": "{{client_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Delete Client (Soft Delete via is_active=false)",
+              "description": "Currently hard-deletes from DB. Prefer toggling `is_active` via PATCH in production.",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/clients/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "clients", ":id"],
+                  "variable": [{ "key": "id", "value": "{{client_id}}", "type": "string" }]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Marketing — Testimonials",
+          "item": [
+            {
+              "name": "List Testimonials",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/testimonials?page=1&page_size=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "testimonials"],
+                  "query": [
+                    { "key": "page", "value": "1", "disabled": true },
+                    { "key": "page_size", "value": "20", "disabled": true }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get Testimonial",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/testimonials/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "testimonials", ":id"],
+                  "variable": [{ "key": "id", "value": "{{testimonial_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Create Testimonial (Multipart with Photo)",
+              "description": "`data` is JSON; `photo` is the image file (JPG/PNG/WebP/SVG, max 2 MB).",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "data",
+                      "type": "text",
+                      "value": "{\n  \"customer_name\": \"Andi Setiawan\",\n  \"rating\": 5,\n  \"review\": \"Pelayanan cepat dan profesional.\",\n  \"role\": \"Pemilik usaha\",\n  \"company\": \"Toko Sumber Rezeki\",\n  \"policy_type\": \"LIFE\",\n  \"display_date\": \"2026-06-07\",\n  \"is_featured\": true\n}"
+                    },
+                    {
+                      "key": "photo",
+                      "type": "file",
+                      "src": "/path/to/photo.jpg"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/testimonials",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "testimonials"]
+                }
+              }
+            },
+            {
+              "name": "Update Testimonial",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"is_featured\": true,\n  \"rating\": 4\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/testimonials/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "testimonials", ":id"],
+                  "variable": [{ "key": "id", "value": "{{testimonial_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Delete Testimonial",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/testimonials/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "testimonials", ":id"],
+                  "variable": [{ "key": "id", "value": "{{testimonial_id}}", "type": "string" }]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 — Webhook",
+      "description": "Server-to-server webhook. Auth via `X-Webhook-Secret` header, not Bearer token.",
+      "item": [
+        {
+          "name": "Payment Webhook (Mark Invoice as PAID)",
+          "description": "Called by the payment gateway when an invoice is paid. Triggers: invoice → PAID, registration → ISSUED, policy creation, e-policy PDF render, 2 emails (PaymentSuccess + EPolicyDelivery). **Idempotent**: replaying with same `invoice_no` returns success without re-creating the policy or re-sending emails.",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Webhook-Secret", "value": "{{webhook_secret}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice_no\": \"{{invoice_no}}\",\n  \"payment_status\": \"PAID\",\n  \"payment_date\": \"2026-06-07\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/public/payment/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["public", "payment", "webhook"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

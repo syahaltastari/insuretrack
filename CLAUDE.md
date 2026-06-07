@@ -241,3 +241,31 @@ Ringkas tipe yang paling sering dipakai:
 Cantumkan `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` di
 footer saat commit dihasilkan/diubah oleh AI assistant.
 - Login pages: each role's brand color for primary button
+
+## Code Comment Standard
+
+Komentar ada untuk menjelaskan **WHY**, bukan WHAT (code sudah jelas).
+Standar:
+
+| Prefix | Dipakai untuk | Contoh |
+| --- | --- | --- |
+| `//!` (module-level) | Block di atas file. Jelaskan intent modul, key dependency, dan constraint penting. Bukan tutorial. | Lihat `services/email_template.rs` |
+| `///` (doc) | `pub` function/struct/field. One-liner wajib; paragraf tambahan hanya kalau non-obvious. | `/// Render template → (text, html) siap kirim ke Resend.` |
+| `//` (inline) | **Hanya** untuk hal genuinely non-obvious. Kalau iya, lebih baik rename variable atau extract function. | `// WAJIB aman untuk attribute — caller sanitize URL` |
+| `// TODO(name):` | Known limitation/follow-up dengan author tag. | `// TODO(claude): ganti ke typed-error` |
+| `// FIXME:` | Bug yang diketahui tapi belum fix. | `// FIXME: race condition pada concurrent login` |
+
+**JANGAN** tulis komentar yang:
+- Menduplikasi code (`// increment counter` sebelum `i++`)
+- Mendeskripsikan hal obvious (`// loop through items` sebelum `for`)
+- Changelog-style (info sudah di git log)
+- Berisi signature function yang sudah di-IDE-hover
+
+Saat refactor, **hapus** komentar yang sudah tidak relevan (mis. comment yang describe struktur lama).
+
+## File organization (Rust + TS)
+
+- Backend Rust modules: `apps/backend/src/{services,routes,domain,dto,auth,repo,error,config}.rs`
+- Frontend TS app: `apps/{portal,admin}/app/<route>/page.tsx`
+- Shared: `packages/{ui,forms,api-client}/src/`
+- Re-export pattern: setiap package punya `src/index.ts` yang re-export API publik; file internal pakai underscore prefix atau taruh di `internal/` subfolder.
