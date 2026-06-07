@@ -35,6 +35,10 @@ struct ResendPayload<'a> {
     to: &'a [String],
     subject: &'a str,
     text: &'a str,
+    /// Optional HTML body. Kalau Some(""), Resend default ke text-only.
+    /// Caller pass `&rendered.html`; kalau kosong tetap di-serialize
+    /// (Resend menerima empty string dengan baik).
+    html: &'a str,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     attachments: Vec<ResendAttachmentPayload>,
 }
@@ -66,11 +70,15 @@ impl ResendClient {
     }
 
     /// Send transactional email. Returns Resend message ID on success.
+    /// `text` adalah fallback plain-text body; `html` adalah HTML version
+    /// (preferred). Keduanya dikirim supaya email client bisa pilih
+    /// (HTML-capable client pakai `html`, sisanya pakai `text`).
     pub async fn send(
         &self,
         to: &str,
         subject: &str,
         text: &str,
+        html: &str,
         attachments: &[ResendAttachment],
     ) -> Result<String, AppError> {
         let from = match &self.from_name {
@@ -92,6 +100,7 @@ impl ResendClient {
             to: &to_list,
             subject,
             text,
+            html,
             attachments: attachment_payloads,
         };
 

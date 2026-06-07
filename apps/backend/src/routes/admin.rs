@@ -1308,8 +1308,10 @@ async fn patch_claim(
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::ClaimStatusUpdate,
             recipient: &customer_email,
-            subject: "Claim Status Update",
+            subject: &format!("Klaim {} — Status Diperbarui", row.claim_no),
             body: &body,
+            cta_text: None,
+            cta_url: None,
             related_entity_type: Some("claim"),
             related_entity_id: Some(id),
             attachment_path: None,
@@ -1527,11 +1529,20 @@ async fn respond_inquiry(
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::InquiryResponse,
             recipient: &row.customer_email,
-            subject: "Inquiry Response",
+            subject: &format!("Jawaban: {}", row.subject),
             body: &format!(
-                "Inquiry {} ({})\n\nJawaban: {}",
+                "Halo,\n\n\
+                 Tim InsureTrack sudah menjawab pertanyaan kamu (no. {}, \
+                 subjek: \"{}\").\n\n\
+                 Jawaban:\n{}\n\n\
+                 Punya pertanyaan lanjutan? Balas email ini atau buat inquiry \
+                 baru di portal.\n\n\
+                 Salam,\n\
+                 Tim InsureTrack",
                 row.inquiry_no, row.subject, req.response
             ),
+            cta_text: None,
+            cta_url: None,
             related_entity_type: Some("inquiry"),
             related_entity_id: Some(id),
             attachment_path: None,

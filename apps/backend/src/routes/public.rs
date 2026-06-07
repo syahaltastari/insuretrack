@@ -1,9 +1,12 @@
 //! Public endpoints (no auth). Spec §8.1.
 //!
 //!   GET  /api/public/products
-//!   POST /api/public/registrations         (multipart, KTP upload)
-//!   GET  /api/public/registrations/:regNo
-//!   POST /api/public/payment/webhook
+//!   POST /api/public/customers              (account creation, activation link via email)
+//!   GET  /api/public/registrations/:regNo  (status lookup by registration number)
+//!   POST /api/public/payment/webhook       (X-Webhook-Secret gated; triggers policy issuance)
+//!   GET  /api/public/clients               (landing page corporate clients)
+//!   GET  /api/public/testimonials           (landing page testimonials)
+//!   GET  /api/public/uploads/*path          (serves local-stored media; path-traversal guarded)
 
 use axum::{
     body::Body,
@@ -304,19 +307,25 @@ async fn payment_webhook(
         Email {
             email_type: EmailType::PaymentSuccess,
             recipient: &email,
-            subject: "Payment Received",
+            subject: "Pembayaran Diterima — Polis Segera Terbit",
             body: &format!(
-                "Pembayaran untuk invoice {} telah diterima. Polis {} segera terbit.",
+                "Halo,\n\n\
+                 Pembayaran untuk invoice {} telah kami terima. Polis {} sedang \
+                 dalam proses penerbitan — e-policy PDF akan kami kirim di \
+                 email terpisah dalam hitungan menit.\n\n\
+                 Terima kasih sudah mempercayakan perlindungan Anda ke InsureTrack.\n\n\
+                 Salam,\n\
+                 Tim InsureTrack",
                 body.invoice_no, policy_no
             ),
+            cta_text: None,
+            cta_url: None,
             related_entity_type: Some("policy"),
             related_entity_id: Some(policy_id),
             attachment_path: None,
         },
     )
     .await?;
-
-    let _ = state.config.upload_dir.as_str(); // ensure import isn't dropped (pdf_path is the actual attachment reference)
 
     send_email(
         &state.pool,
@@ -325,8 +334,20 @@ async fn payment_webhook(
         Email {
             email_type: EmailType::EPolicyDelivery,
             recipient: &email,
-            subject: "E-Policy Delivery",
-            body: &format!("E-Policy Anda ({}) terlampir.", policy_no),
+            subject: &format!("E-Policy {} — Polis Anda Telah Terbit", policy_no),
+            body: &format!(
+                "Halo,\n\n\
+                 Selamat! Polis {} Anda telah resmi terbit. E-policy PDF \
+                 terlampir di email ini — bisa langsung di-download, di-print, \
+                 atau disimpan di perangkat Anda.\n\n\
+                 Login ke portal kapan saja untuk melihat semua polis, ajukan \
+                 klaim, atau cek status pengajuan Anda.\n\n\
+                 Salam,\n\
+                 Tim InsureTrack",
+                policy_no
+            ),
+            cta_text: None,
+            cta_url: None,
             related_entity_type: Some("policy"),
             related_entity_id: Some(policy_id),
             attachment_path: Some(pdf_path.clone()),
@@ -749,15 +770,26 @@ async fn register_customer(
         activation_token
     );
 
-    // Send activation email (fire-and-forget; status tracked in email_logs)
+    // Activation email — fire-and-forget; status tracked in email_logs.
+    // Body plain text dibaca email client yang tidak support HTML;
+    // CTA "Aktifkan Akun Saya" dengan link aktivasi di-render jadi
+    // button di HTML version.
+    //
+    // Password SUDAH di-set saat register (lihat handler ini di atas),
+    // jadi activation flow ini cuma konfirmasi email + flip
+    // portal_status ke ACTIVE. Tidak ada "set password" lagi.
     let body = format!(
         "Halo {},\n\n\
-         Akun InsureTrack portal kamu sudah dibuat. Klik link di bawah untuk \
-         aktivasi dan set password (link berlaku 24 jam):\n\n\
+         Selamat! Akun InsureTrack portal kamu sudah berhasil dibuat. \
+         Satu langkah lagi untuk mengaktifkannya.\n\n\
+         Klik tombol Aktivasi di bawah ini (link berlaku 24 jam). \
+         Setelah aktif, kamu otomatis login dan bisa langsung apply \
+         asuransi, lihat invoice, dan track status polis dari portal.\n\n\
+         Kalau tombol tidak bisa diklik, salin link ini ke browser:\n\
          {}\n\n\
-         Setelah aktivasi, kamu bisa langsung apply asuransi, lihat invoice, \
-         dan track status polis dari portal.\n\n\
-         -- Tim InsureTrack",
+         Ada pertanyaan? Balas email ini — kami siap bantu.\n\n\
+         Salam,\n\
+         Tim InsureTrack",
         req.full_name.trim(),
         activation_url
     );
@@ -770,6 +802,8 @@ async fn register_customer(
             recipient: &email,
             subject: "Aktivasi Akun InsureTrack Portal",
             body: &body,
+            cta_text: Some("Aktifkan Akun Saya →"),
+            cta_url: Some(&activation_url),
             related_entity_type: Some("customer"),
             related_entity_id: Some(customer_id),
             attachment_path: None,

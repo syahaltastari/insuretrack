@@ -1,14 +1,11 @@
 //! Email service — record ke `email_logs` lalu kirim via Resend HTTP API.
 //!
-//! Spec FS-05 lists 8 email types; helper ini handle semuanya. Setiap
-//! send dicatat sebagai `QUEUED` di email_logs, lalu:
-//! - sukses -> status SENT, audit_logs entry dengan resend_id.
-//! - gagal -> status FAILED, error_message diisi, audit_logs entry
-//!   dengan error.
-//!
-//! Untuk E_POLICY_DELIVERY, kalau `attachment_path` di-set, PDF di-fetch
-//! dari storage (R2 atau local) lalu di-attach ke Resend sebagai
-//! base64-encoded file (per spec FS-04/FS-05).
+//! Spec FS-05 lists 8 email types. Setiap send:
+//! 1. Insert `email_logs` row dengan status `QUEUED` (return id buat tracking).
+//! 2. Kalau `attachment_path` di-set, fetch file dari storage.
+//! 3. Render template (header + body + footer) → text + html.
+//! 4. POST ke Resend. Update email_logs ke `SENT` (simpan resend_id) atau `FAILED` (simpan error_message).
+//! 5. Audit `email_queued`, `email_sent`, atau `email_failed` ke `audit_logs` (FS-15).
 
 use serde_json::json;
 use sqlx::PgPool;
@@ -55,7 +52,15 @@ pub struct Email<'a> {
     pub email_type: EmailType,
     pub recipient: &'a str,
     pub subject: &'a str,
+    /// Body utama plain text. Akan di-wrap dengan header + footer
+    /// oleh `email_template::render` sebelum dikirim. Body ini juga
+    /// yang dipakai Resend sebagai `text` payload (fallback untuk
+    /// email client yang tidak support HTML).
     pub body: &'a str,
+    /// Optional call-to-action button. Mis. aktivasi akun: tombol
+    /// "Aktifkan Akun Saya" yang link-nya activation URL.
+    pub cta_text: Option<&'a str>,
+    pub cta_url: Option<&'a str>,
     pub related_entity_type: Option<&'a str>,
     pub related_entity_id: Option<Uuid>,
     /// Key di storage backend (output dari `Storage::save_*().key`).
@@ -145,10 +150,25 @@ pub async fn send(
         }
     }
 
-    // 4. Kirim via Resend.
-    let text_body = email.body;
+    // 4. Render template (header + body + footer) → text + html,
+    //    lalu kirim via Resend. Caller supply `body` plain + optional
+    //    CTA; template yang bentuk final presentasi.
+    let rendered = crate::services::email_template::render(
+        &crate::services::email_template::EmailTemplate {
+            subject: email.subject,
+            body_text: email.body,
+            cta_text: email.cta_text,
+            cta_url: email.cta_url,
+        },
+    );
     let result = resend
-        .send(email.recipient, email.subject, text_body, &attachments)
+        .send(
+            email.recipient,
+            email.subject,
+            &rendered.text,
+            &rendered.html,
+            &attachments,
+        )
         .await;
 
     match &result {

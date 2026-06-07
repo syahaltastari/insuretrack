@@ -893,11 +893,19 @@ async fn create_claim(
         Email {
             email_type: EmailType::ClaimReceived,
             recipient: &customer_email,
-            subject: "Claim Received",
+            subject: &format!("Klaim {} Diterima — Dalam Peninjauan", claim_no),
             body: &format!(
-                "Klaim {} untuk polis terkait telah kami terima dan akan ditinjau oleh tim kami.",
+                "Halo,\n\n\
+                 Klaim {} untuk polis terkait telah kami terima dan sedang \
+                 dalam antrian peninjauan tim kami. Kamu akan dapat notifikasi \
+                 email begitu ada update status.\n\n\
+                 Untuk lihat progress klaim kapan saja, login ke portal > menu Klaim.\n\n\
+                 Salam,\n\
+                 Tim InsureTrack",
                 claim_no
             ),
+            cta_text: None,
+            cta_url: None,
             related_entity_type: Some("claim"),
             related_entity_id: Some(claim_id),
             attachment_path: None,
@@ -1303,11 +1311,20 @@ async fn submit_insurance_application(
         Email {
             email_type: EmailType::RegistrationSuccess,
             recipient: &customer_email,
-            subject: "Registration Received",
+            subject: &format!("Pendaftaran {} Diterima", registration_no),
             body: &format!(
-                "Halo {}, pendaftaran Anda ({}) telah kami terima. Silakan lakukan pembayaran atas invoice {} sebelum {}.",
-                data.full_name, registration_no, invoice_no, due_date
+                "Halo {},\n\n\
+                 Pendaftaran asuransi kamu ({}) telah kami terima. Invoice \
+                 untuk pembayaran premi sudah diterbitkan — kami kirim detail \
+                 lengkapnya di email terpisah.\n\n\
+                 Mohon selesaikan pembayaran sebelum jatuh tempo agar polis \
+                 bisa langsung aktif.\n\n\
+                 Salam,\n\
+                 Tim InsureTrack",
+                data.full_name, registration_no
             ),
+            cta_text: None,
+            cta_url: None,
             related_entity_type: Some("registration"),
             related_entity_id: Some(reg_id.0),
             attachment_path: None,
@@ -1322,11 +1339,22 @@ async fn submit_insurance_application(
         Email {
             email_type: EmailType::InvoiceNotification,
             recipient: &customer_email,
-            subject: "Invoice Notification",
+            subject: &format!("Invoice {} — Tagihan Premi", invoice_no),
             body: &format!(
-                "Invoice {}: premi Rp {}, jatuh tempo {}. Bayar via portal payment gateway. Invoice PDF terlampir di email ini.",
-                invoice_no, premium_amount, due_date
+                "Halo {},\n\n\
+                 Berikut invoice untuk pendaftaran polis kamu:\n\n\
+                 No. Invoice: {}\n\
+                 Premi: Rp {}\n\
+                 Jatuh tempo: {}\n\n\
+                 Invoice PDF terlampir di email ini — bisa langsung di-download \
+                 dari attachment di atas.\n\n\
+                 Bayar via payment gateway di portal untuk mengaktifkan polis.\n\n\
+                 Salam,\n\
+                 Tim InsureTrack",
+                data.full_name, invoice_no, premium_amount, due_date
             ),
+            cta_text: None,
+            cta_url: None,
             related_entity_type: Some("invoice"),
             related_entity_id: Some(invoice_id),
             attachment_path: Some(pdf_path.clone()),
