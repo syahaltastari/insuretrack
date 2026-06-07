@@ -16,7 +16,7 @@
     "incremental": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@insuretrack/api-client": ["../api-client/src"]
+      "@insuretrack/api-client": ["../api-client/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
