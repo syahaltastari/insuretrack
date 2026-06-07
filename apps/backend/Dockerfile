@@ -11,14 +11,26 @@ FROM rust:1.92-slim-bookworm AS builder
 WORKDIR /app
 
 # Cache deps terpisah dari source agar build ulang cepat saat code berubah.
+# BuildKit cache mount: registry + git di-cache ANTAR build (diperlukan
+# `DOCKER_BUILDKIT=1` env, default aktif di Docker 23+). Tanpa mount,
+# setiap fresh build download ~500MB crates dari crates.io ulang.
+#
+# PENTING: jangan mount `/app/target` ke cache — output `cargo build`
+# (termasuk binary final) jadi tidak ada di image layer, dan stage
+# berikutnya tidak bisa COPY. Cache registry sudah cukup karena yang
+# paling lama itu download + extract crates, bukan compile.
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git \
+    mkdir -p src && echo "fn main() {}" > src/main.rs \
     && cargo build --release \
     && rm -rf src target/release/deps/insuretrack_backend*
 
 COPY src ./src
 COPY migrations ./migrations
-RUN cargo build --release
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git \
+    cargo build --release
 
 # ----- Stage 2: runtime -----
 FROM debian:bookworm-slim AS runtime

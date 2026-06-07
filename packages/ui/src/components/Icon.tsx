@@ -44,6 +44,9 @@ import {
   Clock,
   Send,
   LogOut,
+  // User
+  User,
+  KeyRound,
   // Sidebar toggle
   PanelLeftClose,
   PanelLeftOpen,
@@ -94,6 +97,8 @@ export const Icons: Record<string, LucideIcon> = {
   Clock,
   Send,
   LogOut,
+  User,
+  KeyRound,
   PanelLeftClose,
   PanelLeftOpen,
 };

@@ -21,8 +21,10 @@ pub struct LoginResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct ActivateRequest {
+    /// Activation JWT (purpose="activation") — diperoleh dari link di email.
+    /// Password sudah di-set saat register, jadi activation flow ini cuma
+    /// flip portal_status dari PENDING → ACTIVE.
     pub token: String,
-    pub password: String,
 }
 
 #[derive(Debug, Deserialize)]

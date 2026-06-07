@@ -1222,6 +1222,11 @@ a:hover {
 .user-menu-item.danger {
   color: var(--pomegranate-400);
 }
+.user-menu-divider {
+  height: 1px;
+  background: var(--oat-border);
+  margin: 4px 0;
+}
 @media (max-width: 767px) {
   .user-menu-meta {
     display: none;

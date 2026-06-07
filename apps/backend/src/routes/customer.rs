@@ -25,7 +25,7 @@ use axum::{
 };
 use chrono::Utc;
 use rust_decimal::Decimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
@@ -56,7 +56,8 @@ pub fn router() -> Router<AppState> {
             "/password/reset/consume",
             post(password_reset_consume),
         )
-        .route("/me", get(me))
+        .route("/me", get(me).patch(update_me))
+        .route("/password/change", axum::routing::post(change_password))
         .route("/registrations", post(submit_insurance_application))
         .route("/policies", get(list_policies))
         .route("/policies/:id", get(get_policy))
@@ -94,22 +95,22 @@ async fn activate(
     }
 
     let customer_id: Uuid = claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
-    let new_hash = hash_password(&req.password)?;
 
     let row: Option<CustomerCredRow> = sqlx::query_as(
         r#"
         UPDATE customers
-           SET password_hash = $1, portal_status = 'ACTIVE', updated_at = now()
-         WHERE id = $2
+           SET portal_status = 'ACTIVE', updated_at = now()
+         WHERE id = $1 AND portal_status = 'PENDING'
          RETURNING id, email, password_hash, portal_status
         "#,
     )
-    .bind(&new_hash)
     .bind(customer_id)
     .fetch_optional(&state.pool)
     .await?;
 
-    let customer = row.ok_or(AppError::NotFound("customer".into()))?;
+    let customer = row.ok_or(AppError::NotFound(
+        "customer (already active or not found)".into(),
+    ))?;
 
     let token = state
         .tokens
@@ -267,6 +268,8 @@ struct MeSummary {
     customer_id: Uuid,
     email: String,
     full_name: String,
+    /// Nomor HP customer (diperlukan oleh form edit profil).
+    mobile_number: String,
     active_policy_count: i64,
     total_sum_assured: Decimal,
     open_claim_count: i64,
@@ -279,9 +282,9 @@ async fn me(
 ) -> AppResult<Json<MeSummary>> {
     let customer_id = customer_id_from(&claims)?;
 
-    let summary: (Uuid, String, String, i64, Option<Decimal>, i64, i64) = sqlx::query_as(
+    let summary: (Uuid, String, String, String, i64, Option<Decimal>, i64, i64) = sqlx::query_as(
         r#"
-        SELECT c.id, c.email, c.full_name,
+        SELECT c.id, c.email, c.full_name, c.mobile_number,
                (SELECT COUNT(*) FROM policies  p WHERE p.registration_id IN
                   (SELECT id FROM registrations WHERE customer_id = c.id) AND p.status = 'ACTIVE')
                  AS active_policy_count,
@@ -304,11 +307,215 @@ async fn me(
         customer_id: summary.0,
         email: summary.1,
         full_name: summary.2,
-        active_policy_count: summary.3,
-        total_sum_assured: summary.4.unwrap_or_default(),
-        open_claim_count: summary.5,
-        open_inquiry_count: summary.6,
+        mobile_number: summary.3,
+        active_policy_count: summary.4,
+        total_sum_assured: summary.5.unwrap_or_default(),
+        open_claim_count: summary.6,
+        open_inquiry_count: summary.7,
     }))
+}
+
+// ---- PATCH /me ----
+//
+// Update basic profile fields. Saat ini hanya 3 field yang boleh
+// diubah dari portal: full_name, email, mobile_number. Field lain
+// (NIK, birth_date, address, dll.) terkunci setelah registrasi
+// aplikasi asuransi untuk konsistensi dengan data polis/klaim.
+
+#[derive(Debug, Deserialize)]
+struct UpdateMeRequest {
+    full_name: Option<String>,
+    email: Option<String>,
+    mobile_number: Option<String>,
+}
+
+#[derive(Serialize)]
+struct UpdateMeResponse {
+    customer_id: Uuid,
+    full_name: String,
+    email: String,
+    mobile_number: String,
+}
+
+async fn update_me(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+    Json(req): Json<UpdateMeRequest>,
+) -> AppResult<Json<UpdateMeResponse>> {
+    let customer_id = customer_id_from(&claims)?;
+
+    // Normalisasi & validasi per-field. Kalau field None, biarkan
+    // nilai existing (tidak di-overwrite). Kalau Some("") ditolak.
+    let full = req
+        .full_name
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let email = req
+        .email
+        .as_deref()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let mobile = req
+        .mobile_number
+        .as_deref()
+        .map(|s| {
+            s.chars()
+                .filter(|c| c.is_ascii_digit() || *c == '+')
+                .collect::<String>()
+        })
+        .filter(|s: &String| (10..=15).contains(&s.len()));
+
+    // Validasi format kalau user supply nilai baru.
+    if let Some(ref e) = email {
+        if !e.contains('@') || !e.contains('.') {
+            return Err(AppError::Validation("format email tidak valid".into()));
+        }
+    }
+    if let Some(ref m) = mobile {
+        let digit_count = m.chars().filter(|c| c.is_ascii_digit()).count();
+        if !(10..=15).contains(&digit_count) {
+            return Err(AppError::Validation(
+                "nomor HP harus 10-15 digit".into(),
+            ));
+        }
+    }
+    if let Some(ref f) = full {
+        if f.chars().count() < 3 {
+            return Err(AppError::Validation("nama minimal 3 karakter".into()));
+        }
+    }
+
+    // Cek konflik email kalau diubah.
+    if let Some(ref e) = email {
+        let conflict: Option<(Uuid,)> = sqlx::query_as(
+            "SELECT id FROM customers WHERE email = $1 AND id <> $2",
+        )
+        .bind(e)
+        .bind(customer_id)
+        .fetch_optional(&state.pool)
+        .await?;
+        if conflict.is_some() {
+            return Err(AppError::Conflict("email sudah dipakai customer lain".into()));
+        }
+    }
+
+    let row: (Uuid, String, String, String) = sqlx::query_as(
+        r#"
+        UPDATE customers
+           SET full_name     = COALESCE($2, full_name),
+               email         = COALESCE($3, email),
+               mobile_number = COALESCE($4, mobile_number),
+               updated_at    = now()
+         WHERE id = $1
+        RETURNING id, full_name, email, mobile_number
+        "#,
+    )
+    .bind(customer_id)
+    .bind(full)
+    .bind(email)
+    .bind(mobile)
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Audit (FS-15) — best-effort, jangan fail request kalau audit error.
+    let fields_changed: Vec<&str> = [
+        req.full_name.as_ref().map(|_| "full_name" as &str),
+        req.email.as_ref().map(|_| "email" as &str),
+        req.mobile_number.as_ref().map(|_| "mobile_number" as &str),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &claims.sub,
+            action: "customer_profile_updated",
+            entity_type: "customer",
+            entity_id: Some(customer_id),
+            metadata: Some(serde_json::json!({ "fields_changed": fields_changed })),
+            ip_address: None,
+        },
+    )
+    .await;
+
+    Ok(Json(UpdateMeResponse {
+        customer_id: row.0,
+        full_name: row.1,
+        email: row.2,
+        mobile_number: row.3,
+    }))
+}
+
+// ---- POST /password/change ----
+//
+// Change password while logged in. User harus supply current password
+// (autentikasi ulang) sebelum password baru di-set. Tidak ada token
+// email — kalau user lupa password, pakai /password/reset flow
+// (lihat routes/customer.rs::password_reset).
+
+#[derive(Debug, Deserialize)]
+struct ChangePasswordRequest {
+    current_password: String,
+    new_password: String,
+}
+
+async fn change_password(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+    Json(req): Json<ChangePasswordRequest>,
+) -> AppResult<StatusCode> {
+    let customer_id = customer_id_from(&claims)?;
+
+    if req.new_password.len() < 8 {
+        return Err(AppError::Validation(
+            "Password baru minimal 8 karakter".into(),
+        ));
+    }
+    if req.new_password == req.current_password {
+        return Err(AppError::Validation(
+            "Password baru harus berbeda dari password lama".into(),
+        ));
+    }
+
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT password_hash FROM customers WHERE id = $1",
+    )
+    .bind(customer_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (current_hash_opt,) = row.ok_or(AppError::Unauthorized)?;
+    let current_hash = current_hash_opt.as_deref().ok_or(AppError::Unauthorized)?;
+
+    if !verify_password(&req.current_password, current_hash)? {
+        return Err(AppError::Unauthorized);
+    }
+
+    let new_hash = hash_password(&req.new_password)?;
+    sqlx::query(
+        "UPDATE customers SET password_hash = $1, password_changed_at = now(), updated_at = now() WHERE id = $2",
+    )
+    .bind(&new_hash)
+    .bind(customer_id)
+    .execute(&state.pool)
+    .await?;
+
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &claims.sub,
+            action: "customer_password_changed",
+            entity_type: "customer",
+            entity_id: Some(customer_id),
+            metadata: None,
+            ip_address: None,
+        },
+    )
+    .await;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---- /policies ----

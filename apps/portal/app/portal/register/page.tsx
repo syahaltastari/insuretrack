@@ -110,16 +110,30 @@ export default function PortalRegisterPage() {
   return (
     <main
       style={{
-        height: "100vh",
+        // 100dvh = dynamic viewport height (handle mobile browser chrome);
+        // fallback 100vh untuk browser lama. height + overflow: hidden
+        // mengunci halaman agar tidak bisa di-scroll.
+        height: "100dvh",
+        minHeight: "100vh",
         width: "100vw",
         overflow: "hidden",
         display: "grid",
         placeItems: "center",
         background: "var(--warm-cream)",
         padding: 24,
+        boxSizing: "border-box",
       }}
     >
-      <div style={{ width: "100%", maxWidth: 420 }}>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          // Kalau viewport sangat pendek, form di-clip (overflow: hidden
+          // di parent), BUKAN di-scroll. User tidak akan lihat scrollbar.
+          maxHeight: "calc(100dvh - 48px)",
+          overflow: "hidden",
+        }}
+      >
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <p className="uppercase-label" style={{ color: "var(--matcha-600)" }}>
             InsureTrack

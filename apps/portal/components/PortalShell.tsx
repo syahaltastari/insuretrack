@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@insuretrack/ui";
 import { clearCustomerToken, getCustomerToken } from "@insuretrack/api-client";
+import { CustomerUserMenu, fetchCustomerProfile, type CustomerProfile } from "@/components/CustomerUserMenu";
 
 const navItems: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/portal/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
@@ -15,22 +16,45 @@ const navItems: Array<{ href: string; label: string; icon: IconName }> = [
 
 const SIDEBAR_MINIMIZED_KEY = "portal_sidebar_minimized";
 
+// Path di /portal/* yang TIDAK butuh auth (login/register/activate/reset).
+// Shell yang sama membungkus semuanya, jadi auth guard di bawah harus
+// skip cek token untuk path-path ini — kalau tidak, user yang belum login
+// terjebak di "Memuat..." karena `router.replace("/portal/login")` jadi
+// no-op (sudah di /portal/login) dan `setReady(true)` tidak dipanggil.
+const PUBLIC_PORTAL_PATHS = new Set<string>([
+  "/portal/login",
+  "/portal/register",
+  "/portal/activate",
+  "/portal/reset",
+]);
+
 export function PortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [minimizedHydrated, setMinimizedHydrated] = useState(false);
 
   useEffect(() => {
+    // Halaman publik (login, register, dll.) tidak butuh token.
+    // setReady(true) langsung supaya shell render — kalau tidak, user
+    // stuck di loading state selamanya.
+    if (pathname && PUBLIC_PORTAL_PATHS.has(pathname)) {
+      setReady(true);
+      return;
+    }
     const token = getCustomerToken();
     if (!token) {
       router.replace("/portal/login");
       return;
     }
     setReady(true);
-  }, [router]);
+    // Fetch profile untuk user menu (topbar kanan). Best-effort —
+    // kalau gagal, menu tetap render dengan inisial "·".
+    fetchCustomerProfile().then(setProfile);
+  }, [router, pathname]);
 
   useEffect(() => {
     try {
@@ -61,6 +85,13 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         <p>Memuat...</p>
       </main>
     );
+  }
+
+  // Halaman publik (login, register, activate, reset) tidak butuh
+  // sidebar/topbar shell — render children polos supaya page bisa pakai
+  // full-viewport layout sendiri (mis. form auth yang height: 100vh).
+  if (pathname && PUBLIC_PORTAL_PATHS.has(pathname)) {
+    return <>{children}</>;
   }
 
   return (
@@ -97,18 +128,6 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <button
-          onClick={() => {
-            clearCustomerToken();
-            router.replace("/portal/login");
-          }}
-          className="clay-button ghost size-small"
-          title={minimized ? "Logout" : undefined}
-          style={{ marginTop: 32, width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-        >
-          <Icon name="LogOut" size="sm" />
-          {!minimized && <span>Logout</span>}
-        </button>
       </aside>
       <div>
         <header className="admin-topbar">
@@ -131,6 +150,9 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
               <Icon name={minimized ? "PanelLeftOpen" : "PanelLeftClose"} size="sm" />
             </button>
             <span className="brand-mobile">InsureTrack Portal</span>
+          </div>
+          <div className="admin-topbar-right">
+            <CustomerUserMenu profile={profile} />
           </div>
         </header>
         <main className="shell-main">{children}</main>

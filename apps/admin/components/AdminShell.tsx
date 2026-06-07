@@ -22,6 +22,15 @@ const navItems: Array<{ href: string; label: string; icon: IconName }> = [
 
 const SIDEBAR_MINIMIZED_KEY = "admin_sidebar_minimized";
 
+// Path di /admin/* yang TIDAK butuh auth (cuma login). Shell yang sama
+// membungkus semuanya, jadi auth guard di bawah harus skip cek token
+// untuk path ini — kalau tidak, admin yang belum login terjebak di
+// "Memuat..." karena `router.replace("/admin/login")` jadi no-op
+// (sudah di /admin/login) dan `setReady(true)` tidak dipanggil.
+const PUBLIC_ADMIN_PATHS = new Set<string>([
+  "/admin/login",
+]);
+
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -32,6 +41,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const [minimizedHydrated, setMinimizedHydrated] = useState(false);
 
   useEffect(() => {
+    // Halaman publik (login) tidak butuh token. setReady(true) langsung
+    // supaya shell render — kalau tidak, admin yang belum login stuck
+    // di loading state selamanya.
+    if (pathname && PUBLIC_ADMIN_PATHS.has(pathname)) {
+      setReady(true);
+      return;
+    }
     const token = getAdminToken();
     if (!token) {
       router.replace("/admin/login");
@@ -39,7 +55,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     }
     setReady(true);
     fetchAdminProfile().then(setProfile);
-  }, [router]);
+  }, [router, pathname]);
 
   // Load minimized state from localStorage on mount (SSR-safe).
   useEffect(() => {
@@ -85,6 +101,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <p>Memuat...</p>
       </main>
     );
+  }
+
+  // Halaman publik (login) tidak butuh sidebar/topbar shell — render
+  // children polos supaya page bisa pakai full-viewport layout sendiri.
+  if (pathname && PUBLIC_ADMIN_PATHS.has(pathname)) {
+    return <>{children}</>;
   }
 
   return (

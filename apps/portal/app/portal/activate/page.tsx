@@ -5,24 +5,8 @@ export const dynamic = "force-dynamic";
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { API_BASE } from "@insuretrack/api-client";
 import { setCustomerToken } from "@insuretrack/api-client";
-import { Form, FormField, FormError } from "@insuretrack/forms";
-import { passwordSchema } from "@insuretrack/forms";
-
-const activateSchema = z
-  .object({
-    password: passwordSchema,
-    confirm_password: z.string(),
-  })
-  .refine((d) => d.password === d.confirm_password, {
-    message: "Konfirmasi password tidak cocok",
-    path: ["confirm_password"],
-  });
-type ActivateValues = z.infer<typeof activateSchema>;
 
 function ActivateInner() {
   const router = useRouter();
@@ -31,11 +15,9 @@ function ActivateInner() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const methods = useForm<ActivateValues>({
-    resolver: zodResolver(activateSchema) as never,
-    defaultValues: { password: "", confirm_password: "" },
-    mode: "onSubmit",
-  });
+  // Activation flow disederhanakan: password SUDAH di-set saat register
+  // (POST /api/public/customers). Halaman ini tinggal konfirmasi token
+  // dan flip portal_status dari PENDING → ACTIVE. Tidak ada form password.
 
   if (!token) {
     return (
@@ -53,14 +35,14 @@ function ActivateInner() {
     );
   }
 
-  const onSubmit = async (values: ActivateValues) => {
+  const onActivate = async () => {
     setSubmitting(true);
     setFormError(null);
     try {
       const r = await fetch(`${API_BASE}/customer/activate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password: values.password }),
+        body: JSON.stringify({ token }),
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json?.error?.message ?? "Aktivasi gagal");
@@ -75,12 +57,16 @@ function ActivateInner() {
 
   return (
     <main
-      className="clay-section"
       style={{
+        height: "100dvh",
         minHeight: "100vh",
+        width: "100vw",
+        overflow: "hidden",
         display: "grid",
         placeItems: "center",
         background: "var(--warm-cream)",
+        padding: 24,
+        boxSizing: "border-box",
       }}
     >
       <div style={{ width: "100%", maxWidth: 420 }}>
@@ -91,45 +77,48 @@ function ActivateInner() {
           <h1 className="display-secondary" style={{ fontSize: "2.5rem", marginTop: 8 }}>
             Aktivasi Akun
           </h1>
+          <p
+            className="body"
+            style={{ color: "var(--warm-charcoal)", marginTop: 12, marginBottom: 0 }}
+          >
+            Klik tombol di bawah untuk mengaktifkan akun portal Anda. Setelah
+            aktif, Anda otomatis login dan langsung bisa apply asuransi,
+            lihat invoice, dan track status polis dari portal.
+          </p>
         </div>
 
-        <Form methods={methods} onSubmit={onSubmit} className="clay-card feature">
-          <FormError message={formError} />
-
-          <FormField
-            label="Password Baru"
-            name="password"
-            required
-            hint="Minimal 8 karakter, 1 huruf besar, 1 angka"
-          >
-            <input
-              id="password"
-              className="clay-input"
-              type="password"
-              autoComplete="new-password"
-              {...methods.register("password")}
-            />
-          </FormField>
-
-          <FormField label="Konfirmasi Password" name="confirm_password" required>
-            <input
-              id="confirm_password"
-              className="clay-input"
-              type="password"
-              autoComplete="new-password"
-              {...methods.register("confirm_password")}
-            />
-          </FormField>
-
+        <div className="clay-card feature">
+          {formError && (
+            <div
+              role="alert"
+              style={{
+                borderColor: "var(--pomegranate-400)",
+                background: "#fff5f5",
+                padding: "10px 14px",
+                borderRadius: "var(--radius-card)",
+                marginBottom: 12,
+              }}
+            >
+              ⚠ {formError}
+            </div>
+          )}
           <button
-            type="submit"
+            type="button"
+            onClick={onActivate}
             disabled={submitting}
             className="clay-button solid-matcha"
-            style={{ width: "100%", marginTop: 12 }}
+            style={{ width: "100%", marginTop: 4 }}
           >
-            {submitting ? "Mengaktifkan..." : "Aktifkan & Login →"}
+            {submitting ? "Mengaktifkan..." : "Aktifkan Akun →"}
           </button>
-        </Form>
+        </div>
+
+        <p
+          className="caption"
+          style={{ textAlign: "center", marginTop: 16, color: "var(--warm-silver)" }}
+        >
+          Link aktivasi ini single-use dan akan expire setelah dipakai.
+        </p>
       </div>
     </main>
   );
