@@ -9,22 +9,62 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { StatusBadge } from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE } from "@insuretrack/api-client";
-import { getCustomerToken } from "@insuretrack/api-client";
+import { API_BASE, getCustomerToken } from "@insuretrack/api-client";
+
+// ---- Types ---------------------------------------------------------------
+
+type SenderType = "CUSTOMER" | "ADMIN";
+
+type Message = {
+  id: string;
+  sender_type: SenderType;
+  sender_id: string | null;
+  sender_name: string;
+  message: string;
+  created_at: string;
+};
 
 type Inquiry = {
   id: string;
   inquiry_no: string;
   policy_no: string | null;
   subject: string;
+  /** Pesan customer pertama (legacy) — dipertahankan untuk backward-compat. */
   message: string;
-  status: string;
+  status: "OPEN" | "ANSWERED" | "CLOSED";
   response: string | null;
   created_at: string;
   responded_at: string | null;
+  last_message_at: string | null;
+  last_sender_type: SenderType | null;
+  closed_at: string | null;
+  /** Subquery dari backend — snippet pesan terakhir di thread. */
+  last_message_preview: string | null;
 };
 
-const inquirySchema = z.object({
+type InquiryDetail = Inquiry & { messages: Message[] };
+
+// ---- Helpers -------------------------------------------------------------
+
+/** Format timestamp `id-ID` (WIB) untuk konsistensi. */
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+/** Truncate message preview untuk list card. */
+function snippet(text: string | null | undefined, max = 80): string {
+  if (!text) return "";
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > max ? clean.slice(0, max) + "…" : clean;
+}
+
+// ---- Schemas -------------------------------------------------------------
+
+const createSchema = z.object({
   subject: z
     .string()
     .trim()
@@ -36,7 +76,263 @@ const inquirySchema = z.object({
     .min(10, "Pesan minimal 10 karakter")
     .max(5000, "Pesan maksimal 5000 karakter"),
 });
-type InquiryFormValues = z.infer<typeof inquirySchema>;
+type CreateValues = z.infer<typeof createSchema>;
+
+const replySchema = z.object({
+  message: z
+    .string()
+    .trim()
+    .min(5, "Balasan minimal 5 karakter")
+    .max(5000, "Maksimal 5000 karakter"),
+});
+type ReplyValues = z.infer<typeof replySchema>;
+
+// ---- Thread view ---------------------------------------------------------
+
+function ThreadView({ messages }: { messages: Message[] }) {
+  if (messages.length === 0) {
+    return (
+      <p className="caption" style={{ color: "var(--warm-silver)", margin: 0 }}>
+        Belum ada pesan di thread ini.
+      </p>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {messages.map((m) => {
+        const isCustomer = m.sender_type === "CUSTOMER";
+        return (
+          <div
+            key={m.id}
+            style={{
+              alignSelf: isCustomer ? "flex-start" : "flex-end",
+              maxWidth: "85%",
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: isCustomer
+                ? "var(--warm-cream)"
+                : "var(--ube-300)",
+              borderLeft: isCustomer
+                ? "3px solid var(--matcha-600)"
+                : "3px solid var(--ube-800)",
+              border: isCustomer ? undefined : "1px solid var(--ube-800)",
+            }}
+          >
+            <p
+              className="caption"
+              style={{
+                margin: 0,
+                color: isCustomer ? "var(--matcha-600)" : "var(--ube-900)",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {isCustomer ? "Anda" : m.sender_name} · {formatDateTime(m.created_at)}
+            </p>
+            <p
+              style={{
+                margin: "6px 0 0 0",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {m.message}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---- Detail card (expanded inquiry) --------------------------------------
+
+type DetailCardProps = {
+  detail: InquiryDetail;
+  onUpdated: () => void;
+};
+
+function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
+  const isClosed = detail.status === "CLOSED";
+  const replyMethods = useForm<ReplyValues>({
+    resolver: zodResolver(replySchema) as never,
+    defaultValues: { message: "" },
+    mode: "onSubmit",
+  });
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
+
+  const sendReply = async (values: ReplyValues) => {
+    const token = getCustomerToken();
+    if (!token) return;
+    setReplySubmitting(true);
+    setReplyError(null);
+    try {
+      const r = await fetch(
+        `${API_BASE}/customer/inquiries/${detail.id}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ message: values.message.trim() }),
+        },
+      );
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+      }
+      replyMethods.reset({ message: "" });
+      onUpdated();
+    } catch (e) {
+      setReplyError(e instanceof Error ? e.message : "Gagal kirim balasan");
+    } finally {
+      setReplySubmitting(false);
+    }
+  };
+
+  const handleClose = async () => {
+    if (!confirm("Tutup tiket ini? Kamu tidak bisa menambah balasan lagi setelah ditutup.")) {
+      return;
+    }
+    const token = getCustomerToken();
+    if (!token) return;
+    setCloseSubmitting(true);
+    setCloseError(null);
+    try {
+      const note = replyMethods.getValues("message").trim();
+      const r = await fetch(
+        `${API_BASE}/customer/inquiries/${detail.id}/close`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(note ? { note } : {}),
+        },
+      );
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+      }
+      replyMethods.reset({ message: "" });
+      onUpdated();
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : "Gagal menutup tiket");
+    } finally {
+      setCloseSubmitting(false);
+    }
+  };
+
+  const onReply = sendReply;
+  const anySubmitting = replySubmitting || closeSubmitting;
+
+  return (
+    <div
+      className="clay-card feature"
+      style={{ marginBottom: 12, borderColor: "var(--ube-800)" }}
+    >
+      {/* Header inquiry */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          <p
+            className="mono"
+            style={{ fontSize: "0.85rem", color: "var(--warm-silver)", margin: 0 }}
+          >
+            {detail.inquiry_no}
+          </p>
+          <h3 className="feature-title" style={{ marginTop: 4, marginBottom: 4 }}>
+            {detail.subject}
+          </h3>
+          <p className="caption" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+            Dibuat {formatDateTime(detail.created_at)}
+            {detail.policy_no && (
+              <>
+                {" "}· Polis <span className="mono">{detail.policy_no}</span>
+              </>
+            )}
+          </p>
+        </div>
+        <StatusBadge status={detail.status} />
+      </div>
+
+      {/* Thread */}
+      <ThreadView messages={detail.messages} />
+
+      {/* Closed banner */}
+      {isClosed && (
+        <div
+          className="clay-card dashed"
+          style={{
+            marginTop: 16,
+            padding: 12,
+            background: "var(--warm-cream)",
+            fontSize: "0.9rem",
+          }}
+        >
+          🔒 Tiket ditutup
+          {detail.closed_at && ` pada ${formatDateTime(detail.closed_at)}`}.
+          Balasan baru tidak dapat ditambahkan.
+        </div>
+      )}
+
+      {/* Reply form (hidden kalau closed) */}
+      {!isClosed && (
+        <Form
+          methods={replyMethods}
+          onSubmit={onReply}
+          style={{ marginTop: 16 }}
+        >
+          <FormError message={replyError ?? closeError} />
+          <FormField label="Balasan" name="message" required>
+            <textarea
+              id="message"
+              className="clay-textarea"
+              rows={3}
+              placeholder="Tulis balasan untuk admin…"
+              disabled={anySubmitting}
+              {...replyMethods.register("message")}
+            />
+          </FormField>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="submit"
+              className="clay-button solid-ube size-small"
+              disabled={anySubmitting}
+            >
+              {replySubmitting ? "Mengirim..." : "Kirim Balasan"}
+            </button>
+            <button
+              type="button"
+              className="clay-button ghost size-small"
+              onClick={handleClose}
+              disabled={anySubmitting}
+              title="Tutup tiket — tidak bisa menambah balasan lagi"
+            >
+              {closeSubmitting ? "Menutup..." : "Tutup Tiket"}
+            </button>
+          </div>
+        </Form>
+      )}
+    </div>
+  );
+}
+
+// ---- Main page -----------------------------------------------------------
 
 export default function PortalInquiriesPage() {
   const [data, setData] = useState<Inquiry[]>([]);
@@ -45,13 +341,20 @@ export default function PortalInquiriesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const methods = useForm<InquiryFormValues>({
-    resolver: zodResolver(inquirySchema) as never,
+  // Detail yang sedang dibuka (single, bukan multi-expand). Null = list view.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<InquiryDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const createMethods = useForm<CreateValues>({
+    resolver: zodResolver(createSchema) as never,
     defaultValues: { subject: "", message: "" },
     mode: "onSubmit",
   });
 
-  const load = () => {
+  // Load list
+  useEffect(() => {
     const token = getCustomerToken();
     if (!token) return;
     setLoading(true);
@@ -66,34 +369,70 @@ export default function PortalInquiriesPage() {
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  const onSubmit = async (values: InquiryFormValues) => {
+  // Load detail kalau selectedId berubah
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null);
+      setDetailError(null);
+      return;
+    }
     const token = getCustomerToken();
+    if (!token) return;
+    setDetailLoading(true);
+    setDetailError(null);
+    fetch(`${API_BASE}/customer/inquiries/${selectedId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then((j: InquiryDetail) => setDetail(j))
+      .catch((e) => setDetailError(e instanceof Error ? e.message : "Gagal load"))
+      .finally(() => setDetailLoading(false));
+  }, [selectedId, refreshKey]);
+
+  // Create handler — refresh list + auto-select inquiry baru
+  const onCreate = async (values: CreateValues) => {
+    const token = getCustomerToken();
+    if (!token) return;
     setSubmitting(true);
     try {
       const r = await fetch(`${API_BASE}/customer/inquiries`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subject: values.subject.trim(), message: values.message.trim() }),
+        body: JSON.stringify({
+          subject: values.subject.trim(),
+          message: values.message.trim(),
+        }),
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json?.error?.message ?? "Gagal kirim inquiry");
-      methods.reset({ subject: "", message: "" });
+      createMethods.reset({ subject: "", message: "" });
+      // Refresh list, lalu auto-select inquiry baru kalau response punya id.
       setRefreshKey((k) => k + 1);
+      const newId = (json?.id ?? null) as string | null;
+      if (newId) setSelectedId(newId);
     } catch (err) {
-      methods.setError("root", { message: err instanceof Error ? err.message : "Gagal" });
+      createMethods.setError("root", {
+        message: err instanceof Error ? err.message : "Gagal",
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const rootErr = methods.formState.errors.root?.message;
+  const refreshAll = () => {
+    setRefreshKey((k) => k + 1);
+    // Trigger detail refetch juga (effect re-runs karena refreshKey di deps).
+  };
+
+  const createRootErr = createMethods.formState.errors.root?.message;
 
   return (
     <>
@@ -101,25 +440,29 @@ export default function PortalInquiriesPage() {
         ✦ Pertanyaan
       </p>
       <h1 className="page-title">Hubungi Admin</h1>
-      <p className="page-subtitle">Tanya jawab tentang polis Anda. Admin akan merespon via email.</p>
+      <p className="page-subtitle">
+        Buat tiket pertanyaan baru atau lanjutkan thread yang sudah ada. Admin akan
+        merespon via email, dan setiap balasan baru akan dikirim juga lewat email.
+      </p>
 
+      {/* Form buat tiket baru */}
       <Form
-        methods={methods}
-        onSubmit={onSubmit}
+        methods={createMethods}
+        onSubmit={onCreate}
         className="clay-card feature"
-        // Styling handled inline below
       >
         <h2 className="feature-title" style={{ marginBottom: 16 }}>
           Buat Pertanyaan Baru
         </h2>
-        <FormError message={rootErr ?? null} />
+        <FormError message={createRootErr ?? null} />
 
         <FormField label="Subject" name="subject" required>
           <input
             id="subject"
             className="clay-input"
             autoComplete="off"
-            {...methods.register("subject")}
+            placeholder="cth: Cara klaim rawat inap"
+            {...createMethods.register("subject")}
           />
         </FormField>
 
@@ -128,7 +471,8 @@ export default function PortalInquiriesPage() {
             id="message"
             className="clay-textarea"
             rows={4}
-            {...methods.register("message")}
+            placeholder="Jelaskan pertanyaanmu sedetail mungkin…"
+            {...createMethods.register("message")}
           />
         </FormField>
 
@@ -142,9 +486,14 @@ export default function PortalInquiriesPage() {
         </button>
       </Form>
 
-      <h2 className="section-heading" style={{ fontSize: "1.5rem", marginBottom: 16, marginTop: 32 }}>
-        Riwayat
+      {/* Daftar tiket */}
+      <h2
+        className="section-heading"
+        style={{ fontSize: "1.5rem", marginBottom: 16, marginTop: 32 }}
+      >
+        Riwayat Tiket
       </h2>
+
       {loading && <p>Memuat...</p>}
       {error && (
         <div
@@ -154,65 +503,110 @@ export default function PortalInquiriesPage() {
           ⚠ {error}
         </div>
       )}
+
+      {/* Detail yang sedang dibuka (di atas list) */}
+      {selectedId && (
+        <div style={{ marginBottom: 16 }}>
+          <button
+            type="button"
+            className="clay-button ghost size-small"
+            onClick={() => setSelectedId(null)}
+            style={{ marginBottom: 12 }}
+          >
+            ← Kembali ke daftar
+          </button>
+          {detailLoading && <p>Memuat thread...</p>}
+          {detailError && (
+            <div
+              className="clay-card"
+              style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}
+            >
+              ⚠ {detailError}
+            </div>
+          )}
+          {detail && !detailLoading && (
+            <InquiryDetailCard detail={detail} onUpdated={refreshAll} />
+          )}
+        </div>
+      )}
+
       {!loading && data.length === 0 && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 32 }}>
           <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Belum ada pertanyaan.
+            Belum ada tiket pertanyaan. Buat tiket baru di atas.
           </p>
         </div>
       )}
+
       {!loading &&
-        data.map((inq) => (
-          <div key={inq.id} className="clay-card" style={{ marginBottom: 12 }}>
-            <div
+        data.map((inq) => {
+          const isOpen = inq.status !== "CLOSED";
+          const lastSender = inq.last_sender_type;
+          const lastTime = inq.last_message_at ?? inq.created_at;
+          const preview = inq.last_message_preview ?? inq.message;
+          const you = lastSender === "CUSTOMER" ? "Anda" : "Tim InsureTrack";
+          return (
+            <button
+              key={inq.id}
+              type="button"
+              onClick={() => setSelectedId(inq.id)}
+              className="clay-card"
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: 8,
+                marginBottom: 12,
+                textAlign: "left",
+                display: "block",
+                width: "100%",
+                cursor: "pointer",
+                background: selectedId === inq.id ? "var(--warm-cream)" : undefined,
+                borderColor: selectedId === inq.id ? "var(--ube-800)" : undefined,
               }}
             >
-              <strong style={{ fontSize: "1.05rem" }}>{inq.subject}</strong>
-              <StatusBadge status={inq.status} />
-            </div>
-            <p className="caption" style={{ color: "var(--warm-silver)", marginTop: 4 }}>
-              <span className="mono">{inq.inquiry_no}</span> ·{" "}
-              {new Date(inq.created_at).toLocaleString("id-ID")}
-              {inq.policy_no && (
-                <>
-                  {" "}· Polis <span className="mono">{inq.policy_no}</span>
-                </>
-              )}
-            </p>
-            <p style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{inq.message}</p>
-            {inq.response && (
               <div
                 style={{
-                  marginTop: 12,
-                  padding: 12,
-                  background: "var(--warm-cream)",
-                  borderLeft: "3px solid var(--matcha-600)",
-                  borderRadius: 8,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 8,
                 }}
               >
-                <p
-                  className="caption"
-                  style={{
-                    color: "var(--matcha-600)",
-                    fontWeight: 600,
-                    margin: 0,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  Jawaban Admin
-                </p>
-                <p style={{ margin: "6px 0 0 0", whiteSpace: "pre-wrap" }}>{inq.response}</p>
+                <strong style={{ fontSize: "1.05rem" }}>{inq.subject}</strong>
+                <StatusBadge status={inq.status} />
               </div>
-            )}
-          </div>
-        ))}
+              <p
+                className="caption"
+                style={{ color: "var(--warm-silver)", marginTop: 4, marginBottom: 6 }}
+              >
+                <span className="mono">{inq.inquiry_no}</span> ·{" "}
+                {formatDateTime(lastTime)}
+                {inq.policy_no && (
+                  <>
+                    {" "}· Polis <span className="mono">{inq.policy_no}</span>
+                  </>
+                )}
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  color: "var(--warm-charcoal)",
+                  fontSize: "0.92rem",
+                }}
+              >
+                {isOpen ? (
+                  <>
+                    <span style={{ color: "var(--warm-silver)" }}>{you}: </span>
+                    {snippet(preview)}
+                  </>
+                ) : (
+                  <span style={{ color: "var(--warm-silver)", fontStyle: "italic" }}>
+                    Tiket ditutup
+                    {inq.closed_at && ` · ${formatDateTime(inq.closed_at)}`}
+                  </span>
+                )}
+              </p>
+            </button>
+          );
+        })}
     </>
   );
 }

@@ -9,10 +9,22 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE } from "@insuretrack/api-client";
-import { getAdminToken } from "@insuretrack/api-client";
+import { API_BASE, getAdminToken } from "@insuretrack/api-client";
 
-type Inquiry = {
+// ---- Types ---------------------------------------------------------------
+
+type SenderType = "CUSTOMER" | "ADMIN";
+
+type Message = {
+  id: string;
+  sender_type: SenderType;
+  sender_id: string | null;
+  sender_name: string;
+  message: string;
+  created_at: string;
+};
+
+type AdminInquiry = {
   id: string;
   inquiry_no: string;
   customer_name: string;
@@ -20,14 +32,38 @@ type Inquiry = {
   policy_no: string | null;
   subject: string;
   message: string;
-  status: string;
+  status: "OPEN" | "ANSWERED" | "CLOSED";
   response: string | null;
   created_at: string;
   responded_at: string | null;
+  last_message_at: string | null;
+  last_sender_type: SenderType | null;
+  closed_at: string | null;
+  last_message_preview: string | null;
 };
 
+type AdminInquiryDetail = AdminInquiry & { messages: Message[] };
+
+// ---- Helpers -------------------------------------------------------------
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function snippet(text: string | null | undefined, max = 80): string {
+  if (!text) return "";
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > max ? clean.slice(0, max) + "…" : clean;
+}
+
+// ---- Schemas -------------------------------------------------------------
+
 const replySchema = z.object({
-  response: z
+  message: z
     .string()
     .trim()
     .min(5, "Jawaban minimal 5 karakter")
@@ -35,152 +71,361 @@ const replySchema = z.object({
 });
 type ReplyValues = z.infer<typeof replySchema>;
 
-function InquiryCard({ inquiry, onUpdated }: { inquiry: Inquiry; onUpdated: () => void }) {
-  const [submitting, setSubmitting] = useState<"answer" | "close" | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+// ---- Thread view ---------------------------------------------------------
+
+function ThreadView({
+  messages,
+  customerName,
+}: {
+  messages: Message[];
+  customerName: string;
+}) {
+  if (messages.length === 0) {
+    return (
+      <p className="caption" style={{ color: "var(--warm-silver)", margin: 0 }}>
+        Belum ada pesan di thread ini.
+      </p>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {messages.map((m) => {
+        const isAdmin = m.sender_type === "ADMIN";
+        return (
+          <div
+            key={m.id}
+            style={{
+              alignSelf: isAdmin ? "flex-end" : "flex-start",
+              maxWidth: "85%",
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: isAdmin ? "var(--ube-300)" : "var(--warm-cream)",
+              borderLeft: isAdmin
+                ? "3px solid var(--ube-800)"
+                : "3px solid var(--matcha-600)",
+              border: isAdmin ? "1px solid var(--ube-800)" : undefined,
+            }}
+          >
+            <p
+              className="caption"
+              style={{
+                margin: 0,
+                color: isAdmin ? "var(--ube-900)" : "var(--matcha-600)",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {isAdmin ? "Anda (admin)" : m.sender_name || customerName} ·{" "}
+              {formatDateTime(m.created_at)}
+            </p>
+            <p
+              style={{
+                margin: "6px 0 0 0",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {m.message}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---- Inquiry card --------------------------------------------------------
+
+type InquiryCardProps = {
+  inquiry: AdminInquiry;
+  expanded: boolean;
+  onToggle: () => void;
+  onUpdated: () => void;
+};
+
+function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProps) {
+  const [detail, setDetail] = useState<AdminInquiryDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
   const methods = useForm<ReplyValues>({
     resolver: zodResolver(replySchema) as never,
-    defaultValues: { response: "" },
+    defaultValues: { message: "" },
     mode: "onSubmit",
   });
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
-  const respond = async (values: ReplyValues, close: boolean) => {
+  // Fetch detail saat expanded pertama kali
+  useEffect(() => {
+    if (!expanded || detail) return;
     const token = getAdminToken();
     if (!token) return;
-    setSubmitting(close ? "close" : "answer");
-    setFormError(null);
+    setDetailLoading(true);
+    setDetailError(null);
+    fetch(`${API_BASE}/admin/inquiries/${inquiry.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then((j: AdminInquiryDetail) => setDetail(j))
+      .catch((e) =>
+        setDetailError(e instanceof Error ? e.message : "Gagal load detail"),
+      )
+      .finally(() => setDetailLoading(false));
+  }, [expanded, detail, inquiry.id]);
+
+  const isClosed = inquiry.status === "CLOSED";
+  const anySubmitting = replySubmitting || closeSubmitting;
+
+  const sendReply = async (values: ReplyValues) => {
+    const token = getAdminToken();
+    if (!token) return;
+    setReplySubmitting(true);
+    setReplyError(null);
     try {
-      const r = await fetch(`${API_BASE}/admin/inquiries/${inquiry.id}/respond`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ response: values.response.trim(), close }),
-      });
+      const r = await fetch(
+        `${API_BASE}/admin/inquiries/${inquiry.id}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ message: values.message.trim() }),
+        },
+      );
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
       }
-      methods.reset({ response: "" });
+      methods.reset({ message: "" });
       onUpdated();
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Gagal");
+      setReplyError(e instanceof Error ? e.message : "Gagal kirim balasan");
     } finally {
-      setSubmitting(null);
+      setReplySubmitting(false);
     }
   };
 
-  const onAnswer = methods.handleSubmit((v) => respond(v, false));
-  const onClose = methods.handleSubmit((v) => respond(v, true));
+  const handleClose = async () => {
+    if (!confirm(`Tutup tiket ${inquiry.inquiry_no}? Customer tidak bisa menambah balasan lagi.`)) {
+      return;
+    }
+    const token = getAdminToken();
+    if (!token) return;
+    setCloseSubmitting(true);
+    setCloseError(null);
+    try {
+      const note = methods.getValues("message").trim();
+      const r = await fetch(
+        `${API_BASE}/admin/inquiries/${inquiry.id}/close`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(note ? { note } : {}),
+        },
+      );
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+      }
+      methods.reset({ message: "" });
+      onUpdated();
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : "Gagal menutup tiket");
+    } finally {
+      setCloseSubmitting(false);
+    }
+  };
+
+  const onReply = sendReply;
 
   return (
-    <Form
-      methods={methods}
-      onSubmit={(v) => respond(v, false)}
+    <div
       className="clay-card feature"
-      style={{ marginBottom: 16 }}
+      style={{
+        marginBottom: 16,
+        borderColor: expanded ? "var(--ube-800)" : undefined,
+      }}
     >
-      <div
+      {/* Header — clickable to expand */}
+      <button
+        type="button"
+        onClick={onToggle}
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          gap: 12,
-          marginBottom: 12,
+          all: "unset",
+          display: "block",
+          width: "100%",
+          cursor: "pointer",
         }}
       >
-        <div>
-          <p
-            className="mono"
-            style={{ fontSize: "0.85rem", color: "var(--warm-silver)", margin: 0 }}
-          >
-            {inquiry.inquiry_no}
-          </p>
-          <h3 className="feature-title" style={{ marginTop: 4, marginBottom: 4 }}>
-            {inquiry.subject}
-          </h3>
-          <p className="caption" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Dari <strong>{inquiry.customer_name}</strong> ({inquiry.customer_email})
-            {inquiry.policy_no && (
-              <>
-                {" "}· Polis <span className="mono">{inquiry.policy_no}</span>
-              </>
-            )}
-            {" "}· {new Date(inquiry.created_at).toLocaleString("id-ID")}
-          </p>
-        </div>
-        <StatusBadge status={inquiry.status} />
-      </div>
-
-      <p style={{ whiteSpace: "pre-wrap", margin: "12px 0" }}>{inquiry.message}</p>
-
-      {inquiry.response && (
         <div
           style={{
-            marginTop: 12,
-            marginBottom: 12,
-            padding: 12,
-            background: "var(--warm-cream)",
-            borderLeft: "3px solid var(--matcha-600)",
-            borderRadius: 8,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            gap: 12,
+            marginBottom: expanded ? 16 : 0,
           }}
         >
-          <p
-            className="caption"
-            style={{
-              color: "var(--matcha-600)",
-              fontWeight: 600,
-              margin: 0,
-              textTransform: "uppercase",
-            }}
-          >
-            Jawaban Anda
-          </p>
-          <p style={{ margin: "6px 0 0 0", whiteSpace: "pre-wrap" }}>{inquiry.response}</p>
-        </div>
-      )}
-
-      {inquiry.status !== "CLOSED" && (
-        <>
-          <FormField label="Jawaban" name="response" required>
-            <textarea
-              className="clay-textarea"
-              rows={3}
-              disabled={submitting !== null}
-              {...methods.register("response")}
-            />
-          </FormField>
-          <FormError message={formError} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              className="clay-button solid-ube size-small"
-              onClick={onAnswer}
-              disabled={submitting !== null}
+          <div>
+            <p
+              className="mono"
+              style={{ fontSize: "0.85rem", color: "var(--warm-silver)", margin: 0 }}
             >
-              {submitting === "answer" ? "Mengirim..." : "Jawab (ANSWERED)"}
-            </button>
-            <button
-              type="button"
-              className="clay-button ghost size-small"
-              onClick={onClose}
-              disabled={submitting !== null}
-            >
-              {submitting === "close" ? "Mengirim..." : "Jawab & Tutup (CLOSED)"}
-            </button>
+              {inquiry.inquiry_no}
+            </p>
+            <h3 className="feature-title" style={{ marginTop: 4, marginBottom: 4 }}>
+              {inquiry.subject}
+            </h3>
+            <p className="caption" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+              Dari <strong>{inquiry.customer_name}</strong> ({inquiry.customer_email})
+              {inquiry.policy_no && (
+                <>
+                  {" "}· Polis <span className="mono">{inquiry.policy_no}</span>
+                </>
+              )}
+              {" "}· {formatDateTime(inquiry.created_at)}
+            </p>
+            {inquiry.last_message_preview && !expanded && (
+              <p
+                style={{
+                  margin: "6px 0 0 0",
+                  color: "var(--warm-charcoal)",
+                  fontSize: "0.9rem",
+                }}
+              >
+                <span style={{ color: "var(--warm-silver)" }}>
+                  {inquiry.last_sender_type === "ADMIN" ? "Anda: " : `${inquiry.customer_name}: `}
+                </span>
+                {snippet(inquiry.last_message_preview)}
+              </p>
+            )}
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <StatusBadge status={inquiry.status} />
+            <span
+              style={{
+                fontSize: "1.2rem",
+                color: "var(--warm-silver)",
+                transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                transition: "transform 0.15s",
+              }}
+            >
+              ›
+            </span>
+          </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <>
+          {detailLoading && <p>Memuat thread...</p>}
+          {detailError && (
+            <div
+              className="clay-card"
+              style={{
+                borderColor: "var(--pomegranate-400)",
+                background: "#fff5f5",
+                marginBottom: 12,
+              }}
+            >
+              ⚠ {detailError}
+            </div>
+          )}
+          {detail && !detailLoading && (
+            <>
+              <ThreadView
+                messages={detail.messages}
+                customerName={detail.customer_name}
+              />
+
+              {isClosed && (
+                <div
+                  className="clay-card dashed"
+                  style={{
+                    marginTop: 16,
+                    padding: 12,
+                    background: "var(--warm-cream)",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  🔒 Tiket ditutup
+                  {detail.closed_at && ` pada ${formatDateTime(detail.closed_at)}`}.
+                </div>
+              )}
+
+              {!isClosed && (
+                <Form
+                  methods={methods}
+                  onSubmit={onReply}
+                  style={{ marginTop: 16 }}
+                >
+                  <FormError message={replyError ?? closeError} />
+                  <FormField
+                    label="Balasan"
+                    name="message"
+                    required
+                  >
+                    <textarea
+                      className="clay-textarea"
+                      rows={3}
+                      placeholder="Tulis jawaban untuk customer…"
+                      disabled={anySubmitting}
+                      {...methods.register("message")}
+                    />
+                  </FormField>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="submit"
+                      className="clay-button solid-ube size-small"
+                      disabled={anySubmitting}
+                    >
+                      {replySubmitting ? "Mengirim..." : "Kirim Balasan"}
+                    </button>
+                    <button
+                      type="button"
+                      className="clay-button ghost size-small"
+                      onClick={handleClose}
+                      disabled={anySubmitting}
+                      title="Tutup tiket — customer tidak bisa menambah balasan lagi"
+                    >
+                      {closeSubmitting ? "Menutup..." : "Tutup Tiket"}
+                    </button>
+                  </div>
+                </Form>
+              )}
+            </>
+          )}
         </>
       )}
-    </Form>
+    </div>
   );
 }
 
+// ---- Main page -----------------------------------------------------------
+
 export default function AdminInquiriesPage() {
-  const [data, setData] = useState<Inquiry[]>([]);
+  const [data, setData] = useState<AdminInquiry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const load = () => {
+  useEffect(() => {
     const token = getAdminToken();
     if (!token) return;
     setLoading(true);
@@ -195,11 +440,6 @@ export default function AdminInquiriesPage() {
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
   return (
@@ -209,7 +449,8 @@ export default function AdminInquiriesPage() {
       </p>
       <h1 className="page-title">Pertanyaan Customer</h1>
       <p className="page-subtitle">
-        Balas pertanyaan customer. Transisi sesuai state machine (spec §10.5).
+        Balas thread pertanyaan customer. Setiap balasan akan dikirim lewat email ke
+        customer, dan customer bisa reply sampai tiket ditutup.
       </p>
 
       {error && (
@@ -238,7 +479,15 @@ export default function AdminInquiriesPage() {
 
       {!loading &&
         data.map((inq) => (
-          <InquiryCard key={inq.id} inquiry={inq} onUpdated={() => setRefreshKey((k) => k + 1)} />
+          <InquiryCard
+            key={inq.id}
+            inquiry={inq}
+            expanded={expandedId === inq.id}
+            onToggle={() =>
+              setExpandedId(expandedId === inq.id ? null : inq.id)
+            }
+            onUpdated={() => setRefreshKey((k) => k + 1)}
+          />
         ))}
     </>
   );

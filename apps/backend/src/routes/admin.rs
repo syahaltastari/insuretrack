@@ -100,9 +100,14 @@ pub fn router() -> Router<AppState> {
             axum::routing::post(upload_payment_proof),
         )
         .route("/inquiries", get(list_inquiries_admin))
+        .route("/inquiries/:id", get(get_inquiry_admin))
         .route(
-            "/inquiries/:id/respond",
-            axum::routing::post(respond_inquiry),
+            "/inquiries/:id/messages",
+            axum::routing::post(admin_inquiry_message),
+        )
+        .route(
+            "/inquiries/:id/close",
+            axum::routing::post(admin_inquiry_close),
         )
         // Marketing: clients + testimonials — see admin_marketing::router
 }
@@ -1454,7 +1459,17 @@ async fn upload_payment_proof(
     Ok(Json(row))
 }
 
-// ---- Inquiries (admin view & respond) ----
+// ---- Inquiries (admin view & ticketing) ----
+//
+// Model ticketing sejak migrasi 0011: inquiry punya banyak messages di
+// tabel `inquiry_messages` (thread). Status parent = state dari latest
+// message (OPEN = latest by customer, ANSWERED = latest by admin).
+//
+// Admin bisa:
+//   - GET   /admin/inquiries                       list dengan auto-close
+//   - GET   /admin/inquiries/:id                   detail + messages
+//   - POST  /admin/inquiries/:id/messages          reply (sender=ADMIN, status=ANSWERED)
+//   - POST  /admin/inquiries/:id/close             close manual (optional note)
 
 #[derive(Serialize, sqlx::FromRow)]
 struct AdminInquiryRow {
@@ -1466,9 +1481,45 @@ struct AdminInquiryRow {
     subject: String,
     message: String,
     status: String,
+    /// Legacy: admin's first answer. Backward-compat — caller baru read
+    /// dari `inquiry_messages`.
     response: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
     responded_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Timestamp pesan terakhir di thread (auto-close check + list preview).
+    last_message_at: Option<chrono::DateTime<chrono::Utc>>,
+    last_sender_type: Option<String>,
+    closed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Snippet pesan terakhir (subquery `inquiry_messages`).
+    last_message_preview: Option<String>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+struct AdminMessageRow {
+    id: Uuid,
+    sender_type: String,
+    sender_id: Option<Uuid>,
+    sender_name: String,
+    message: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize)]
+struct AdminInquiryDetailRow {
+    #[serde(flatten)]
+    inquiry: AdminInquiryRow,
+    messages: Vec<AdminMessageRow>,
+}
+
+#[derive(serde::Deserialize)]
+struct AdminCreateMessageJson {
+    message: String,
+}
+
+#[derive(serde::Deserialize)]
+struct AdminCloseInquiryJson {
+    #[serde(default)]
+    note: Option<String>,
 }
 
 async fn list_inquiries_admin(
@@ -1491,7 +1542,11 @@ async fn list_inquiries_admin(
             SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
                    p.policy_no,
                    i.subject, i.message, i.status, i.response,
-                   i.created_at, i.responded_at
+                   i.created_at, i.responded_at,
+                   i.last_message_at, i.last_sender_type, i.closed_at,
+                   (SELECT message FROM inquiry_messages
+                     WHERE inquiry_id = i.id
+                     ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_preview
               FROM inquiries i
               JOIN customers c ON c.id = i.customer_id
               LEFT JOIN policies p ON p.id = i.policy_id
@@ -1518,6 +1573,10 @@ async fn list_inquiries_admin(
                     r.response.clone().unwrap_or_default(),
                     r.created_at.to_rfc3339(),
                     r.responded_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                    r.last_message_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                    r.last_sender_type.clone().unwrap_or_default(),
+                    r.closed_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                    r.last_message_preview.clone().unwrap_or_default(),
                 ]
             })
             .collect();
@@ -1533,6 +1592,10 @@ async fn list_inquiries_admin(
                 "response",
                 "created_at",
                 "responded_at",
+                "last_message_at",
+                "last_sender_type",
+                "closed_at",
+                "last_message_preview",
             ],
             body,
             "inquiries",
@@ -1559,7 +1622,11 @@ async fn list_inquiries_admin(
         SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
                p.policy_no,
                i.subject, i.message, i.status, i.response,
-               i.created_at, i.responded_at
+               i.created_at, i.responded_at,
+               i.last_message_at, i.last_sender_type, i.closed_at,
+               (SELECT message FROM inquiry_messages
+                 WHERE inquiry_id = i.id
+                 ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_preview
           FROM inquiries i
           JOIN customers c ON c.id = i.customer_id
           LEFT JOIN policies p ON p.id = i.policy_id
@@ -1576,6 +1643,21 @@ async fn list_inquiries_admin(
     .fetch_all(&state.pool)
     .await?;
 
+    // Lazy auto-close: sama dengan customer side — stale ANSWERED → CLOSED
+    // + email `InquiryAutoClosed` ke customer. Update row di-place supaya
+    // response akurat.
+    let mut data = data;
+    for row in data.iter_mut() {
+        if row.status == "ANSWERED" {
+            if let Some(closed) = crate::services::inquiry::try_auto_close_stale(&state, row.id)
+                .await?
+            {
+                row.status = "CLOSED".into();
+                row.closed_at = Some(closed);
+            }
+        }
+    }
+
     Ok(Json(Page {
         data,
         page,
@@ -1584,49 +1666,204 @@ async fn list_inquiries_admin(
     }).into_response())
 }
 
-#[derive(serde::Deserialize)]
-struct RespondInquiryBody {
-    response: String,
-    #[serde(default)]
-    close: bool,
-}
-
-async fn respond_inquiry(
+async fn get_inquiry_admin(
     State(state): State<AppState>,
-    RequireAdmin(admin_claims): RequireAdmin,
+    _: RequireAdmin,
     Path(id): Path<Uuid>,
-    Json(req): Json<RespondInquiryBody>,
-) -> AppResult<Json<AdminInquiryRow>> {
-    use crate::domain::inquiry::can_transition as inquiry_can_transition;
+) -> AppResult<Json<AdminInquiryDetailRow>> {
+    // Lazy auto-close sebelum fetch — pastikan status akurat.
+    let _ = crate::services::inquiry::try_auto_close_stale(&state, id).await?;
 
-    let current: Option<(String,)> = sqlx::query_as("SELECT status FROM inquiries WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?;
-    let (current_status,) = current.ok_or(AppError::NotFound("inquiry".into()))?;
-
-    let new_status = if req.close { "CLOSED" } else { "ANSWERED" };
-    if !inquiry_can_transition(&current_status, new_status) {
-        return Err(AppError::Validation(format!(
-            "illegal inquiry transition: {current_status} -> {new_status}"
-        )));
-    }
-
-    sqlx::query(
-        "UPDATE inquiries SET response = $1, status = $2, responded_at = now() WHERE id = $3",
-    )
-    .bind(&req.response)
-    .bind(new_status)
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
-
-    let row: AdminInquiryRow = sqlx::query_as(
+    let inquiry: Option<AdminInquiryRow> = sqlx::query_as(
         r#"
         SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
                p.policy_no,
                i.subject, i.message, i.status, i.response,
-               i.created_at, i.responded_at
+               i.created_at, i.responded_at,
+               i.last_message_at, i.last_sender_type, i.closed_at,
+               (SELECT message FROM inquiry_messages
+                 WHERE inquiry_id = i.id
+                 ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_preview
+          FROM inquiries i
+          JOIN customers c ON c.id = i.customer_id
+          LEFT JOIN policies p ON p.id = i.policy_id
+         WHERE i.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let inquiry = inquiry.ok_or(AppError::NotFound("inquiry".into()))?;
+
+    let messages: Vec<AdminMessageRow> = sqlx::query_as(
+        r#"
+        SELECT id, sender_type, sender_id, sender_name, message, created_at
+          FROM inquiry_messages
+         WHERE inquiry_id = $1
+         ORDER BY created_at ASC, id ASC
+        "#,
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(AdminInquiryDetailRow { inquiry, messages }))
+}
+
+/// Admin reply — insert message baru ke thread inquiry (sender=ADMIN).
+///
+/// Efek samping:
+///   - INSERT ke `inquiry_messages` (sender_type=ADMIN)
+///   - UPDATE parent: status=ANSWERED, last_message_at=now, last_sender_type=ADMIN
+///   - Email customer (InquiryResponse) — best-effort
+///   - Audit log
+async fn admin_inquiry_message(
+    State(state): State<AppState>,
+    RequireAdmin(admin_claims): RequireAdmin,
+    Path(id): Path<Uuid>,
+    Json(req): Json<AdminCreateMessageJson>,
+) -> AppResult<Json<AdminInquiryDetailRow>> {
+    use crate::domain::inquiry::can_transition;
+
+    let message = req.message.trim();
+    if message.is_empty() {
+        return Err(AppError::Validation("message required".into()));
+    }
+    if message.len() > 5000 {
+        return Err(AppError::Validation("message max 5000 chars".into()));
+    }
+
+    // Verify inquiry exists + get current status + customer email untuk email.
+    let current: Option<(String, String, String)> = sqlx::query_as(
+        r#"
+        SELECT i.status, c.email, c.full_name
+          FROM inquiries i JOIN customers c ON c.id = i.customer_id
+         WHERE i.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (current_status, customer_email, _customer_name) =
+        current.ok_or(AppError::NotFound("inquiry".into()))?;
+
+    // CLOSED → terminal. Tolak reply.
+    if !can_transition(&current_status, "ANSWERED") {
+        return Err(AppError::Validation(format!(
+            "inquiry dalam status {current_status}, tidak bisa menambah balasan"
+        )));
+    }
+
+    // Lookup admin's name untuk denormalized sender_name di thread.
+    let admin_id = Uuid::parse_str(&admin_claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let admin_name: String = sqlx::query_scalar(
+        r#"SELECT COALESCE(NULLIF(full_name, ''), username) FROM admin_users WHERE id = $1"#,
+    )
+    .bind(admin_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let mut tx = state.pool.begin().await?;
+    // 1. Insert message.
+    sqlx::query(
+        r#"
+        INSERT INTO inquiry_messages
+          (inquiry_id, sender_type, sender_id, sender_name, message)
+        VALUES ($1, 'ADMIN', $2, $3, $4)
+        "#,
+    )
+    .bind(id)
+    .bind(admin_id)
+    .bind(&admin_name)
+    .bind(message)
+    .execute(&mut *tx)
+    .await?;
+    // 2. Update parent: status=ANSWERED + last_message_at.
+    sqlx::query(
+        r#"
+        UPDATE inquiries
+           SET status = 'ANSWERED',
+               last_message_at = now(),
+               last_sender_type = 'ADMIN',
+               responded_at = now()
+         WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    // 3. Audit.
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &admin_claims.sub,
+            action: "inquiry_message_sent",
+            entity_type: "inquiry",
+            entity_id: Some(id),
+            metadata: Some(serde_json::json!({
+                "sender_type": "ADMIN",
+                "message_length": message.len(),
+            })),
+            ip_address: None,
+        },
+    )
+    .await;
+
+    // 4. Email customer — best-effort.
+    let inquiry_no: String =
+        sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    let subject_line: String = sqlx::query_scalar("SELECT subject FROM inquiries WHERE id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    let body = format!(
+        "Halo,\n\n\
+         Tim InsureTrack sudah menjawab pertanyaan kamu (no. {inquiry_no}, \
+         subjek: \"{subject_line}\").\n\n\
+         Pesan dari admin:\n{message}\n\n\
+         Punya pertanyaan lanjutan? Balas via portal di \
+         {base}/portal/inquiries atau balas email ini.\n\n\
+         Salam,\n\
+         Tim InsureTrack",
+        base = state.config.app_base_url.trim_end_matches('/'),
+    );
+    let _ = crate::services::email::send(
+        &state.pool,
+        &*state.storage,
+        &state.resend,
+        crate::services::email::Email {
+            email_type: crate::services::email::EmailType::InquiryResponse,
+            recipient: &customer_email,
+            subject: &format!("[Inquiry {inquiry_no}] Balasan dari admin"),
+            body: &body,
+            cta_text: Some("Buka Portal"),
+            cta_url: Some(&format!(
+                "{}/portal/inquiries",
+                state.config.app_base_url.trim_end_matches('/')
+            )),
+            related_entity_type: Some("inquiry"),
+            related_entity_id: Some(id),
+            attachment_path: None,
+        },
+    )
+    .await;
+
+    // 5. Return updated detail.
+    let inquiry: AdminInquiryRow = sqlx::query_as(
+        r#"
+        SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
+               p.policy_no,
+               i.subject, i.message, i.status, i.response,
+               i.created_at, i.responded_at,
+               i.last_message_at, i.last_sender_type, i.closed_at,
+               (SELECT message FROM inquiry_messages
+                 WHERE inquiry_id = i.id
+                 ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_preview
           FROM inquiries i
           JOIN customers c ON c.id = i.customer_id
           LEFT JOIN policies p ON p.id = i.policy_id
@@ -1636,50 +1873,154 @@ async fn respond_inquiry(
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
+    let messages: Vec<AdminMessageRow> = sqlx::query_as(
+        r#"
+        SELECT id, sender_type, sender_id, sender_name, message, created_at
+          FROM inquiry_messages
+         WHERE inquiry_id = $1
+         ORDER BY created_at ASC, id ASC
+        "#,
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(AdminInquiryDetailRow { inquiry, messages }))
+}
 
-    crate::services::email::send(
+/// Admin-initiated close. Inquiry ditutup dari sisi admin (mis. "sudah
+/// selesai" — close manual). Optional note di-append sebagai message
+/// terakhir (sender=ADMIN) sebelum close, sehingga thread history
+/// konsisten.
+async fn admin_inquiry_close(
+    State(state): State<AppState>,
+    RequireAdmin(admin_claims): RequireAdmin,
+    Path(id): Path<Uuid>,
+    Json(req): Json<AdminCloseInquiryJson>,
+) -> AppResult<Json<AdminInquiryRow>> {
+    use crate::domain::inquiry::can_transition;
+
+    let current: Option<(String, String)> = sqlx::query_as(
+        "SELECT i.status, c.email FROM inquiries i JOIN customers c ON c.id = i.customer_id WHERE i.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (current_status, customer_email) = current.ok_or(AppError::NotFound("inquiry".into()))?;
+    if !can_transition(&current_status, "CLOSED") {
+        return Err(AppError::Validation(format!(
+            "cannot close from status {current_status}"
+        )));
+    }
+
+    let admin_id = Uuid::parse_str(&admin_claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let admin_name: String = sqlx::query_scalar(
+        r#"SELECT COALESCE(NULLIF(full_name, ''), username) FROM admin_users WHERE id = $1"#,
+    )
+    .bind(admin_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let mut tx = state.pool.begin().await?;
+    if let Some(note) = req.note.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        sqlx::query(
+            r#"
+            INSERT INTO inquiry_messages
+              (inquiry_id, sender_type, sender_id, sender_name, message)
+            VALUES ($1, 'ADMIN', $2, $3, $4)
+            "#,
+        )
+        .bind(id)
+        .bind(admin_id)
+        .bind(&admin_name)
+        .bind(note)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        r#"
+        UPDATE inquiries
+           SET status = 'CLOSED',
+               closed_at = now(),
+               last_message_at = now(),
+               last_sender_type = 'ADMIN'
+         WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &admin_claims.sub,
+            action: "inquiry_closed_by_admin",
+            entity_type: "inquiry",
+            entity_id: Some(id),
+            metadata: None,
+            ip_address: None,
+        },
+    )
+    .await;
+
+    // Email customer — best-effort, kasih tahu tiket ditutup.
+    let inquiry_no: String =
+        sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    let subject_line: String = sqlx::query_scalar("SELECT subject FROM inquiries WHERE id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    let body = format!(
+        "Halo,\n\n\
+         Inquiry kamu (no. {inquiry_no}, subjek: \"{subject_line}\") sudah \
+         ditutup oleh tim InsureTrack. Balasan atau tiket baru bisa dibuat \
+         kapan saja lewat portal.\n\n\
+         Salam,\n\
+         Tim InsureTrack"
+    );
+    let _ = crate::services::email::send(
         &state.pool,
         &*state.storage,
         &state.resend,
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::InquiryResponse,
-            recipient: &row.customer_email,
-            subject: &format!("Jawaban: {}", row.subject),
-            body: &format!(
-                "Halo,\n\n\
-                 Tim InsureTrack sudah menjawab pertanyaan kamu (no. {}, \
-                 subjek: \"{}\").\n\n\
-                 Jawaban:\n{}\n\n\
-                 Punya pertanyaan lanjutan? Balas email ini atau buat inquiry \
-                 baru di portal.\n\n\
-                 Salam,\n\
-                 Tim InsureTrack",
-                row.inquiry_no, row.subject, req.response
-            ),
-            cta_text: None,
-            cta_url: None,
+            recipient: &customer_email,
+            subject: &format!("[Inquiry {inquiry_no}] Ditutup"),
+            body: &body,
+            cta_text: Some("Buka Portal"),
+            cta_url: Some(&format!(
+                "{}/portal/inquiries",
+                state.config.app_base_url.trim_end_matches('/')
+            )),
             related_entity_type: Some("inquiry"),
             related_entity_id: Some(id),
             attachment_path: None,
         },
     )
-    .await?;
+    .await;
 
-    audit_write(
-        &state.pool,
-        AuditEntry {
-            actor: &admin_claims.sub,
-            action: "inquiry_answered",
-            entity_type: "inquiry",
-            entity_id: Some(id),
-            metadata: Some(serde_json::json!({
-                "from": current_status,
-                "to": new_status,
-            })),
-            ip_address: None,
-        },
+    let row: AdminInquiryRow = sqlx::query_as(
+        r#"
+        SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
+               p.policy_no,
+               i.subject, i.message, i.status, i.response,
+               i.created_at, i.responded_at,
+               i.last_message_at, i.last_sender_type, i.closed_at,
+               (SELECT message FROM inquiry_messages
+                 WHERE inquiry_id = i.id
+                 ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_preview
+          FROM inquiries i
+          JOIN customers c ON c.id = i.customer_id
+          LEFT JOIN policies p ON p.id = i.policy_id
+         WHERE i.id = $1
+        "#,
     )
+    .bind(id)
+    .fetch_one(&state.pool)
     .await?;
-
     Ok(Json(row))
 }

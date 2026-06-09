@@ -44,7 +44,6 @@ pub async fn admin_notification_email(
             .await?;
     Ok(row.and_then(|(e,)| e).filter(|s| !s.is_empty()))
 }
-};
 
 #[derive(Debug, Clone, Copy)]
 pub enum EmailType {
