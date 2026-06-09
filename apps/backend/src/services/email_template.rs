@@ -38,7 +38,9 @@ pub struct RenderedEmail {
 
 const BRAND: &str = "InsureTrack";
 const TAGLINE: &str = "Asuransi digital, prosesnya cepat, polis langsung terbit";
-const COMPANY: &str = "PT Ama Salam Indonesia";
+// Footer descriptor di email — bukan afiliasi perusahaan. Sebelumnya hardcode
+// ke "PT Ama Salam Indonesia" yang tidak akurat; ganti ke descriptor generik.
+const COMPANY: &str = "Platform Asuransi Digital";
 const SUPPORT_EMAIL: &str = "contact@insuretrack.com";
 
 pub fn render(t: &EmailTemplate) -> RenderedEmail {

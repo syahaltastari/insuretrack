@@ -1310,3 +1310,190 @@ a:hover {
     min-width: 480px;
   }
 }
+
+
+/* ============================================================
+   Marketing Footer (landing, FAQ, privacy, terms, about)
+   ============================================================ */
+.app-footer {
+  /* Full-bleed — span edge-to-edge. Wrapper di dalam kasih padding. */
+  background: var(--clay-black);
+  color: var(--warm-cream);
+  margin-top: 64px;
+  border-top: 1px solid var(--dark-border);
+}
+.app-footer-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 64px 40px 32px;
+}
+.app-footer-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr 1.2fr;
+  gap: 40px 32px;
+}
+.app-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 320px;
+}
+.app-footer-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--warm-cream);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+}
+.app-footer-brand-mark:hover {
+  color: var(--matcha-300);
+}
+.app-footer-tagline {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--warm-silver);
+  margin: 0;
+}
+.app-footer-social {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.app-footer-social-link {
+  --hover-color: var(--warm-silver);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--dark-charcoal);
+  color: var(--warm-silver);
+  transition: background 200ms ease, color 200ms ease, transform 200ms ease;
+  text-decoration: none;
+}
+.app-footer-social-link:hover {
+  background: var(--hover-color);
+  color: #ffffff;
+  transform: translateY(-2px);
+}
+.app-footer-social-svg {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+}
+.app-footer-social-svg svg {
+  width: 100%;
+  height: 100%;
+}
+
+.app-footer-col h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--warm-cream);
+  font-weight: 700;
+  margin: 0 0 16px 0;
+}
+.app-footer-col ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.app-footer-col a {
+  color: var(--warm-silver);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: color 150ms ease;
+}
+.app-footer-col a:hover {
+  color: var(--matcha-300);
+}
+.app-footer-col li {
+  color: var(--warm-silver);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.app-footer-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--dark-border);
+}
+.app-footer-bottom p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--warm-silver);
+}
+.app-footer-bottom-meta {
+  font-family: var(--font-space-mono), monospace;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 1023px) {
+  .app-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 32px 24px;
+  }
+  .app-footer-brand {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+}
+@media (max-width: 600px) {
+  .app-footer-inner {
+    padding: 48px 24px 24px;
+  }
+  .app-footer-grid {
+    grid-template-columns: 1fr;
+  }
+  .app-footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+
+/* ============================================================
+   Embla Carousel responsive slide widths
+   (lihat apps/portal/components/Carousel.tsx)
+   ============================================================ */
+.carousel-slide {
+  /* Default mobile: 1 per view. Override via media query di bawah. */
+  flex: 0 0 100%;
+}
+@media (min-width: 640px) {
+  .carousel-slide {
+    flex: 0 0 50%;
+  }
+  .carousel-slide.tabs-3 {
+    flex: 0 0 50%;
+  }
+}
+@media (min-width: 1024px) {
+  .carousel-slide {
+    flex: 0 0 33.3333%;
+  }
+  .carousel-slide.desk-2 {
+    flex: 0 0 50%;
+  }
+  .carousel-slide.desk-4 {
+    flex: 0 0 25%;
+  }
+  .carousel-slide.desk-5 {
+    flex: 0 0 20%;
+  }
+}

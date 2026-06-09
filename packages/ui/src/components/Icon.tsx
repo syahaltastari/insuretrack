@@ -50,6 +50,13 @@ import {
   // Sidebar toggle
   PanelLeftClose,
   PanelLeftOpen,
+  // Social media (lucide-react)
+  Instagram,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Youtube,
+  Github,
   type LucideIcon,
 } from "lucide-react";
 
@@ -101,6 +108,12 @@ export const Icons: Record<string, LucideIcon> = {
   KeyRound,
   PanelLeftClose,
   PanelLeftOpen,
+  Instagram,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Youtube,
+  Github,
 };
 
 export type IconName = keyof typeof Icons;
