@@ -60,7 +60,7 @@ export default function PortalClaimsPage() {
     <>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>
-          <p className="uppercase-label" style={{ color: "var(--pomegranate-400)", marginBottom: 8 }}>
+          <p className="uppercase-label" style={{ color: "var(--lemon-700)", marginBottom: 8 }}>
             ✦ Klaim Saya
           </p>
           <h1 className="page-title">Klaim & Status</h1>
@@ -69,7 +69,7 @@ export default function PortalClaimsPage() {
         {noActivePolicy ? (
           <button
             type="button"
-            className="clay-button solid-pomegranate"
+            className="clay-button ghost"
             disabled
             title="Anda belum memiliki polis aktif"
             style={{ opacity: 0.5, cursor: "not-allowed" }}
@@ -77,7 +77,7 @@ export default function PortalClaimsPage() {
             + Ajukan Klaim
           </button>
         ) : (
-          <Link href="/portal/claims/new" className="clay-button solid-pomegranate">
+          <Link href="/portal/claims/new" className="clay-button solid-ube">
             + Ajukan Klaim
           </Link>
         )}
@@ -87,21 +87,23 @@ export default function PortalClaimsPage() {
         <div
           className="clay-card"
           style={{
-            borderColor: "var(--pomegranate-400)",
-            background: "#fff5f5",
+            // Tone informasi (bukan bahaya) — kuning lemon soft + border
+            // oat. User butuh reminder, bukan alarm merah.
+            borderColor: "var(--lemon-700)",
+            background: "var(--lemon-400)",
             display: "flex",
             alignItems: "flex-start",
             gap: 12,
           }}
         >
-          <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>⚠️</span>
+          <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>💡</span>
           <div>
-            <p className="body" style={{ margin: 0, fontWeight: 600 }}>
+            <p className="body" style={{ margin: 0, fontWeight: 600, color: "var(--clay-black)" }}>
               Anda belum memiliki polis aktif untuk diklaim.
             </p>
             <p className="caption" style={{ color: "var(--warm-charcoal)", marginTop: 4, marginBottom: 0 }}>
               Selesaikan pendaftaran asuransi dan lakukan pembayaran terlebih dahulu di{" "}
-              <Link href="/portal/insurance/new" style={{ color: "var(--pomegranate-400)", textDecoration: "underline" }}>
+              <Link href="/portal/insurance/new" style={{ color: "var(--clay-black)", textDecoration: "underline", fontWeight: 600 }}>
                 halaman pendaftaran
               </Link>
               . Setelah polis Anda aktif, menu ini dapat digunakan untuk mengajukan klaim.

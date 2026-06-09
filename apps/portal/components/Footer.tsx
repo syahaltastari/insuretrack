@@ -184,7 +184,7 @@ export function Footer() {
               </li>
               <li>Senin–Jumat</li>
               <li>09:00–18:00 WIB</li>
-              <li>Jakarta, Indonesia</li>
+              <li>Bogor, Indonesia</li>
             </ul>
           </div>
         </div>
@@ -192,7 +192,7 @@ export function Footer() {
         <div className="app-footer-bottom">
           <p>© {year} InsureTrack. Hak cipta dilindungi.</p>
           <p className="app-footer-bottom-meta">
-            Platform asuransi digital · Versi 0.1.0
+            Platform asuransi digital
           </p>
         </div>
       </div>

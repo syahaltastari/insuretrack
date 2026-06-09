@@ -3,7 +3,7 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { StatusBadge } from "@insuretrack/ui";
 import { API_BASE } from "@insuretrack/api-client";
@@ -21,17 +21,21 @@ type Invoice = {
   created_at: string;
 };
 
-const formatIDR = (s: string) =>
+type StatusFilter = "ALL" | "UNPAID" | "PAID" | "EXPIRED" | "CANCELLED";
+
+const formatIDR = (n: number | string) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
-  }).format(Number(s));
+  }).format(typeof n === "string" ? Number(n) : n);
 
 export default function PortalInvoicesPage() {
   const [data, setData] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>("ALL");
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const token = getCustomerToken();
@@ -46,24 +50,62 @@ export default function PortalInvoicesPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const downloadPdf = async (id: string) => {
+  // Hitung summary cards dari data — derived state, tidak fetch tambahan.
+  const summary = useMemo(() => {
+    const totalUnpaid = data
+      .filter((i) => i.status === "UNPAID")
+      .reduce((sum, i) => sum + Number(i.premium_amount), 0);
+    const totalPaid = data
+      .filter((i) => i.status === "PAID")
+      .reduce((sum, i) => sum + Number(i.premium_amount), 0);
+    const countUnpaid = data.filter((i) => i.status === "UNPAID").length;
+    const countPaid = data.filter((i) => i.status === "PAID").length;
+    return { totalUnpaid, totalPaid, countUnpaid, countPaid };
+  }, [data]);
+
+  // Filtered list — status filter chip di atas table.
+  const visible = useMemo(() => {
+    if (filter === "ALL") return data;
+    return data.filter((i) => i.status === filter);
+  }, [data, filter]);
+
+  // Helper untuk bedain overdue (UNPAID & lewat due date) — kasih border
+  // merah tipis di row (subtle, bukan full alert).
+  const isOverdue = (inv: Invoice): boolean => {
+    if (inv.status !== "UNPAID") return false;
+    return new Date(inv.due_date) < new Date(new Date().toDateString());
+  };
+
+  const downloadPdf = async (inv: Invoice) => {
     const token = getCustomerToken();
     if (!token) return;
-    const r = await fetch(`${API_BASE}/customer/invoices/${id}/pdf`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!r.ok) return toast.error("Gagal download PDF");
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `invoice-${id}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setDownloadingId(inv.id);
+    try {
+      const r = await fetch(`${API_BASE}/customer/invoices/${inv.id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      // Pakai invoice_no sebagai filename — backend juga set header ini
+      // (Content-Disposition: attachment; filename="{invoice_no}.pdf"),
+      // tapi overwrite di client supaya pasti match.
+      a.download = `${inv.invoice_no}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Invoice ${inv.invoice_no} terdownload`);
+    } catch (e) {
+      toast.error("Gagal download PDF");
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   return (
     <>
+      {/* Page header */}
       <p className="uppercase-label" style={{ color: "var(--matcha-600)", marginBottom: 8 }}>
         ✦ Invoice Saya
       </p>
@@ -71,6 +113,75 @@ export default function PortalInvoicesPage() {
       <p className="page-subtitle">
         Lihat tagihan premi, jatuh tempo, dan download invoice PDF.
       </p>
+
+      {/* Summary cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 16,
+          marginTop: 32,
+          marginBottom: 32,
+        }}
+      >
+        <SummaryCard
+          label="Total Tagihan (UNPAID)"
+          value={formatIDR(summary.totalUnpaid)}
+          accent="var(--lemon-700)"
+        />
+        <SummaryCard
+          label="Total Terbayar (PAID)"
+          value={formatIDR(summary.totalPaid)}
+          accent="var(--matcha-600)"
+        />
+        <SummaryCard
+          label="Invoice Belum Dibayar"
+          value={`${summary.countUnpaid} invoice`}
+          accent="var(--lemon-700)"
+        />
+        <SummaryCard
+          label="Invoice Lunas"
+          value={`${summary.countPaid} invoice`}
+          accent="var(--matcha-600)"
+        />
+      </div>
+
+      {/* Status filter chips */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        {(["ALL", "UNPAID", "PAID", "EXPIRED", "CANCELLED"] as StatusFilter[]).map((f) => {
+          const count = f === "ALL" ? data.length : data.filter((i) => i.status === f).length;
+          const active = filter === f;
+          return (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={active ? "clay-button solid-ube size-small" : "clay-button ghost size-small"}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              {f === "ALL" ? "Semua" : f}
+              <span
+                style={{
+                  padding: "1px 8px",
+                  borderRadius: 999,
+                  background: active ? "rgba(255,255,255,0.2)" : "var(--oat-light)",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {error && (
         <div
@@ -83,21 +194,50 @@ export default function PortalInvoicesPage() {
           ⚠ {error}
         </div>
       )}
-      {loading && <p>Memuat...</p>}
+
+      {loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </div>
+      )}
+
       {!loading && data.length === 0 && (
         <div
           className="clay-card feature dashed"
           style={{ textAlign: "center", padding: 48 }}
         >
           <p
-            className="body"
-            style={{ color: "var(--warm-charcoal)", margin: 0 }}
+            className="body-large"
+            style={{ color: "var(--warm-charcoal)", margin: 0, marginBottom: 8 }}
           >
             Anda belum memiliki invoice.
           </p>
+          <p
+            className="caption"
+            style={{ color: "var(--warm-silver)", margin: 0 }}
+          >
+            Invoice akan muncul di sini setelah Anda submit pendaftaran asuransi.
+          </p>
         </div>
       )}
-      {!loading && data.length > 0 && (
+
+      {!loading && visible.length === 0 && data.length > 0 && (
+        <div
+          className="clay-card feature dashed"
+          style={{ textAlign: "center", padding: 32 }}
+        >
+          <p
+            className="body"
+            style={{ color: "var(--warm-charcoal)", margin: 0 }}
+          >
+            Tidak ada invoice dengan status <strong>{filter}</strong>.
+          </p>
+        </div>
+      )}
+
+      {!loading && visible.length > 0 && (
         <div
           style={{ overflow: "auto", borderRadius: "var(--radius-card)" }}
         >
@@ -106,29 +246,52 @@ export default function PortalInvoicesPage() {
               <tr>
                 <th>No. Invoice</th>
                 <th>No. Reg</th>
-                <th>Premi</th>
+                <th style={{ textAlign: "right" }}>Premi</th>
                 <th>Jatuh Tempo</th>
                 <th>Status</th>
-                <th>Aksi</th>
+                <th style={{ textAlign: "right" }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((inv) => (
-                <tr key={inv.id}>
+              {visible.map((inv) => (
+                <tr
+                  key={inv.id}
+                  style={
+                    isOverdue(inv)
+                      ? { background: "rgba(244, 165, 130, 0.08)" }
+                      : undefined
+                  }
+                >
                   <td className="mono">{inv.invoice_no}</td>
-                  <td className="mono">{inv.registration_no}</td>
-                  <td>{formatIDR(inv.premium_amount)}</td>
-                  <td>{inv.due_date}</td>
+                  <td className="mono" style={{ color: "var(--warm-silver)" }}>
+                    {inv.registration_no}
+                  </td>
+                  <td className="mono" style={{ textAlign: "right", fontWeight: 600 }}>
+                    {formatIDR(inv.premium_amount)}
+                  </td>
+                  <td>
+                    {inv.due_date}
+                    {isOverdue(inv) && (
+                      <span
+                        className="clay-badge pomegranate"
+                        style={{ marginLeft: 8, fontSize: "0.65rem" }}
+                      >
+                        Overdue
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <StatusBadge status={inv.status} />
                   </td>
-                  <td>
+                  <td style={{ textAlign: "right" }}>
                     {inv.pdf_path ? (
                       <button
-                        onClick={() => downloadPdf(inv.id)}
+                        onClick={() => downloadPdf(inv)}
+                        disabled={downloadingId === inv.id}
                         className="clay-button ghost size-small"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
                       >
-                        📄 PDF
+                        {downloadingId === inv.id ? "Mengunduh..." : "📄 PDF"}
                       </button>
                     ) : (
                       <span
@@ -146,5 +309,62 @@ export default function PortalInvoicesPage() {
         </div>
       )}
     </>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div
+      className="clay-card"
+      style={{
+        padding: 20,
+        borderLeft: `4px solid ${accent}`,
+      }}
+    >
+      <p
+        className="caption"
+        style={{
+          color: "var(--warm-silver)",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          margin: 0,
+          marginBottom: 4,
+          fontSize: "0.7rem",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        className="display-secondary"
+        style={{
+          color: "var(--clay-black)",
+          margin: 0,
+          fontSize: "1.5rem",
+        }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SkeletonRow() {
+  return (
+    <div
+      className="clay-card"
+      style={{
+        height: 56,
+        background: "var(--warm-cream)",
+        animation: "skeleton-pulse 1.5s ease-in-out infinite",
+      }}
+    />
   );
 }

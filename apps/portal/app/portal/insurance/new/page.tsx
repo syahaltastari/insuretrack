@@ -257,7 +257,7 @@ export default function InsuranceNewPage() {
                   Mode development: trigger webhook via curl untuk aktivasi polis (lihat README).
                 </p>
                 <button
-                  onClick={() => router.push("/")}
+                  onClick={() => router.push("/portal/dashboard")}
                   className="clay-button solid-ube"
                   style={{ marginTop: 16 }}
                 >

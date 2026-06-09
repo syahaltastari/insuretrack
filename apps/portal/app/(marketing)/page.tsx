@@ -489,7 +489,7 @@ export default async function HomePage() {
                 <span className="mono">(021) 555-0100</span>
               </p>
               <p className="caption" style={{ color: "var(--warm-silver)" }}>
-                Jakarta, Indonesia
+                Bogor, Indonesia
               </p>
             </div>
           </Reveal>

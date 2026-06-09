@@ -10,6 +10,7 @@ import { CustomerUserMenu, fetchCustomerProfile, type CustomerProfile } from "@/
 const navItems: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/portal/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
   { href: "/portal/policies", label: "Polis Saya", icon: "FileText" },
+  { href: "/portal/invoices", label: "Invoice", icon: "Receipt" },
   { href: "/portal/claims", label: "Klaim", icon: "ShieldAlert" },
   { href: "/portal/inquiries", label: "Pertanyaan", icon: "MessageCircle" },
 ];

@@ -1330,16 +1330,39 @@ async fn submit_insurance_application(
     // (mirror pattern payment_webhook di public.rs:292 — agar policy/invoice
     // row tetap exist kalau storage atau email gagal).
     let product_name = product_name_from_code(&data.product);
+    // Susun alamat lengkap multi-baris (PDF word-wraps di 38 char/line).
+    // Order: jalan, RT/RW, kelurahan-kecamatan, kota-provinsi-kodepos.
+    let customer_address = format!(
+        "{}\nRT/RW {}\n{}, {}\n{}, {} {}",
+        data.address.trim(),
+        data.rt_rw.trim(),
+        data.village.trim(),
+        data.district.trim(),
+        data.city.trim(),
+        data.province.trim(),
+        data.postal_code.trim(),
+    );
+    // Format gender: MALE/FEMALE → "Laki-laki"/"Perempuan" untuk display.
+    let customer_gender = match data.gender.as_str() {
+        "MALE" => "Laki-laki",
+        "FEMALE" => "Perempuan",
+        _ => "—",
+    };
     let pdf_bytes = render_invoice_pdf(&InvoicePdfInput {
         invoice_no: &invoice_no,
         registration_no: &registration_no,
         customer_nik: &data.nik,
         customer_name: &data.full_name,
+        customer_birth_place: &data.birth_place,
         customer_birth_date: data.birth_date,
-        customer_address: &data.address,
+        customer_gender,
+        customer_email: &data.email,
+        customer_mobile: &data.mobile_number,
+        customer_address: &customer_address,
         product_name,
         sum_assured: data.sum_assured,
         premium: premium_amount,
+        coverage_term_years: data.coverage_term,
         due_date,
         status: "UNPAID",
         created_at: Utc::now().date_naive(),
