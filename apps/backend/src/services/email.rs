@@ -1,6 +1,7 @@
 //! Email service — record ke `email_logs` lalu kirim via Resend HTTP API.
 //!
-//! Spec FS-05 lists 8 email types. Setiap send:
+//! Spec FS-05 lists 8 email types + 3 tambahan untuk inquiry ticketing
+//! (InquiryNew, InquiryCustomerReply, InquiryAutoClosed). Setiap send:
 //! 1. Insert `email_logs` row dengan status `QUEUED` (return id buat tracking).
 //! 2. Kalau `attachment_path` di-set, fetch file dari storage.
 //! 3. Render template (header + body + footer) → text + html.
@@ -12,12 +13,37 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
+    config::Config,
     error::AppError,
     services::{
         audit::AuditEntry,
         resend::{ResendAttachment, ResendClient},
         storage::Storage,
     },
+};
+
+/// Resolve admin notification email dengan fallback chain:
+/// 1. `Config.admin_notification_email` (env `ADMIN_NOTIFICATION_EMAIL`)
+/// 2. First row `admin_users.email` di DB (biasanya hasil seed 0004)
+/// 3. `None` — caller skip email kalau tidak ada recipient
+///
+/// Pakai untuk notifikasi inbound: InquiryNew (customer submit), InquiryCustomerReply.
+pub async fn admin_notification_email(
+    pool: &PgPool,
+    config: &Config,
+) -> Result<Option<String>, AppError> {
+    if let Some(ref e) = config.admin_notification_email {
+        if !e.is_empty() {
+            return Ok(Some(e.clone()));
+        }
+    }
+    // Fallback: first admin's email (urut by created_at).
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT email FROM admin_users ORDER BY created_at ASC LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(e,)| e).filter(|s| !s.is_empty()))
+}
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +56,12 @@ pub enum EmailType {
     ClaimReceived,
     ClaimStatusUpdate,
     InquiryResponse,
+    /// Customer membuat inquiry baru — notifikasi ke admin.
+    InquiryNew,
+    /// Customer membalas pesan admin di thread inquiry.
+    InquiryCustomerReply,
+    /// Inquiry di-close otomatis karena customer tidak balas dalam N hari.
+    InquiryAutoClosed,
 }
 
 impl EmailType {
@@ -43,6 +75,9 @@ impl EmailType {
             EmailType::ClaimReceived => "CLAIM_RECEIVED",
             EmailType::ClaimStatusUpdate => "CLAIM_STATUS_UPDATE",
             EmailType::InquiryResponse => "INQUIRY_RESPONSE",
+            EmailType::InquiryNew => "INQUIRY_NEW",
+            EmailType::InquiryCustomerReply => "INQUIRY_CUSTOMER_REPLY",
+            EmailType::InquiryAutoClosed => "INQUIRY_AUTO_CLOSED",
         }
     }
 }

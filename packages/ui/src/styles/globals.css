@@ -662,6 +662,27 @@ a:hover {
 }
 
 /* ============================================================
+   Product detail page — responsive grids (hero + coverage)
+   ============================================================ */
+.hero-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+}
+.coverage-grid {
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 1023px) {
+  .hero-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 767px) {
+  .coverage-grid { grid-template-columns: 1fr; }
+}
+
+/* Native <details> disclosure widget — strip default marker
+   karena kita pakai Icon "Plus" sendiri di summary. */
+details > summary::-webkit-details-marker { display: none; }
+details > summary::marker { display: none; content: ""; }
+
+/* ============================================================
    App-specific shells
    ============================================================ */
 .shell-grid {

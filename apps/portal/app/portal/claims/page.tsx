@@ -19,6 +19,8 @@ type Claim = {
   description: string;
   status: string;
   decision_note: string | null;
+  /** Bukti pembayaran yang di-upload admin saat transisi APPROVED → PAID. */
+  payment_proof_path: string | null;
   submitted_at: string;
 };
 
@@ -126,7 +128,7 @@ export default function PortalClaimsPage() {
         </div>
       )}
       {!loading && data.length > 0 && (
-        <div style={{ overflow: "auto", borderRadius: "var(--radius-card)" }}>
+        <div className="clay-table-wrap" style={{ borderRadius: "var(--radius-card)" }}>
           <table className="clay-table">
             <thead>
               <tr>
@@ -137,6 +139,7 @@ export default function PortalClaimsPage() {
                 <th>Jumlah</th>
                 <th>Status</th>
                 <th>Catatan Admin</th>
+                <th className="hide-mobile">Bukti Pembayaran</th>
               </tr>
             </thead>
             <tbody>
@@ -150,6 +153,25 @@ export default function PortalClaimsPage() {
                   <td><StatusBadge status={c.status} /></td>
                   <td style={{ color: c.decision_note ? "var(--clay-black)" : "var(--warm-silver)" }}>
                     {c.decision_note ?? "—"}
+                  </td>
+                  <td className="hide-mobile">
+                    {c.status === "PAID" && c.payment_proof_path ? (
+                      <a
+                        href={`${API_BASE}/public/uploads/${c.payment_proof_path}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: "var(--matcha-800)",
+                          fontWeight: 600,
+                          textDecoration: "underline",
+                          textUnderlineOffset: 3,
+                        }}
+                      >
+                        Lihat bukti →
+                      </a>
+                    ) : (
+                      <span style={{ color: "var(--warm-silver)" }}>—</span>
+                    )}
                   </td>
                 </tr>
               ))}

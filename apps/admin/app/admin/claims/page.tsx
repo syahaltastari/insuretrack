@@ -3,11 +3,11 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
+import { Icon, SkeletonCard, StatusBadge } from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
 import { getAdminToken } from "@insuretrack/api-client";
@@ -22,6 +22,7 @@ type Claim = {
   claimed_amount: string;
   status: string;
   decision_note: string | null;
+  payment_proof_path: string | null;
   submitted_at: string;
 };
 
@@ -34,21 +35,112 @@ const decisionNoteSchema = z.object({
 });
 type DecisionNoteValues = z.infer<typeof decisionNoteSchema>;
 
+// Batas sinkron dengan backend (services/storage.rs::MAX_PAYMENT_PROOF_BYTES
+// = 5 MB). Hard-coded di sini juga agar user lihat pesan valid sebelum request.
+const MAX_PROOF_BYTES = 5 * 1024 * 1024;
+const ALLOWED_PROOF_MIMES = ["image/jpeg", "image/png", "application/pdf"] as const;
+type AllowedProofMime = (typeof ALLOWED_PROOF_MIMES)[number];
+
 function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }) {
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofError, setProofError] = useState<string | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const methods = useForm<DecisionNoteValues>({
     resolver: zodResolver(decisionNoteSchema) as never,
     defaultValues: { decision_note: "" },
     mode: "onSubmit",
   });
 
+  // Validate file selection di client (mirror backend rules). Return null
+  // kalau valid; error string kalau tidak. Dipakai sebelum fetch.
+  const validateProof = (file: File | null): string | null => {
+    if (!file) return "File bukti pembayaran belum dipilih";
+    if (file.size === 0) return "File kosong";
+    if (file.size > MAX_PROOF_BYTES) {
+      return `Ukuran file ${(file.size / 1024 / 1024).toFixed(1)} MB melebihi batas 5 MB`;
+    }
+    if (!ALLOWED_PROOF_MIMES.includes(file.type as AllowedProofMime)) {
+      return `Tipe file ${file.type || "tidak dikenal"} tidak didukung (JPG, PNG, PDF)`;
+    }
+    return null;
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setProofError(null);
+    const f = e.target.files?.[0] ?? null;
+    if (f) {
+      const err = validateProof(f);
+      if (err) {
+        setProofError(err);
+        setProofFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+    }
+    setProofFile(f);
+  };
+
+  const clearProofSelection = () => {
+    setProofFile(null);
+    setProofError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Upload proof ke endpoint dedicated. Dipanggil sebelum PATCH status
+  // kalau file dipilih. Throw kalau gagal agar caller abort.
+  const uploadProof = async (): Promise<boolean> => {
+    if (!proofFile) return true; // no-op kalau tidak ada file
+    const token = getAdminToken();
+    if (!token) return false;
+    setUploadingProof(true);
+    try {
+      const fd = new FormData();
+      fd.append("proof", proofFile);
+      const r = await fetch(`${API_BASE}/admin/claims/${claim.id}/payment-proof`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+      }
+      return true;
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Gagal upload bukti");
+      return false;
+    } finally {
+      setUploadingProof(false);
+    }
+  };
+
   const update = async (values: DecisionNoteValues, status: string) => {
     const token = getAdminToken();
     if (!token) return;
     setSubmitting(status);
     setFormError(null);
+
+    // Validasi upload requirement: WAJIB untuk transisi → PAID.
+    if (status === "PAID" && !proofFile && !claim.payment_proof_path) {
+      setFormError("Bukti pembayaran wajib di-upload untuk menandai klaim sebagai PAID");
+      setSubmitting(null);
+      return;
+    }
+
     try {
+      // 1. Upload proof dulu (kalau ada file baru). Kalau gagal, abort.
+      if (proofFile) {
+        const ok = await uploadProof();
+        if (!ok) {
+          setSubmitting(null);
+          return;
+        }
+      }
+      // 2. PATCH status (seperti sebelumnya).
       const r = await fetch(`${API_BASE}/admin/claims/${claim.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -62,6 +154,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
         throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
       }
       methods.reset({ decision_note: "" });
+      clearProofSelection();
       onUpdated();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Gagal");
@@ -74,6 +167,11 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
   // wrapped). Form-level onSubmit cuma jalan kalau user tekan Enter di field
   // → default ke "APPROVED" (aksi yang paling umum di state UNDER_REVIEW).
   const onSubmit = (status: string) => methods.handleSubmit((v) => update(v, status));
+
+  const busy = submitting !== null || uploadingProof;
+  const proofRequired = claim.status === "APPROVED"; // saat ini hanya PAID transition
+  const hasProof = !!claim.payment_proof_path;
+  const proofFileName = claim.payment_proof_path?.split("/").pop() ?? null;
 
   return (
     <Form
@@ -118,10 +216,176 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
         <input
           className="clay-input"
           autoComplete="off"
-          disabled={submitting !== null}
+          disabled={busy}
           {...methods.register("decision_note")}
         />
       </FormField>
+
+      {/* ===== Bukti pembayaran section ===== */}
+      <div style={{ marginTop: 16, marginBottom: 12 }}>
+        <label
+          className="clay-label"
+          htmlFor={`proof-${claim.id}`}
+          style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}
+        >
+          <Icon name="Receipt" size="xs" style={{ color: "var(--matcha-600)" }} />
+          <span>
+            Bukti pembayaran {proofRequired && <span style={{ color: "var(--pomegranate-400)" }}>*</span>}
+          </span>
+        </label>
+        <p
+          className="caption"
+          style={{ color: "var(--warm-silver)", margin: 0, marginBottom: 8 }}
+        >
+          JPG / PNG / PDF, maks 5 MB. {proofRequired ? "Wajib di-upload untuk Mark as Paid." : "Opsional — bisa di-attach di tiap transisi status."}
+        </p>
+
+        {hasProof && !proofFile && (
+          <div
+            className="clay-card dashed"
+            style={{
+              padding: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              background: "var(--matcha-300)",
+              border: "1px solid var(--matcha-600)",
+            }}
+          >
+            <Icon name="CheckCircle2" size="md" style={{ color: "var(--matcha-800)", flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="body" style={{ margin: 0, fontWeight: 600, color: "var(--clay-black)" }}>
+                Bukti pembayaran ter-attach
+              </p>
+              <p
+                className="caption mono"
+                style={{
+                  margin: 0,
+                  color: "var(--matcha-800)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {proofFileName}
+              </p>
+            </div>
+            <a
+              href={`${API_BASE}/public/uploads/${claim.payment_proof_path}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="clay-button ghost size-small"
+              style={{ textDecoration: "none" }}
+            >
+              Lihat
+            </a>
+          </div>
+        )}
+
+        {!hasProof || proofFile ? (
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "stretch",
+              flexWrap: "wrap",
+            }}
+          >
+            <label
+              className="clay-button ghost size-small"
+              htmlFor={`proof-${claim.id}`}
+              style={{
+                cursor: busy ? "not-allowed" : "pointer",
+                opacity: busy ? 0.5 : 1,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                margin: 0,
+              }}
+            >
+              <Icon name="Plus" size="xs" />
+              {proofFile ? "Ganti file" : hasProof ? "Ganti bukti" : "Pilih file…"}
+            </label>
+            <input
+              ref={fileInputRef}
+              id={`proof-${claim.id}`}
+              type="file"
+              accept={ALLOWED_PROOF_MIMES.join(",")}
+              onChange={handleFileChange}
+              disabled={busy}
+              style={{
+                position: "absolute",
+                width: 1,
+                height: 1,
+                padding: 0,
+                margin: -1,
+                overflow: "hidden",
+                clip: "rect(0,0,0,0)",
+                whiteSpace: "nowrap",
+                border: 0,
+              }}
+            />
+            {proofFile && (
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 200,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 12px",
+                  background: "var(--warm-cream)",
+                  border: "1px solid var(--oat-border)",
+                  borderRadius: "var(--radius-card)",
+                }}
+              >
+                <Icon name="FileText" size="sm" style={{ color: "var(--matcha-600)", flexShrink: 0 }} />
+                <span
+                  className="caption"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    color: "var(--clay-black)",
+                  }}
+                >
+                  {proofFile.name}
+                </span>
+                <span className="caption" style={{ color: "var(--warm-silver)", flexShrink: 0 }}>
+                  {(proofFile.size / 1024).toFixed(0)} KB
+                </span>
+                <button
+                  type="button"
+                  onClick={clearProofSelection}
+                  disabled={busy}
+                  aria-label="Hapus pilihan file"
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    cursor: busy ? "not-allowed" : "pointer",
+                    padding: 2,
+                    color: "var(--pomegranate-400)",
+                    display: "inline-flex",
+                  }}
+                >
+                  <Icon name="X" size="sm" />
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {proofError && (
+          <p
+            className="caption"
+            style={{ color: "var(--pomegranate-400)", margin: "6px 0 0 0", fontWeight: 600 }}
+          >
+            ⚠ {proofError}
+          </p>
+        )}
+      </div>
 
       <FormError message={formError} />
 
@@ -131,7 +395,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
             type="button"
             className="clay-button solid-ube size-small"
             onClick={onSubmit("UNDER_REVIEW")}
-            disabled={submitting !== null}
+            disabled={busy}
           >
             {submitting === "UNDER_REVIEW" ? "Memproses..." : "→ Under Review"}
           </button>
@@ -142,7 +406,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
               type="button"
               className="clay-button solid-matcha size-small"
               onClick={onSubmit("APPROVED")}
-              disabled={submitting !== null}
+              disabled={busy}
             >
               {submitting === "APPROVED" ? "Memproses..." : "✓ Approve"}
             </button>
@@ -150,7 +414,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
               type="button"
               className="clay-button solid-pomegranate size-small"
               onClick={onSubmit("REJECTED")}
-              disabled={submitting !== null}
+              disabled={busy}
             >
               {submitting === "REJECTED" ? "Memproses..." : "✗ Reject"}
             </button>
@@ -161,9 +425,13 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
             type="button"
             className="clay-button solid-slushie size-small"
             onClick={onSubmit("PAID")}
-            disabled={submitting !== null}
+            disabled={busy}
           >
-            {submitting === "PAID" ? "Memproses..." : "Mark as Paid"}
+            {submitting === "PAID"
+              ? "Memproses..."
+              : uploadingProof
+                ? "Uploading…"
+                : "Mark as Paid"}
           </button>
         )}
         {claim.status === "REJECTED" || claim.status === "PAID" ? (

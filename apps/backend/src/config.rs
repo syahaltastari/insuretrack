@@ -35,6 +35,15 @@ pub struct Config {
     pub resend_from_email: String,
     /// Optional from name (mis. "InsureTrack").
     pub resend_from_name: Option<String>,
+    /// Email tujuan untuk notifikasi inbound (inquiry baru, customer reply).
+    /// Optional — kalau kosong, fallback ke first admin_users.email. Lihat
+    /// `services::email::admin_notification_email` untuk chain resolution.
+    pub admin_notification_email: Option<String>,
+
+    /// Threshold auto-close inquiry (hari). Inquiry dengan status ANSWERED
+    /// di mana customer tidak balas dalam N hari → auto-close CLOSED +
+    /// email customer. Default 7. Set 0 untuk disable.
+    pub inquiry_auto_close_days: i64,
 
     pub port: u16,
 }
@@ -88,6 +97,13 @@ impl Config {
             .filter(|s| !s.is_empty())
             .ok_or_else(|| anyhow::anyhow!("RESEND_FROM_EMAIL wajib di-set (lihat .env.example)"))?;
         let resend_from_name = env::var("RESEND_FROM_NAME").ok().filter(|s| !s.is_empty());
+        let admin_notification_email = env::var("ADMIN_NOTIFICATION_EMAIL")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let inquiry_auto_close_days = env::var("INQUIRY_AUTO_CLOSE_DAYS")
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(7);
 
         Ok(Self {
             database_url: env::var("DATABASE_URL")
@@ -108,6 +124,8 @@ impl Config {
             resend_api_key,
             resend_from_email,
             resend_from_name,
+            admin_notification_email,
+            inquiry_auto_close_days,
             port: env::var("PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())

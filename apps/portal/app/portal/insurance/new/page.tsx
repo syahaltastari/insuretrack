@@ -3,8 +3,8 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -53,7 +53,18 @@ const registerSchema = z.object({
 });
 type RegisterValues = z.infer<typeof registerSchema>;
 
+// `useSearchParams` di Next.js 15 harus di-wrap Suspense di komponen
+// client yang memakainya. Bungkus dengan component `InsuranceNewPageInner`
+// yang pakai hook, lalu default export hanya membungkus Suspense.
 export default function InsuranceNewPage() {
+  return (
+    <Suspense fallback={null}>
+      <InsuranceNewPageInner />
+    </Suspense>
+  );
+}
+
+function InsuranceNewPageInner() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -62,6 +73,16 @@ export default function InsuranceNewPage() {
     registration_no: string;
     invoice_no: string;
   } | null>(null);
+
+  // Pre-select product dari query param `?product=LIFE|PERSONAL_ACCIDENT|HEALTH`
+  // (link dari halaman /products/[code]). Validate agar tidak bisa di-spoof
+  // ke value di luar enum PRODUCTS.
+  const searchParams = useSearchParams();
+  const queryProduct = searchParams.get("product");
+  const initialProduct: (typeof PRODUCTS)[number] =
+    queryProduct === "PERSONAL_ACCIDENT" || queryProduct === "HEALTH" || queryProduct === "LIFE"
+      ? queryProduct
+      : "LIFE";
 
   const methods = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema) as never,
@@ -80,7 +101,7 @@ export default function InsuranceNewPage() {
       postal_code: "",
       email: "",
       mobile_number: "",
-      product: "LIFE",
+      product: initialProduct,
       sum_assured: 100000000,
       coverage_term: 10,
     },

@@ -204,7 +204,16 @@ export default async function HomePage() {
                 const visual = PRODUCT_VISUALS[i] ?? PRODUCT_VISUALS[0];
                 return (
                   <Reveal key={p.code} delay={i * 120} from="up">
-                    <article className="clay-card feature clay-card-hoverable" style={{ height: "100%" }}>
+                    <Link
+                      href={`/products/${p.code}`}
+                      className="clay-card feature clay-card-hoverable"
+                      style={{
+                        height: "100%",
+                        display: "block",
+                        textDecoration: "none",
+                        color: "inherit",
+                      }}
+                    >
                       <div
                         style={{
                           display: "inline-flex",
@@ -227,7 +236,20 @@ export default async function HomePage() {
                       <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
                         {p.description}
                       </p>
-                    </article>
+                      <div
+                        style={{
+                          marginTop: 16,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          color: "var(--clay-black)",
+                          fontWeight: 600,
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        Lihat detail <Icon name="ArrowRight" size="xs" />
+                      </div>
+                    </Link>
                   </Reveal>
                 );
               })}

@@ -2,7 +2,7 @@
 
 use axum::{
     body::Body,
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -95,6 +95,10 @@ pub fn router() -> Router<AppState> {
         .route("/audit-logs", get(list_audit_logs))
         .route("/claims", get(list_claims_admin))
         .route("/claims/:id", axum::routing::patch(patch_claim))
+        .route(
+            "/claims/:id/payment-proof",
+            axum::routing::post(upload_payment_proof),
+        )
         .route("/inquiries", get(list_inquiries_admin))
         .route(
             "/inquiries/:id/respond",
@@ -1119,6 +1123,10 @@ struct AdminClaimRow {
     claimed_amount: Decimal,
     status: String,
     decision_note: Option<String>,
+    /// Storage key bukti pembayaran (lihat kolom `claims.payment_proof_path`).
+    /// NULL untuk klaim yang belum berstatus PAID atau yang di-issued
+    /// sebelum fitur ini ada (backward-compatible).
+    payment_proof_path: Option<String>,
     submitted_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -1142,7 +1150,7 @@ async fn list_claims_admin(
             r#"
             SELECT cl.id, cl.claim_no, p.policy_no, c.full_name AS customer_name,
                    cl.claim_type, cl.incident_date, cl.claimed_amount,
-                   cl.status, cl.decision_note, cl.submitted_at, cl.updated_at
+                   cl.status, cl.decision_note, cl.payment_proof_path, cl.submitted_at, cl.updated_at
               FROM claims cl
               JOIN policies p ON p.id = cl.policy_id
               JOIN customers c ON c.id = cl.customer_id
@@ -1334,6 +1342,113 @@ async fn patch_claim(
             ip_address: None,
         },
     )
+    .await?;
+
+    Ok(Json(row))
+}
+
+// ---- POST /claims/:id/payment-proof ----------------------------------------
+//
+// Admin upload bukti pembayaran klaim (transfer ke rekening tertanggung).
+// Dipakai saat transisi APPROVED → PAID; file disimpan di storage dengan
+// key prefix `payment_proofs/{claim_id}/…` dan path-nya di-kan ke kolom
+// `claims.payment_proof_path`. Endpoint terpisah dari PATCH status karena
+// (1) PATCH saat ini JSON-only, dan (2) decoupling memungkinkan upload
+// dilakukan sebelum/sesudah perubahan status tanpa mengubah signature PATCH.
+//
+// Multipart contract:
+//   - field "proof"  — file (JPG/PNG/PDF, max 5 MB — lihat services/storage.rs).
+//
+// Response: AdminClaimRow updated (mengandung payment_proof_path baru).
+async fn upload_payment_proof(
+    State(state): State<AppState>,
+    RequireAdmin(admin_user): RequireAdmin,
+    Path(id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> AppResult<Json<AdminClaimRow>> {
+    // 1. Verify claim exists (404 kalau tidak).
+    let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM claims WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound(format!("claim {id}")));
+    }
+
+    // 2. Parse multipart — expect exactly one "proof" field.
+    let mut file_name: Option<String> = None;
+    let mut content_type: Option<String> = None;
+    let mut bytes: Option<Vec<u8>> = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Validation(format!("multipart: {e}")))?
+    {
+        if field.name() == Some("proof") {
+            file_name = field.file_name().map(|s| s.to_string());
+            content_type = field
+                .content_type()
+                .map(|s| s.to_string())
+                .or_else(|| Some("application/octet-stream".to_string()));
+            let b = field
+                .bytes()
+                .await
+                .map_err(|e| AppError::Validation(format!("proof bytes: {e}")))?;
+            bytes = Some(b.to_vec());
+        }
+    }
+    let (fname, mime_t, b) = (
+        file_name.ok_or_else(|| AppError::Validation("missing 'proof' field".into()))?,
+        content_type.ok_or_else(|| AppError::Validation("missing proof content-type".into()))?,
+        bytes.ok_or_else(|| AppError::Validation("empty 'proof' field".into()))?,
+    );
+
+    // 3. Save to storage (validates mime + size internally).
+    let stored = state
+        .storage
+        .save_payment_proof(id, &fname, &mime_t, &b)
+        .await?;
+
+    // 4. Persist path ke kolom klaim.
+    sqlx::query("UPDATE claims SET payment_proof_path = $1, updated_at = now() WHERE id = $2")
+        .bind(&stored.key)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    // 5. Audit.
+    audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &admin_user.sub,
+            action: "claim_payment_proof_uploaded",
+            entity_type: "claim",
+            entity_id: Some(id),
+            metadata: Some(serde_json::json!({
+                "key": stored.key,
+                "filename": fname,
+                "size_bytes": b.len(),
+                "content_type": mime_t,
+            })),
+            ip_address: None,
+        },
+    )
+    .await?;
+
+    // 6. Return updated row.
+    let row: AdminClaimRow = sqlx::query_as(
+        r#"
+        SELECT cl.id, cl.claim_no, p.policy_no, c.full_name AS customer_name,
+               cl.claim_type, cl.incident_date, cl.claimed_amount,
+               cl.status, cl.decision_note, cl.payment_proof_path, cl.submitted_at, cl.updated_at
+          FROM claims cl
+          JOIN policies p ON p.id = cl.policy_id
+          JOIN customers c ON c.id = cl.customer_id
+         WHERE cl.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
     .await?;
 
     Ok(Json(row))

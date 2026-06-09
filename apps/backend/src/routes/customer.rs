@@ -714,6 +714,10 @@ struct ClaimRow {
     description: String,
     status: String,
     decision_note: Option<String>,
+    /// Bukti pembayaran yang di-upload admin saat transisi APPROVED → PAID.
+    /// NULL untuk klaim yang belum paid atau yang di-issue sebelum fitur ini
+    /// ada. Frontend render link download kalau status = PAID.
+    payment_proof_path: Option<String>,
     submitted_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -757,7 +761,7 @@ async fn list_claims(
         r#"
         SELECT cl.id, cl.claim_no, cl.policy_id, p.policy_no,
                cl.claim_type, cl.incident_date, cl.claimed_amount, cl.description,
-               cl.status, cl.decision_note, cl.submitted_at, cl.updated_at
+               cl.status, cl.decision_note, cl.payment_proof_path, cl.submitted_at, cl.updated_at
           FROM claims cl
           JOIN policies p ON p.id = cl.policy_id
          WHERE cl.customer_id = $1
@@ -791,7 +795,7 @@ async fn get_claim(
         r#"
         SELECT cl.id, cl.claim_no, cl.policy_id, p.policy_no,
                cl.claim_type, cl.incident_date, cl.claimed_amount, cl.description,
-               cl.status, cl.decision_note, cl.submitted_at, cl.updated_at
+               cl.status, cl.decision_note, cl.payment_proof_path, cl.submitted_at, cl.updated_at
           FROM claims cl
           JOIN policies p ON p.id = cl.policy_id
          WHERE cl.customer_id = $1 AND cl.id = $2
@@ -995,6 +999,15 @@ async fn create_claim(
 }
 
 // ---- /inquiries ----
+//
+// Model ticketing sejak migrasi 0011: inquiry punya banyak messages di
+// tabel `inquiry_messages` (thread). Status parent = state dari latest
+// message (OPEN = latest by customer, ANSWERED = latest by admin).
+//
+// Response shape:
+//   - `InquiryRow`      — list view (inquiry + summary fields)
+//   - `InquiryDetailRow` — detail view (inquiry + semua messages)
+//   - `MessageRow`       — satu message di thread
 
 #[derive(Serialize, sqlx::FromRow)]
 struct InquiryRow {
@@ -1003,11 +1016,36 @@ struct InquiryRow {
     policy_id: Option<Uuid>,
     policy_no: Option<String>,
     subject: String,
+    /// Pesan customer pertama (dipertahankan untuk backward-compat dengan
+    /// inquiry lama). Pesan-pesan setelahnya ada di `inquiry_messages`.
     message: String,
     status: String,
+    /// Legacy: admin's first answer. Backward-compat — caller baru read
+    /// dari `inquiry_messages`.
     response: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
     responded_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Timestamp pesan terakhir di thread (untuk auto-close check & list preview).
+    last_message_at: Option<chrono::DateTime<chrono::Utc>>,
+    last_sender_type: Option<String>,
+    closed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+struct MessageRow {
+    id: Uuid,
+    sender_type: String,
+    sender_id: Option<Uuid>,
+    sender_name: String,
+    message: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize)]
+struct InquiryDetailRow {
+    #[serde(flatten)]
+    inquiry: InquiryRow,
+    messages: Vec<MessageRow>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1015,6 +1053,20 @@ struct CreateInquiryJson {
     policy_id: Option<Uuid>,
     subject: String,
     message: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CreateMessageJson {
+    message: String,
+}
+
+#[derive(serde::Deserialize)]
+struct CloseInquiryJson {
+    /// Optional — kalau di-set, akan di-append sebagai pesan "system"
+    /// terakhir sebelum close. Biasanya untuk customer/admin memberikan
+    /// alasan close.
+    #[serde(default)]
+    note: Option<String>,
 }
 
 #[derive(Serialize)]

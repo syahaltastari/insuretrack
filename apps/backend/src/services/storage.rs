@@ -22,6 +22,12 @@ use crate::error::AppError;
 pub const MAX_KTP_BYTES: usize = 5 * 1024 * 1024; // 5 MB per spec FS-02.
 const ALLOWED_KTP_MIMES: &[&str] = &["image/jpeg", "image/png", "application/pdf"];
 
+/// Mime types & size limit untuk bukti pembayaran klaim — sama dengan
+/// KTP/claim_doc (JPG/PNG/PDF, 5 MB). Dipakai admin saat transisi klaim
+/// APPROVED → PAID, lihat `routes/admin.rs::upload_payment_proof`.
+const ALLOWED_PAYMENT_PROOF_MIMES: &[&str] = &["image/jpeg", "image/png", "application/pdf"];
+const MAX_PAYMENT_PROOF_BYTES: usize = 5 * 1024 * 1024;
+
 /// Opaque reference ke object yang tersimpan. Disimpan di kolom DB (ktp_path,
 /// pdf_path, claim doc path) tanpa backend-specific prefix.
 #[derive(Debug, Clone)]
@@ -53,6 +59,18 @@ pub trait Storage: Send + Sync {
     async fn save_policy_pdf(
         &self,
         policy_id: Uuid,
+        bytes: &[u8],
+    ) -> Result<StoredRef, AppError>;
+
+    /// Bukti pembayaran klaim yang di-upload admin saat transisi
+    /// APPROVED → PAID. Key prefix `payment_proofs/{claim_id}/…` (pisah
+    /// dari `claims/{claim_id}/…` agar tidak konflik dengan dokumen
+    /// pendukung yang di-upload customer).
+    async fn save_payment_proof(
+        &self,
+        claim_id: Uuid,
+        original_filename: &str,
+        content_type: &str,
         bytes: &[u8],
     ) -> Result<StoredRef, AppError>;
 
@@ -178,6 +196,38 @@ impl Storage for LocalStorage {
         Ok(StoredRef { key, backend: "local" })
     }
 
+    async fn save_payment_proof(
+        &self,
+        claim_id: Uuid,
+        original_filename: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> Result<StoredRef, AppError> {
+        if !ALLOWED_PAYMENT_PROOF_MIMES.contains(&content_type) {
+            return Err(AppError::Validation(format!(
+                "unsupported payment proof mime type: {content_type} (allowed: jpg, png, pdf)"
+            )));
+        }
+        if bytes.len() > MAX_PAYMENT_PROOF_BYTES {
+            return Err(AppError::Validation(format!(
+                "payment proof too large: {} bytes (max 5 MB)",
+                bytes.len()
+            )));
+        }
+        let safe_name = sanitize_filename(original_filename);
+        let key = format!("payment_proofs/{claim_id}/{safe_name}");
+        let absolute = self.absolute(&key);
+        if let Some(parent) = absolute.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("create_dir: {e}")))?;
+        }
+        fs::write(&absolute, bytes)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("write upload: {e}")))?;
+        Ok(StoredRef { key, backend: "local" })
+    }
+
     async fn read_bytes(&self, key: &str) -> Result<Vec<u8>, AppError> {
         let absolute = self.absolute(key);
         fs::read(&absolute)
@@ -298,6 +348,30 @@ impl Storage for R2Storage {
     ) -> Result<StoredRef, AppError> {
         let key = format!("invoices/{invoice_id}.pdf");
         self.put(&key, bytes.to_vec(), "application/pdf").await?;
+        Ok(StoredRef { key, backend: "r2" })
+    }
+
+    async fn save_payment_proof(
+        &self,
+        claim_id: Uuid,
+        original_filename: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> Result<StoredRef, AppError> {
+        if !ALLOWED_PAYMENT_PROOF_MIMES.contains(&content_type) {
+            return Err(AppError::Validation(format!(
+                "unsupported payment proof mime type: {content_type} (allowed: jpg, png, pdf)"
+            )));
+        }
+        if bytes.len() > MAX_PAYMENT_PROOF_BYTES {
+            return Err(AppError::Validation(format!(
+                "payment proof too large: {} bytes (max 5 MB)",
+                bytes.len()
+            )));
+        }
+        let safe_name = sanitize_filename(original_filename);
+        let key = format!("payment_proofs/{claim_id}/{safe_name}");
+        self.put(&key, bytes.to_vec(), content_type).await?;
         Ok(StoredRef { key, backend: "r2" })
     }
 
