@@ -1,0 +1,2168 @@
+openapi: 3.1.0
+
+info:
+  title: InsureTrack API
+  version: 1.0.0
+  summary: REST API for the InsureTrack digital insurance platform.
+  description: |
+    # InsureTrack API
+
+    End-to-end online policy registration & issuance system. The
+    platform has three surfaces backed by this API:
+
+    1. **Public landing page** (`apps/portal/app/page.tsx`) — reads products,
+       clients, and testimonials. Handles account creation.
+    2. **Customer portal** (`apps/portal/app/portal/*`) — submit insurance
+       applications, view invoices/policies/claims/inquiries, manage own
+       profile and password.
+    3. **Admin backoffice** (`apps/admin/app/admin/*`) — review claims,
+       respond to inquiries, manage marketing collateral, view
+       email/audit logs.
+
+    Plus one server-to-server surface:
+    4. **Payment gateway webhook** — receives paid-invoice callbacks.
+
+    ## Conventions
+
+    - All responses are JSON. Successful responses return the data
+      directly. Errors use `{ "error": { "code": "VALIDATION", "message": "..." } }`.
+    - **Customer auth:** `Authorization: Bearer <jwt>` from `POST /customer/login`.
+    - **Admin auth:** `Authorization: Bearer <jwt>` from `POST /admin/login`.
+    - **Webhook auth:** `X-Webhook-Secret: <shared secret>` header.
+    - All timestamps are RFC 3339 / ISO 8601 in UTC.
+    - All money amounts are decimal strings (avoid float precision loss).
+    - Pagination: `?page=1&page_size=20`. Response shape: `{ "data": [...], "page": 1, "page_size": 20, "total": 42 }`.
+
+    ## Status state machines (spec §10)
+
+    - **Invoice:** `UNPAID → PAID | EXPIRED | CANCELLED`
+    - **Registration:** `PENDING → PAID → ISSUED | PENDING → CANCELLED`
+    - **Policy:** `ACTIVE → LAPSED | EXPIRED`
+    - **Claim:** `SUBMITTED → UNDER_REVIEW → APPROVED → PAID | → REJECTED`
+    - **Inquiry:** `OPEN → ANSWERED → CLOSED`
+  contact:
+    name: InsureTrack
+    email: contact@insuretrack.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080/api
+    description: Local development
+  - url: https://api.insuretrack.example/api
+    description: Production (placeholder)
+
+tags:
+  - name: Public
+    description: Public endpoints accessible without authentication.
+  - name: Customer Auth
+    description: Account creation, activation, login, password flows.
+  - name: Customer Profile
+    description: Customer profile and password management.
+  - name: Customer Insurance
+    description: Insurance application, invoices, policies.
+  - name: Customer Claims
+    description: Submit and track insurance claims.
+  - name: Customer Inquiries
+    description: Customer-asked questions to admin team.
+  - name: Admin Auth
+    description: Admin login and profile.
+  - name: Admin Dashboard
+    description: Aggregate statistics and chart data.
+  - name: Admin Backoffice
+    description: Registrations, invoices, policies, claims, inquiries, logs.
+  - name: Admin Marketing
+    description: Manage corporate clients and customer testimonials.
+  - name: Webhook
+    description: Server-to-server webhook callbacks (no Bearer auth).
+
+# Default security: Bearer JWT. Endpoints that need different auth
+# (or no auth) override this with `security: []` or with their own scheme.
+security:
+  - bearerAuth: []
+
+paths:
+  # ============================================================
+  # PUBLIC
+  # ============================================================
+  /health:
+    get:
+      tags: [Public]
+      summary: Health check
+      description: Liveness probe. Returns 200 if the process is up.
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }
+
+  /public/products:
+    get:
+      tags: [Public]
+      summary: List insurance products
+      description: |
+        Returns the catalog of insurance products. The set is fixed at
+        3 (Life, Personal Accident, Health); no DB lookup — values come
+        from a Rust enum (see `apps/backend/src/dto/product_catalog`).
+      operationId: listProducts
+      security: []
+      responses:
+        "200":
+          description: Catalog of products.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Product" }
+              examples:
+                success:
+                  value:
+                    data:
+                      - code: "LIFE"
+                        name: "Life Insurance"
+                        description: "Proteksi jiwa dengan manfaat duka hingga 100x premi."
+                      - code: "PERSONAL_ACCIDENT"
+                        name: "Personal Accident Insurance"
+                        description: "Santunan akibat kecelakaan: cacat tetap, biaya medis, kematian."
+                      - code: "HEALTH"
+                        name: "Health Insurance"
+                        description: "Reimbursement biaya rawat inap dan tindakan medis."
+
+  /public/customers:
+    post:
+      tags: [Public, Customer Auth]
+      summary: Register a new customer account
+      description: |
+        Creates a customer record with `portal_status = 'PENDING'`,
+        hashes the password, and sends an activation email containing
+        a single-use JWT (24-hour TTL). The customer cannot log in
+        until they click the activation link.
+
+        **Validation:**
+        - `email` must be unique (409 Conflict if taken).
+        - `password` min 8 chars (server-side).
+        - `mobile_number` 10–15 digits, optional `+` prefix.
+
+        **Side effects:**
+        - Inserts row in `customers` table.
+        - Inserts `email_logs` row (email_type=`PORTAL_ACTIVATION`).
+        - Inserts `audit_logs` row (`customer_registered`).
+
+        **Production note:** the response includes `activation_url`
+        for convenience (so testers can complete the flow without
+        checking email). In a real deployment you might want to
+        remove that field from the response.
+      operationId: registerCustomer
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterCustomerRequest" }
+            examples:
+              standard:
+                value:
+                  full_name: "Test User"
+                  email: "test@example.com"
+                  password: "Password123"
+                  mobile_number: "081234567890"
+      responses:
+        "200":
+          description: Account created. Activation email queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegisterCustomerResponse" }
+              examples:
+                success:
+                  value:
+                    customer_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    email: "test@example.com"
+                    activation_url: "http://localhost:3000/portal/activate?token=eyJ..."
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /public/registrations/{reg_no}:
+    get:
+      tags: [Public]
+      summary: Get registration status by registration number
+      description: |
+        Returns the current status of a registration (e.g. `REG-202606-000001`)
+        along with the linked invoice status and any issued policy number.
+        Used by the public landing page to show a "track your registration"
+        lookup.
+      operationId: getRegistrationByNo
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/RegNo"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegistrationStatus" }
+              examples:
+                success:
+                  value:
+                    registration_no: "REG-202606-000001"
+                    status: "PENDING"
+                    invoice_status: "UNPAID"
+                    policy_no: null
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /public/clients:
+    get:
+      tags: [Public]
+      summary: List active corporate clients
+      description: |
+        Returns the corporate clients (B2B partners) displayed on the
+        public landing page. Each entry has a `logo_url` that points
+        to the backend's static file endpoint.
+      operationId: listPublicClients
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublicClient" }
+
+  /public/testimonials:
+    get:
+      tags: [Public]
+      summary: List active customer testimonials
+      description: Featured testimonials are listed first.
+      operationId: listPublicTestimonials
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublicTestimonial" }
+
+  /public/uploads/{path}:
+    get:
+      tags: [Public]
+      summary: Serve an uploaded file (KTP, client logo, photo, PDF)
+      description: |
+        Returns raw file bytes. Content-type is inferred from the
+        extension. Path-traversal attempts (`..` segments) are rejected
+        with 400. Only files within the configured `UPLOAD_DIR` (or R2
+        bucket) are served.
+      operationId: serveUpload
+      security: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: Storage key, e.g. `policies/<uuid>.pdf`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: File bytes.
+          content:
+            application/pdf: { schema: { type: string, format: "binary" } }
+            image/jpeg: { schema: { type: string, format: "binary" } }
+            image/png: { schema: { type: string, format: "binary" } }
+            image/svg+xml: { schema: { type: string, format: "binary" } }
+        "400":
+          description: Invalid path (e.g., contains `..`).
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ============================================================
+  # CUSTOMER AUTH
+  # ============================================================
+  /customer/activate:
+    post:
+      tags: [Customer Auth]
+      summary: Activate account (single-use token from email)
+      description: |
+        Flips `portal_status` from `PENDING` to `ACTIVE` and returns
+        a fresh customer JWT. The token is single-use — replaying
+        returns 404.
+
+        The password was already set during registration; activation
+        is purely an email-confirmation step. No password is sent or
+        verified at this endpoint.
+      operationId: activateCustomer
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActivateRequest" }
+      responses:
+        "200":
+          description: Activated. Returns a fresh login token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "404":
+          description: Token already used, or customer not found.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /customer/login:
+    post:
+      tags: [Customer Auth]
+      summary: Customer login
+      description: |
+        Authenticates by email + password. Returns a JWT with 8-hour
+        TTL. The account must be `portal_status = 'ACTIVE'`.
+      operationId: customerLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401":
+          description: Wrong email/password.
+        "403":
+          description: Account not activated yet.
+
+  /customer/password/reset:
+    post:
+      tags: [Customer Auth]
+      summary: Request password reset
+      description: |
+        Generates a single-purpose JWT (30-min TTL) for password reset.
+        In production the `reset_url` is sent via email; the response
+        includes it for testing convenience.
+      operationId: requestPasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetRequest" }
+      responses:
+        "200":
+          description: Reset token issued (regardless of whether the email exists — to avoid leaking registered emails).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasswordResetResponse" }
+
+  /customer/password/reset/consume:
+    post:
+      tags: [Customer Auth]
+      summary: Consume password reset (set new password)
+      description: |
+        Validates the reset JWT, hashes the new password, and updates
+        the customer. The token is single-use.
+      operationId: consumePasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetConsumeRequest" }
+      responses:
+        "200":
+          description: Password updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ============================================================
+  # CUSTOMER PROFILE
+  # ============================================================
+  /customer/me:
+    get:
+      tags: [Customer Profile]
+      summary: Get my profile + dashboard summary
+      description: |
+        Returns the customer's basic info plus aggregate counts used
+        by the portal dashboard (active policy count, total sum
+        assured, open claim/inquiry counts).
+      operationId: getMyProfile
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeSummary" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    patch:
+      tags: [Customer Profile]
+      summary: Update my profile
+      description: |
+        Update `full_name`, `email`, and/or `mobile_number`. Other
+        fields (NIK, address, etc.) are intentionally locked once an
+        insurance application exists, to keep the issued policy data
+        consistent.
+
+        **Validation:**
+        - `email` must be a valid format and unique (409 if taken by another customer).
+        - `mobile_number` 10–15 digits.
+        - `full_name` min 3 chars.
+      operationId: updateMyProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateMeRequest" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpdateMeResponse" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /customer/password/change:
+    post:
+      tags: [Customer Profile]
+      summary: Change password while logged in
+      description: |
+        Verifies the current password, then hashes and stores the new
+        one. Records `customer_password_changed` in `audit_logs`.
+        Returns 204 on success.
+      operationId: changeMyPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "204":
+          description: Password changed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  # ============================================================
+  # CUSTOMER INSURANCE
+  # ============================================================
+  /customer/registrations:
+    post:
+      tags: [Customer Insurance]
+      summary: Submit insurance application
+      description: |
+        Multipart upload. The `data` field is a JSON string (not a
+        file); `id_card` is the KTP/JPG/PNG/PDF (max 5 MB).
+
+        **Side effects (in one DB transaction):**
+        1. Updates the customer row with insurance-specific fields
+           (NIK, address, KTP path, etc.).
+        2. Creates a `registrations` row with `status = 'PENDING'`.
+        3. Creates an `invoices` row with `status = 'UNPAID'`.
+        4. Commits the transaction.
+        5. Renders the invoice PDF and saves it to storage.
+        6. Updates `invoices.pdf_path`.
+        7. Sends two emails: `REGISTRATION_SUCCESS` (text) and
+           `INVOICE_NOTIFICATION` (with PDF attachment).
+        8. Audit events: `registration_created`, `invoice_generated`.
+      operationId: submitInsuranceApplication
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/SubmitRegistrationMultipart" }
+            encoding:
+              data:
+                contentType: application/json
+      responses:
+        "200":
+          description: Registration submitted. Invoice generated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubmitRegistrationResponse" }
+        "403":
+          description: Account not activated yet.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /customer/policies:
+    get:
+      tags: [Customer Insurance]
+      summary: List my policies
+      operationId: listMyPolicies
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/PolicyRow" }
+
+  /customer/policies/{id}:
+    get:
+      tags: [Customer Insurance]
+      summary: Get a single policy
+      operationId: getMyPolicy
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicyRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /customer/policies/{id}/pdf:
+    get:
+      tags: [Customer Insurance]
+      summary: Download the e-policy PDF
+      description: |
+        Returns the e-policy PDF as `application/pdf` with
+        `Content-Disposition: attachment; filename="<policy_no>.pdf"`.
+      operationId: downloadMyPolicyPdf
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: PDF file.
+          content:
+            application/pdf:
+              schema: { type: string, format: "binary" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /customer/invoices:
+    get:
+      tags: [Customer Insurance]
+      summary: List my invoices
+      operationId: listMyInvoices
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/InvoiceRow" }
+
+  /customer/invoices/{id}:
+    get:
+      tags: [Customer Insurance]
+      summary: Get a single invoice
+      operationId: getMyInvoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvoiceRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /customer/invoices/{id}/pdf:
+    get:
+      tags: [Customer Insurance]
+      summary: Download the invoice PDF
+      operationId: downloadMyInvoicePdf
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: PDF file.
+          content:
+            application/pdf:
+              schema: { type: string, format: "binary" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ============================================================
+  # CUSTOMER CLAIMS
+  # ============================================================
+  /customer/claims:
+    get:
+      tags: [Customer Claims]
+      summary: List my claims
+      operationId: listMyClaims
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/ClaimRow" }
+
+    post:
+      tags: [Customer Claims]
+      summary: Submit a claim
+      description: |
+        Multipart upload. `data` is a JSON string; `documents` is one
+        or more files (JPG/PNG/PDF, max 5 MB each).
+
+        **Validation (server-side):**
+        - The policy must be `ACTIVE` and belong to the customer.
+        - `incident_date` must not be in the future.
+        - `incident_date` must fall within the policy's effective → expiry range.
+        - `claimed_amount` must be > 0 and ≤ sum assured.
+      operationId: submitClaim
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/SubmitClaimMultipart" }
+      responses:
+        "201":
+          description: Claim created with status `SUBMITTED`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateClaimResponse" }
+        "404":
+          description: Policy not found or not owned.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /customer/claims/{id}:
+    get:
+      tags: [Customer Claims]
+      summary: Get a single claim
+      operationId: getMyClaim
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaimRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ============================================================
+  # CUSTOMER INQUIRIES
+  # ============================================================
+  /customer/inquiries:
+    get:
+      tags: [Customer Inquiries]
+      summary: List my inquiries
+      operationId: listMyInquiries
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/InquiryRow" }
+
+    post:
+      tags: [Customer Inquiries]
+      summary: Create an inquiry
+      description: |
+        Optionally link to a specific policy (must be owned by the
+        customer). Returns 201 with the generated `inquiry_no`.
+      operationId: createInquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateInquiryRequest" }
+      responses:
+        "201":
+          description: Inquiry created with status `OPEN`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateInquiryResponse" }
+        "404":
+          description: '`policy_id` provided but not owned by the customer.'
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /customer/inquiries/{id}:
+    get:
+      tags: [Customer Inquiries]
+      summary: Get a single inquiry
+      operationId: getMyInquiry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InquiryRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ============================================================
+  # ADMIN AUTH
+  # ============================================================
+  /admin/login:
+    post:
+      tags: [Admin Auth]
+      summary: Admin login
+      description: |
+        Default seed credentials: username `admin`, password `admin`.
+        **Change before any real use.**
+
+        On success, `last_login_at` is updated in the DB.
+      operationId: adminLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminLoginRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401":
+          description: Wrong username/password.
+
+  /admin/me:
+    get:
+      tags: [Admin Auth]
+      summary: Get my admin profile
+      operationId: getMyAdminProfile
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminProfile" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    patch:
+      tags: [Admin Auth]
+      summary: Update my admin profile
+      operationId: updateMyAdminProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAdminMeRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminProfile" }
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /admin/me/password:
+    post:
+      tags: [Admin Auth]
+      summary: Change my admin password
+      operationId: changeMyAdminPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "204":
+          description: Password changed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ============================================================
+  # ADMIN DASHBOARD
+  # ============================================================
+  /admin/dashboard/stats:
+    get:
+      tags: [Admin Dashboard]
+      summary: Aggregate counts for the dashboard
+      operationId: getDashboardStats
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardStats" }
+
+  /admin/dashboard/charts:
+    get:
+      tags: [Admin Dashboard]
+      summary: Time-series chart data
+      operationId: getDashboardCharts
+      parameters:
+        - name: months
+          in: query
+          schema: { type: integer, default: 6, minimum: 1, maximum: 24 }
+          description: Number of months back to include.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardCharts" }
+
+  # ============================================================
+  # ADMIN BACKOFFICE
+  # ============================================================
+  /admin/registrations:
+    get:
+      tags: [Admin Backoffice]
+      summary: List all registrations
+      description: |
+        Supports `?format=csv` to download as a CSV file (uses the
+        same filters). Search matches registration number, customer
+        name, email, or NIK.
+      operationId: adminListRegistrations
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/Status"
+        - $ref: "#/components/parameters/Format"
+      responses:
+        "200":
+          description: Paginated JSON.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminRegistrationRow" }
+            text/csv:
+              schema: { type: string }
+
+  /admin/registrations/{id}:
+    get:
+      tags: [Admin Backoffice]
+      summary: Get registration detail
+      operationId: adminGetRegistration
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminRegistrationDetail" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/invoices:
+    get:
+      tags: [Admin Backoffice]
+      summary: List all invoices
+      operationId: adminListInvoices
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/Status"
+        - $ref: "#/components/parameters/Format"
+      responses:
+        "200":
+          description: Paginated JSON.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminInvoiceRow" }
+            text/csv:
+              schema: { type: string }
+
+  /admin/invoices/{id}:
+    get:
+      tags: [Admin Backoffice]
+      summary: Get invoice detail
+      operationId: adminGetInvoice
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminInvoiceRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/invoices/{id}/pdf:
+    get:
+      tags: [Admin Backoffice]
+      summary: Download invoice PDF
+      operationId: adminDownloadInvoicePdf
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: PDF file.
+          content:
+            application/pdf:
+              schema: { type: string, format: "binary" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/policies:
+    get:
+      tags: [Admin Backoffice]
+      summary: List all policies
+      operationId: adminListPolicies
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/Status"
+        - $ref: "#/components/parameters/Format"
+      responses:
+        "200":
+          description: Paginated JSON.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminPolicyRow" }
+            text/csv:
+              schema: { type: string }
+
+  /admin/policies/{id}:
+    get:
+      tags: [Admin Backoffice]
+      summary: Get policy detail
+      operationId: adminGetPolicy
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPolicyRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/policies/{id}/pdf:
+    get:
+      tags: [Admin Backoffice]
+      summary: Download e-policy PDF
+      operationId: adminDownloadPolicyPdf
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: PDF file.
+          content:
+            application/pdf:
+              schema: { type: string, format: "binary" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/email-logs:
+    get:
+      tags: [Admin Backoffice]
+      summary: List email delivery logs
+      description: |
+        Useful for debugging "did this email go out?" or "why did
+        this email fail?" Filter by `status` (SENT / FAILED / QUEUED).
+      operationId: adminListEmailLogs
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/EmailLogRow" }
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin Backoffice]
+      summary: List audit trail events
+      description: |
+        Every meaningful action emits an audit row (spec FS-15):
+        admin login, customer login, registration created, invoice
+        generated, payment received, policy issued, claim submitted,
+        claim status changed, inquiry submitted, inquiry answered,
+        email sent, profile updated, password changed.
+      operationId: adminListAuditLogs
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: entity_type
+          in: query
+          schema: { type: string, example: "claim" }
+          description: Filter by entity type (e.g. `claim`, `invoice`).
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AuditLogRow" }
+
+  /admin/claims:
+    get:
+      tags: [Admin Backoffice]
+      summary: List all claims (admin view)
+      operationId: adminListClaims
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminClaimRow" }
+
+  /admin/claims/{id}:
+    patch:
+      tags: [Admin Backoffice]
+      summary: Update claim status (review workflow)
+      description: |
+        Updates `status` and `decision_note`. The transition must be
+        valid per the claim state machine:
+
+        - `SUBMITTED → UNDER_REVIEW`
+        - `UNDER_REVIEW → APPROVED`
+        - `APPROVED → PAID`
+        - `SUBMITTED | UNDER_REVIEW → REJECTED`
+
+        Invalid transitions return 400. Sends a `CLAIM_STATUS_UPDATE`
+        email to the customer.
+      operationId: adminPatchClaim
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchClaimRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminClaimRow" }
+        "400":
+          description: Illegal state transition.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/inquiries:
+    get:
+      tags: [Admin Backoffice]
+      summary: List all inquiries
+      operationId: adminListInquiries
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminInquiryRow" }
+
+  /admin/inquiries/{id}/respond:
+    post:
+      tags: [Admin Backoffice]
+      summary: Respond to an inquiry
+      description: |
+        Sets `response` text. If `close: true`, sets `status` to
+        `CLOSED`; otherwise `ANSWERED`. Sends an `INQUIRY_RESPONSE`
+        email to the customer.
+      operationId: adminRespondInquiry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RespondInquiryRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminInquiryRow" }
+        "400":
+          description: Illegal state transition.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ============================================================
+  # ADMIN MARKETING
+  # ============================================================
+  /admin/clients:
+    get:
+      tags: [Admin Marketing]
+      summary: List corporate clients
+      operationId: adminListClients
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Client" }
+
+    post:
+      tags: [Admin Marketing]
+      summary: Create a corporate client (with logo upload)
+      description: |
+        Multipart upload. `data` is JSON; `logo` is the image
+        (JPG/PNG/WebP/SVG, max 2 MB). The logo is stored under
+        `clients/<uuid>/<file>` and served via the public
+        uploads endpoint.
+      operationId: adminCreateClient
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/CreateClientMultipart" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /admin/clients/{id}:
+    get:
+      tags: [Admin Marketing]
+      summary: Get a corporate client
+      operationId: adminGetClient
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [Admin Marketing]
+      summary: Update a corporate client (multipart, logo optional)
+      operationId: adminUpdateClient
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/UpdateClientMultipart" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Admin Marketing]
+      summary: Delete a corporate client (hard delete)
+      description: |
+        Currently a hard delete from the DB. For production
+        environments consider a soft-delete via `is_active = false`.
+      operationId: adminDeleteClient
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/testimonials:
+    get:
+      tags: [Admin Marketing]
+      summary: List testimonials
+      operationId: adminListTestimonials
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Testimonial" }
+
+    post:
+      tags: [Admin Marketing]
+      summary: Create a testimonial (with photo upload)
+      operationId: adminCreateTestimonial
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/CreateTestimonialMultipart" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Testimonial" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /admin/testimonials/{id}:
+    get:
+      tags: [Admin Marketing]
+      summary: Get a testimonial
+      operationId: adminGetTestimonial
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Testimonial" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [Admin Marketing]
+      summary: Update a testimonial (JSON only — photo cannot be replaced via PATCH)
+      operationId: adminUpdateTestimonial
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTestimonialRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Testimonial" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Admin Marketing]
+      summary: Delete a testimonial
+      operationId: adminDeleteTestimonial
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ============================================================
+  # WEBHOOK
+  # ============================================================
+  /public/payment/webhook:
+    post:
+      tags: [Webhook]
+      summary: Payment webhook (mark invoice as paid)
+      description: |
+        Called by the payment gateway when an invoice is paid. Auth is
+        via the `X-Webhook-Secret` header, not Bearer.
+
+        **Idempotent.** Replaying the same `invoice_no` returns
+        success with `replayed: true` without re-creating the policy
+        or re-sending emails.
+
+        **Side effects (in a single DB transaction):**
+        1. Set `invoices.status = 'PAID'`, `paid_at = now()`.
+        2. Set `registrations.status = 'PAID'`.
+        3. Generate `policy_no` and INSERT a new `policies` row with
+           `status = 'ACTIVE'`.
+        4. Set `registrations.status = 'ISSUED'`.
+        5. Commit.
+        6. Render the e-policy PDF and save to storage.
+        7. Update `policies.pdf_path`.
+        8. Send two emails: `PAYMENT_SUCCESS` (text) and
+           `E_POLICY_DELIVERY` (with PDF attachment).
+        9. Audit: `policy_issued`.
+      operationId: paymentWebhook
+      security:
+        - webhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookResponse" }
+              examples:
+                success:
+                  value:
+                    ok: true
+                    policy_no: "POL-202606-000001"
+                    replayed: false
+                replayed:
+                  value:
+                    ok: true
+                    policy_no: null
+                    replayed: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Invoice number not found.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+# ============================================================
+# COMPONENTS
+# ============================================================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT obtained from `POST /customer/login` (customer role) or
+        `POST /admin/login` (admin role). 8-hour TTL.
+    webhookSecret:
+      type: apiKey
+      in: header
+      name: X-Webhook-Secret
+      description: Shared secret matching `PAYMENT_WEBHOOK_SECRET` env var.
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Page number (1-based).
+      schema: { type: integer, default: 1, minimum: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      description: Page size (1–100).
+      schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+    Status:
+      name: status
+      in: query
+      description: Filter by status. Empty string = all.
+      schema: { type: string, example: "PENDING" }
+    Q:
+      name: q
+      in: query
+      description: Free-text search. Empty string = all.
+      schema: { type: string, example: "" }
+    Format:
+      name: format
+      in: query
+      description: Set to `csv` to download as CSV.
+      schema: { type: string, enum: ["csv"], example: "" }
+    RegNo:
+      name: reg_no
+      in: path
+      required: true
+      description: Registration number (`REG-YYYYMM-NNNNNN`).
+      schema: { type: string, example: "REG-202606-000001" }
+    IdParam:
+      name: id
+      in: path
+      required: true
+      description: Resource UUID.
+      schema: { type: string, format: uuid, example: "f47ac10b-58cc-4372-a567-0e02b2c3d479" }
+
+  responses:
+    Unauthorized:
+      description: Authentication failed or token invalid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            unauthorized:
+              value: { error: { code: "UNAUTHORIZED", message: "..." } }
+    Forbidden:
+      description: Authenticated but not allowed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Resource conflict (e.g. duplicate unique field).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Request body or params failed validation.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            validation:
+              value: { error: { code: "VALIDATION", message: "Password minimal 8 karakter" } }
+
+  schemas:
+    # ----- Common -----
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, VALIDATION, INTERNAL]
+            message:
+              type: string
+              description: Human-readable error message.
+
+    Page:
+      type: object
+      required: [data, page, page_size, total]
+      properties:
+        data:
+          type: array
+          items: {}
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Total row count across all pages.
+          example: 42
+
+    # ----- Public / catalog -----
+    Product:
+      type: object
+      required: [code, name, description]
+      properties:
+        code:
+          type: string
+          enum: [LIFE, PERSONAL_ACCIDENT, HEALTH]
+        name:
+          type: string
+          example: "Life Insurance"
+        description:
+          type: string
+
+    PublicClient:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: "PT Bank Nusantara" }
+        logo_url:
+          type: string
+          format: uri
+          description: Absolute URL to the logo image.
+          example: "http://localhost:8080/api/public/uploads/clients/<uuid>/logo.png"
+        logo_path:
+          type: string
+          description: Storage key (relative path).
+        industry: { type: string, nullable: true }
+        website: { type: string, format: uri, nullable: true }
+
+    PublicTestimonial:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        customer_name: { type: string, example: "Andi Setiawan" }
+        photo_url: { type: string, format: uri, nullable: true }
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review: { type: string }
+        role: { type: string, nullable: true }
+        company: { type: string, nullable: true }
+        policy_type:
+          type: string
+          enum: [LIFE, PERSONAL_ACCIDENT, HEALTH, ""]
+          nullable: true
+        display_date: { type: string, format: date }
+        is_featured: { type: boolean }
+
+    # ----- Auth requests/responses -----
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, format: email }
+        password: { type: string, format: password }
+
+    LoginResponse:
+      type: object
+      required: [token, role]
+      properties:
+        token: { type: string, description: "Bearer JWT" }
+        role:
+          type: string
+          enum: [customer, admin]
+
+    ActivateRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+
+    RegisterCustomerRequest:
+      type: object
+      required: [full_name, email, password, mobile_number]
+      properties:
+        full_name: { type: string, minLength: 3, maxLength: 120 }
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 8 }
+        mobile_number:
+          type: string
+          pattern: "^[0-9+\\-()\\s]{10,20}$"
+          example: "081234567890"
+
+    RegisterCustomerResponse:
+      type: object
+      required: [customer_id, email]
+      properties:
+        customer_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        activation_url:
+          type: string
+          format: uri
+          description: |
+            Test convenience — in production this would only be sent
+            via email. Remove from the response before going to prod.
+
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    PasswordResetResponse:
+      type: object
+      required: [ok, reset_url]
+      properties:
+        ok: { type: boolean, example: true }
+        reset_token:
+          type: string
+          description: Test convenience. Not in production.
+        reset_url:
+          type: string
+          format: uri
+          description: Test convenience. Not in production.
+
+    PasswordResetConsumeRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token: { type: string }
+        new_password: { type: string, format: password, minLength: 8 }
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string, format: password }
+        new_password: { type: string, format: password, minLength: 8 }
+
+    UpdateMeRequest:
+      type: object
+      properties:
+        full_name: { type: string, minLength: 3, maxLength: 120 }
+        email: { type: string, format: email }
+        mobile_number: { type: string, pattern: "^[0-9+\\-()\\s]{10,20}$" }
+      description: |
+        All fields are optional. To leave a field unchanged, omit it
+        from the request body.
+
+    UpdateMeResponse:
+      type: object
+      required: [customer_id, full_name, email, mobile_number]
+      properties:
+        customer_id: { type: string, format: uuid }
+        full_name: { type: string }
+        email: { type: string, format: email }
+        mobile_number: { type: string }
+
+    AdminLoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, example: "admin" }
+        password: { type: string, format: password }
+
+    UpdateAdminMeRequest:
+      type: object
+      properties:
+        full_name: { type: string, minLength: 3, maxLength: 120 }
+        email: { type: string, format: email }
+
+    # ----- Customer profile / dashboard -----
+    MeSummary:
+      type: object
+      required: [customer_id, email, full_name, mobile_number, active_policy_count, total_sum_assured, open_claim_count, open_inquiry_count]
+      properties:
+        customer_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        full_name: { type: string }
+        mobile_number: { type: string }
+        active_policy_count: { type: integer, example: 1 }
+        total_sum_assured: { type: string, description: "Decimal string, e.g. '100000000'", example: "100000000" }
+        open_claim_count: { type: integer, example: 0 }
+        open_inquiry_count: { type: integer, example: 0 }
+
+    AdminProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string, example: "admin" }
+        full_name: { type: string, nullable: true }
+        email: { type: string, format: email, nullable: true }
+        role: { type: string, example: "admin" }
+        is_active: { type: boolean }
+        last_login_at: { type: string, format: date-time, nullable: true }
+        password_changed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    # ----- Insurance -----
+    RegistrationStatus:
+      type: object
+      required: [registration_no, status, invoice_status]
+      properties:
+        registration_no: { type: string, example: "REG-202606-000001" }
+        status:
+          type: string
+          enum: [PENDING, PAID, ISSUED, CANCELLED]
+        invoice_status:
+          type: string
+          enum: [UNPAID, PAID, EXPIRED, CANCELLED]
+        policy_no: { type: string, nullable: true }
+
+    SubmitRegistrationMultipart:
+      type: object
+      required: [data, id_card]
+      properties:
+        data:
+          type: string
+          description: |
+            JSON string with the registration payload. See example.
+        id_card:
+          type: string
+          format: binary
+          description: KTP image (JPG/PNG/PDF, max 5 MB).
+
+    SubmitRegistrationResponse:
+      type: object
+      required: [registration_no, invoice_no, status]
+      properties:
+        registration_no: { type: string }
+        invoice_no: { type: string }
+        status: { type: string, example: "PENDING" }
+
+    PolicyRow:
+      type: object
+      required: [id, policy_no, product, sum_assured, premium, effective_date, expiry_date, status]
+      properties:
+        id: { type: string, format: uuid }
+        policy_no: { type: string, example: "POL-202606-000001" }
+        product: { type: string, enum: [LIFE, PERSONAL_ACCIDENT, HEALTH] }
+        sum_assured: { type: string }
+        premium: { type: string }
+        effective_date: { type: string, format: date }
+        expiry_date: { type: string, format: date }
+        status:
+          type: string
+          enum: [ACTIVE, LAPSED, EXPIRED]
+        pdf_path: { type: string, nullable: true }
+
+    InvoiceRow:
+      type: object
+      required: [id, invoice_no, registration_no, premium_amount, due_date, status]
+      properties:
+        id: { type: string, format: uuid }
+        invoice_no: { type: string, example: "INV-202606-000001" }
+        registration_no: { type: string }
+        premium_amount: { type: string }
+        due_date: { type: string, format: date }
+        status:
+          type: string
+          enum: [UNPAID, PAID, EXPIRED, CANCELLED]
+        paid_at: { type: string, format: date-time, nullable: true }
+        pdf_path: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    # ----- Claims -----
+    ClaimRow:
+      type: object
+      required: [id, claim_no, policy_id, claim_type, incident_date, claimed_amount, description, status, submitted_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        claim_no: { type: string, example: "CLM-202606-000001" }
+        policy_id: { type: string, format: uuid }
+        policy_no: { type: string, example: "POL-202606-000001" }
+        claim_type:
+          type: string
+          example: "DEATH_BENEFIT"
+          description: |
+            Free-form string per spec — product-specific (LIFE:
+            DEATH_BENEFIT, HEALTH: MEDICAL_REIMBURSEMENT,
+            PERSONAL_ACCIDENT: ACCIDENTAL_INJURY, etc.).
+        incident_date: { type: string, format: date }
+        claimed_amount: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, PAID]
+        decision_note: { type: string, nullable: true }
+        submitted_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    SubmitClaimMultipart:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: string
+          description: JSON string with the claim payload.
+        documents:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: One or more files (JPG/PNG/PDF, max 5 MB each).
+
+    CreateClaimResponse:
+      type: object
+      required: [claim_no, status]
+      properties:
+        claim_no: { type: string }
+        status: { type: string, example: "SUBMITTED" }
+
+    # ----- Inquiries -----
+    InquiryRow:
+      type: object
+      required: [id, inquiry_no, subject, message, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        inquiry_no: { type: string, example: "INQ-202606-000001" }
+        policy_id: { type: string, format: uuid, nullable: true }
+        policy_no: { type: string, nullable: true }
+        subject: { type: string }
+        message: { type: string }
+        status:
+          type: string
+          enum: [OPEN, ANSWERED, CLOSED]
+        response: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        responded_at: { type: string, format: date-time, nullable: true }
+
+    CreateInquiryRequest:
+      type: object
+      required: [subject, message]
+      properties:
+        policy_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional link to a policy (must be owned by the customer).
+        subject: { type: string, minLength: 1, maxLength: 200 }
+        message: { type: string, minLength: 1, maxLength: 5000 }
+
+    CreateInquiryResponse:
+      type: object
+      required: [inquiry_no, status]
+      properties:
+        inquiry_no: { type: string }
+        status: { type: string, example: "OPEN" }
+
+    # ----- Webhook -----
+    WebhookBody:
+      type: object
+      required: [invoice_no, payment_status]
+      properties:
+        invoice_no: { type: string, example: "INV-202606-000001" }
+        payment_status:
+          type: string
+          enum: [PAID]
+          description: Only `PAID` is handled in MVP.
+        payment_date:
+          type: string
+          format: date
+          nullable: true
+          description: Defaults to `today` if omitted.
+
+    WebhookResponse:
+      type: object
+      required: [ok, replayed]
+      properties:
+        ok: { type: boolean, example: true }
+        policy_no: { type: string, nullable: true }
+        replayed: { type: boolean, description: "True if invoice was already PAID." }
+
+    # ----- Admin row types -----
+    AdminRegistrationRow:
+      allOf:
+        - $ref: "#/components/schemas/PolicyRow"
+        - type: object
+          properties:
+            registration_no: { type: string }
+            customer_name: { type: string }
+            customer_email: { type: string, format: email }
+            coverage_term: { type: integer }
+
+    AdminRegistrationDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        registration_no: { type: string }
+        customer_id: { type: string, format: uuid }
+        customer_name: { type: string }
+        customer_email: { type: string, format: email }
+        customer_nik: { type: string }
+        product: { type: string }
+        sum_assured: { type: string }
+        coverage_term: { type: integer }
+        status: { type: string, enum: [PENDING, PAID, ISSUED, CANCELLED] }
+        created_at: { type: string, format: date-time }
+        invoice_no: { type: string, nullable: true }
+        invoice_status: { type: string, nullable: true }
+        premium_amount: { type: string, nullable: true }
+        due_date: { type: string, format: date, nullable: true }
+        policy_no: { type: string, nullable: true }
+        policy_status: { type: string, nullable: true }
+
+    AdminInvoiceRow:
+      allOf:
+        - $ref: "#/components/schemas/InvoiceRow"
+        - type: object
+          properties:
+            customer_name: { type: string }
+
+    AdminPolicyRow:
+      allOf:
+        - $ref: "#/components/schemas/PolicyRow"
+        - type: object
+          properties:
+            registration_no: { type: string }
+            customer_name: { type: string }
+            created_at: { type: string, format: date-time }
+
+    AdminClaimRow:
+      $ref: "#/components/schemas/ClaimRow"
+
+    AdminInquiryRow:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        inquiry_no: { type: string }
+        customer_name: { type: string }
+        customer_email: { type: string, format: email }
+        policy_no: { type: string, nullable: true }
+        subject: { type: string }
+        message: { type: string }
+        status: { type: string, enum: [OPEN, ANSWERED, CLOSED] }
+        response: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        responded_at: { type: string, format: date-time, nullable: true }
+
+    PatchClaimRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [UNDER_REVIEW, APPROVED, REJECTED, PAID]
+        decision_note:
+          type: string
+          nullable: true
+
+    RespondInquiryRequest:
+      type: object
+      required: [response]
+      properties:
+        response: { type: string, minLength: 1 }
+        close:
+          type: boolean
+          default: false
+          description: If true, status becomes CLOSED; otherwise ANSWERED.
+
+    # ----- Marketing -----
+    Client:
+      type: object
+      required: [id, name, logo_path, sort_order, is_active]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        logo_path: { type: string, description: "Storage key, e.g. clients/<uuid>/logo.png" }
+        industry: { type: string, nullable: true }
+        website: { type: string, nullable: true }
+        contact_person: { type: string, nullable: true }
+        contact_email: { type: string, nullable: true }
+        contact_phone: { type: string, nullable: true }
+        sort_order: { type: integer, default: 0 }
+        is_active: { type: boolean, default: true }
+        notes: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateClientMultipart:
+      type: object
+      required: [data, logo]
+      properties:
+        data:
+          type: string
+          description: JSON string with the client payload.
+        logo:
+          type: string
+          format: binary
+          description: Logo image (JPG/PNG/WebP/SVG, max 2 MB).
+
+    UpdateClientMultipart:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: string
+          description: JSON string with the update payload.
+        logo:
+          type: string
+          format: binary
+          description: Optional new logo. Omit to keep the existing one.
+
+    Testimonial:
+      type: object
+      required: [id, customer_name, rating, review, display_date]
+      properties:
+        id: { type: string, format: uuid }
+        customer_name: { type: string }
+        photo_path: { type: string, nullable: true }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        review: { type: string }
+        role: { type: string, nullable: true }
+        company: { type: string, nullable: true }
+        policy_type: { type: string, enum: [LIFE, PERSONAL_ACCIDENT, HEALTH, ""], nullable: true }
+        display_date: { type: string, format: date }
+        is_featured: { type: boolean, default: false }
+        is_active: { type: boolean, default: true }
+        created_at: { type: string, format: date-time }
+
+    CreateTestimonialMultipart:
+      type: object
+      required: [data, photo]
+      properties:
+        data:
+          type: string
+          description: JSON string with the testimonial payload.
+        photo:
+          type: string
+          format: binary
+          description: Customer photo (JPG/PNG/WebP/SVG, max 2 MB).
+
+    UpdateTestimonialRequest:
+      type: object
+      properties:
+        customer_name: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        review: { type: string }
+        role: { type: string, nullable: true }
+        company: { type: string, nullable: true }
+        policy_type: { type: string, nullable: true }
+        display_date: { type: string, format: date }
+        is_featured: { type: boolean }
+        is_active: { type: boolean }
+
+    # ----- Logs -----
+    EmailLogRow:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        recipient: { type: string, format: email }
+        email_type:
+          type: string
+          enum: [REGISTRATION_SUCCESS, INVOICE_NOTIFICATION, PAYMENT_SUCCESS, E_POLICY_DELIVERY, PORTAL_ACTIVATION, CLAIM_RECEIVED, CLAIM_STATUS_UPDATE, INQUIRY_RESPONSE]
+        subject: { type: string }
+        status:
+          type: string
+          enum: [QUEUED, SENT, FAILED]
+        error_message: { type: string, nullable: true }
+        sent_at: { type: string, format: date-time, nullable: true }
+
+    AuditLogRow:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor: { type: string, description: "Email, username, or 'system'" }
+        action: { type: string, example: "claim_status_changed" }
+        entity_type: { type: string, example: "claim" }
+        entity_id: { type: string, format: uuid, nullable: true }
+        metadata: { type: object, additionalProperties: true, nullable: true }
+        ip_address: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    # ----- Dashboard -----
+    DashboardStats:
+      type: object
+      properties:
+        total_registrations: { type: integer }
+        total_invoices: { type: integer }
+        total_paid_invoices: { type: integer }
+        total_unpaid_invoices: { type: integer }
+        total_policies: { type: integer }
+        total_premium_collected: { type: string, description: "Decimal string" }
+
+    DashboardCharts:
+      type: object
+      properties:
+        registrations_by_month:
+          type: array
+          items:
+            type: object
+            properties:
+              month: { type: string, example: "2026-06" }
+              count: { type: integer }
+        revenue_by_month:
+          type: array
+          items:
+            type: object
+            properties:
+              month: { type: string, example: "2026-06" }
+              amount: { type: string }

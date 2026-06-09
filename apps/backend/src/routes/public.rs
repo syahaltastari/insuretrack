@@ -782,7 +782,7 @@ async fn register_customer(
         "Halo {},\n\n\
          Selamat! Akun InsureTrack portal kamu sudah berhasil dibuat. \
          Satu langkah lagi untuk mengaktifkannya.\n\n\
-         Klik tombol Aktivasi di bawah ini (link berlaku 24 jam). \
+         Klik tombol Aktivasi pada email ini (link berlaku 24 jam). \
          Setelah aktif, kamu otomatis login dan bisa langsung apply \
          asuransi, lihat invoice, dan track status polis dari portal.\n\n\
          Kalau tombol tidak bisa diklik, salin link ini ke browser:\n\

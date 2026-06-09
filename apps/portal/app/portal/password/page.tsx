@@ -89,7 +89,7 @@ export default function PortalPasswordPage() {
         methods={methods}
         onSubmit={onSubmit}
         className="clay-card feature"
-        style={{ maxWidth: 480 }}
+        style={{ maxWidth: 560 }}
       >
         <FormError message={formError} />
 

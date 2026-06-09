@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
-import { FormField, FormError } from "@insuretrack/forms";
+import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
 import { getAdminToken } from "@insuretrack/api-client";
 
@@ -70,10 +70,18 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
     }
   };
 
+  // Tombol status-transition punya handler masing-masing (pakai handleSubmit
+  // wrapped). Form-level onSubmit cuma jalan kalau user tekan Enter di field
+  // → default ke "APPROVED" (aksi yang paling umum di state UNDER_REVIEW).
   const onSubmit = (status: string) => methods.handleSubmit((v) => update(v, status));
 
   return (
-    <div className="clay-card feature" style={{ marginBottom: 16 }}>
+    <Form
+      methods={methods}
+      onSubmit={(v) => update(v, "APPROVED")}
+      className="clay-card feature"
+      style={{ marginBottom: 16 }}
+    >
       <div
         style={{
           display: "flex",
@@ -120,6 +128,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {claim.status === "SUBMITTED" && (
           <button
+            type="button"
             className="clay-button solid-ube size-small"
             onClick={onSubmit("UNDER_REVIEW")}
             disabled={submitting !== null}
@@ -130,6 +139,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
         {claim.status === "UNDER_REVIEW" && (
           <>
             <button
+              type="button"
               className="clay-button solid-matcha size-small"
               onClick={onSubmit("APPROVED")}
               disabled={submitting !== null}
@@ -137,6 +147,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
               {submitting === "APPROVED" ? "Memproses..." : "✓ Approve"}
             </button>
             <button
+              type="button"
               className="clay-button solid-pomegranate size-small"
               onClick={onSubmit("REJECTED")}
               disabled={submitting !== null}
@@ -147,6 +158,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
         )}
         {claim.status === "APPROVED" && (
           <button
+            type="button"
             className="clay-button solid-slushie size-small"
             onClick={onSubmit("PAID")}
             disabled={submitting !== null}
@@ -160,7 +172,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
           </span>
         ) : null}
       </div>
-    </div>
+    </Form>
   );
 }
 

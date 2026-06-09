@@ -1,93 +1,138 @@
+# =============================================================================
+# InsureTrack — Docker Compose (production-like, single-host)
+#
+# Empat servis: db (PostgreSQL), backend (Rust/Axum), portal (Next.js customer),
+# admin (Next.js backoffice). Semua servis stateless kecuali db (volume pgdata)
+# dan backend (volume backend_uploads untuk file upload).
+#
+# Usage:
+#   docker compose up -d --build    # start semua
+#   docker compose logs -f backend  # tail logs satu servis
+#   docker compose down             # stop, pertahankan volume
+#   docker compose down -v          # stop + wipe volume (full reset)
+#
+# Env file: copy .env.example → .env, edit sesuai kebutuhan. JANGAN commit .env.
+#
+# Network:
+#   - Semua servis ada di network `insuretrack` (default).
+#   - Container hostname: db, backend, portal, admin.
+#   - Host port mapping (override via .env): db→5433, backend→8080,
+#     portal→3000, admin→3001.
+# =============================================================================
+
+
+# ---- Reusable YAML anchors --------------------------------------------------
+# `x-pnpm-base` mendefinisikan argumen build yang dishare oleh portal & admin
+# (NEXT_PUBLIC_API_URL). YAML anchor `${VAR:-default}` = override via .env.
+x-pnpm-base: &pnpm-base
+  NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
+
+# Common backend env (override-able per-env). `APP_BASE_URL` & `MEDIA_BASE_URL`
+# dipakai service backend untuk generate link email & serve uploaded file.
+x-backend-env: &backend-env
+  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET harus di-set di .env (lihat .env.example)}
+  PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET harus di-set di .env}
+  APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+  MEDIA_BASE_URL: ${MEDIA_BASE_URL:-http://localhost:8080}
+  UPLOAD_DIR: /var/uploads
+  RUST_LOG: ${RUST_LOG:-info,insuretrack_backend=debug}
+
+
+# ---- Services ---------------------------------------------------------------
 services:
+  # ---- Database -------------------------------------------------------------
   db:
     image: postgres:15-alpine
     container_name: insurance_db
+    restart: unless-stopped
     environment:
-      # Username, password, dan nama DB disuntik dari .env (lihat .env.example).
-      # Ganti nilainya di .env untuk environment non-dev — JANGAN commit .env.
+      # Env di-inject dari root .env (lihat .env.example). Ganti untuk non-dev.
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    # Host port 5433 agar tidak konflik dengan Postgres lokal di Windows/Linux
-    # yang mungkin sudah berjalan di 5432. Container-internal port tetap 5432.
     ports:
-      - "5433:5432"
+      # Host 5433 → container 5432. Hindari konflik dengan Postgres lokal.
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Migrations tidak di-mount di /docker-entrypoint-initdb.d; sqlx::migrate!
-      # di backend (saat startup) yang apply. Mount ganda akan konflik karena
-      # init script dan sqlx sama-sama CREATE TABLE customers.
-    restart: unless-stopped
+      # sqlx::migrate! di backend yang apply migrations (bukan initdb script)
+      # untuk hindari duplikasi CREATE TABLE.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # Backend Rust (Axum). Aktif sejak M0.
+  # ---- Backend (Rust + Axum) -----------------------------------------------
   backend:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
     container_name: insurance_backend
-    ports:
-      - "${BACKEND_PORT:-8080}:8080"
-    # Load .env root (nilai Docker-correct: DATABASE_URL pakai host `db:5432`,
-    # UPLOAD_DIR=/var/uploads). Explicit vars di `environment:` di bawah
-    # override nilai dari env_file kalau ada duplikat.
+    restart: unless-stopped
     env_file:
+      # Load .env root dulu, lalu override explicit di `environment:` di bawah.
       - .env
     environment:
-      # DATABASE_URL dibentuk dari var .env (konsisten: jika POSTGRES_PASSWORD
-      # diganti di .env, tidak perlu edit URL di sini secara manual).
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET harus di-set di .env (lihat .env.example)}
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET harus di-set di .env}
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
-      UPLOAD_DIR: /var/uploads
-      RUST_LOG: ${RUST_LOG:-info,insuretrack_backend=debug}
+      <<: *backend-env
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - backend_uploads:/var/uploads
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - backend_uploads:/var/uploads
-    restart: unless-stopped
+    healthcheck:
+      # `/health` endpoint di backend (lihat apps/backend/src/routes/health.rs).
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
-  # Portal Next.js (customer surface). Build context = monorepo root
-  # supaya pnpm resolve workspace deps (packages/ui, packages/forms,
-  # packages/api-client).
+  # ---- Portal (Next.js, customer surface) ----------------------------------
   portal:
     build:
       context: .
       dockerfile: apps/portal/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
+        <<: *pnpm-base
     container_name: insurance_portal
+    restart: unless-stopped
+    environment:
+      # Runtime override (kalau NEXT_PUBLIC_API_URL berubah setelah image
+      # di-build — biasanya tetap pakai baked-in value dari build arg).
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
     ports:
       - "${PORTAL_PORT:-3000}:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
     depends_on:
-      - backend
-    restart: unless-stopped
+      backend:
+        condition: service_healthy
 
-  # Admin Next.js (backoffice surface). Build context = monorepo root,
-  # sama pattern dengan portal. Port host 3001, container 3001.
+  # ---- Admin (Next.js, backoffice surface) ---------------------------------
   admin:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
+        <<: *pnpm-base
     container_name: insurance_admin
-    ports:
-      - "${ADMIN_PORT:-3001}:3001"
+    restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${BACKEND_PORT:-8080}/api}
+    ports:
+      - "${ADMIN_PORT:-3001}:3001"
     depends_on:
-      - backend
-    restart: unless-stopped
+      backend:
+        condition: service_healthy
 
+
+# ---- Named volumes ----------------------------------------------------------
+# `pgdata` — Postgres data dir. Persistent across container recreate.
+# `backend_uploads` — file upload (KTP, claim docs, e-policy PDF). Backend
+# tulis ke `/var/uploads`, di-mount sebagai volume supaya data tidak hilang
+# saat container recreate.
 volumes:
   pgdata:
   backend_uploads:

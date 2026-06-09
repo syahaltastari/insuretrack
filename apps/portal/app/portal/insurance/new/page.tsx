@@ -63,16 +63,6 @@ export default function InsuranceNewPage() {
     invoice_no: string;
   } | null>(null);
 
-  // Auth guard: redirect to login kalau belum authenticated. Customer
-  // insurance application requires customer JWT (backend enforces via
-  // RequireCustomer middleware di POST /api/customer/registrations).
-  useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) {
-      router.replace("/portal/login?next=/portal/insurance/new");
-    }
-  }, [router]);
-
   const methods = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema) as never,
     defaultValues: {
@@ -96,6 +86,69 @@ export default function InsuranceNewPage() {
     },
     mode: "onBlur",
   });
+
+  // Auth guard: redirect to login kalau belum authenticated. Customer
+  // insurance application requires customer JWT (backend enforces via
+  // RequireCustomer middleware di POST /api/customer/registrations).
+  useEffect(() => {
+    const token = getCustomerToken();
+    if (!token) {
+      router.replace("/portal/login?next=/portal/insurance/new");
+      return;
+    }
+    // Prefill form dari profil customer: data akun (email/nama/HP) plus
+    // data insurance sebelumnya (kalau pernah apply — nullable). Best-effort
+    // — kalau fetch gagal, user tetap bisa isi manual.
+    fetch(`${API_BASE}/customer/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (r) => {
+        if (!r.ok) return null;
+        return r.json() as Promise<{
+          full_name: string;
+          email: string;
+          mobile_number: string;
+          nik: string | null;
+          birth_place: string | null;
+          birth_date: string | null;
+          gender: string | null;
+          address: string | null;
+          rt_rw: string | null;
+          village: string | null;
+          district: string | null;
+          city: string | null;
+          province: string | null;
+          postal_code: string | null;
+        }>;
+      })
+      .then((p) => {
+        if (!p) return;
+        methods.reset({
+          ...methods.getValues(),
+          full_name: p.full_name ?? "",
+          email: p.email ?? "",
+          mobile_number: p.mobile_number ?? "",
+          // Insurance fields — null/undefined fallback ke empty string
+          // (Zod string schema reject null). Validasi NIK/TTL akan
+          // trigger error kalau field wajib masih kosong.
+          nik: p.nik ?? "",
+          birth_place: p.birth_place ?? "",
+          birth_date: p.birth_date ?? "",
+          gender: (p.gender as "MALE" | "FEMALE" | null) ?? "MALE",
+          address: p.address ?? "",
+          rt_rw: p.rt_rw ?? "",
+          village: p.village ?? "",
+          district: p.district ?? "",
+          city: p.city ?? "",
+          province: p.province ?? "",
+          postal_code: p.postal_code ?? "",
+        });
+      })
+      .catch(() => {
+        // Silent — user isi manual kalau prefill gagal.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
 
   const onSubmit = async (values: RegisterValues) => {
     const ktp = values.ktp as File | undefined;
@@ -221,16 +274,15 @@ export default function InsuranceNewPage() {
   return (
     <>
       <main className="clay-section" style={{ minHeight: "100vh", paddingTop: 48 }}>
-        <div className="clay-container" style={{ maxWidth: 720 }}>
-          <Reveal>
-            <a href="/" className="clay-button ghost size-small" style={{ marginBottom: 24 }}>
-              ← Beranda
-            </a>
-            <h1 className="page-title">Form Pendaftaran</h1>
-            <p className="page-subtitle">
-              Isi data dengan benar. KTP wajib diupload (JPG/PNG/PDF, max 5 MB).
-            </p>
-          </Reveal>
+        <Reveal>
+          <a href="/" className="clay-button ghost size-small" style={{ marginBottom: 24 }}>
+            ← Beranda
+          </a>
+          <h1 className="page-title">Form Pendaftaran</h1>
+          <p className="page-subtitle">
+            Isi data dengan benar. KTP wajib diupload (JPG/PNG/PDF, max 5 MB).
+          </p>
+        </Reveal>
 
           <Form methods={methods} onSubmit={onSubmit} style={{ display: "grid", gap: 32 }}>
             <FormError message={formError} />
@@ -347,7 +399,7 @@ export default function InsuranceNewPage() {
 
             <Reveal delay={120}>
               <Section title="Kontak">
-                <Grid>
+                <Grid cols={2}>
                   <FormField label="Email" name="email" required>
                     <input
                       id="email"
@@ -456,7 +508,6 @@ export default function InsuranceNewPage() {
               </button>
             </Reveal>
           </Form>
-        </div>
       </main>
     </>
   );
@@ -480,18 +531,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Grid({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gap: 16,
-        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-      }}
-    >
-      {children}
-    </div>
-  );
+function Grid({ children, cols = 3 }: { children: React.ReactNode; cols?: 2 | 3 }) {
+  // Pakai global .clay-form-grid (responsive: 3→2 di tablet, 2/3→1 di mobile).
+  // Lihat packages/ui/src/styles/globals.css untuk breakpoint.
+  return <div className={cols === 2 ? "clay-form-grid cols-2" : "clay-form-grid cols-3"}>{children}</div>;
 }
 
 function Field({

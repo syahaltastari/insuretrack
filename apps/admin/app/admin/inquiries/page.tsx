@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
-import { FormField, FormError } from "@insuretrack/forms";
+import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
 import { getAdminToken } from "@insuretrack/api-client";
 
@@ -72,7 +72,12 @@ function InquiryCard({ inquiry, onUpdated }: { inquiry: Inquiry; onUpdated: () =
   const onClose = methods.handleSubmit((v) => respond(v, true));
 
   return (
-    <div className="clay-card feature" style={{ marginBottom: 16 }}>
+    <Form
+      methods={methods}
+      onSubmit={(v) => respond(v, false)}
+      className="clay-card feature"
+      style={{ marginBottom: 16 }}
+    >
       <div
         style={{
           display: "flex",
@@ -147,6 +152,7 @@ function InquiryCard({ inquiry, onUpdated }: { inquiry: Inquiry; onUpdated: () =
           <FormError message={formError} />
           <div style={{ display: "flex", gap: 8 }}>
             <button
+              type="button"
               className="clay-button solid-ube size-small"
               onClick={onAnswer}
               disabled={submitting !== null}
@@ -154,6 +160,7 @@ function InquiryCard({ inquiry, onUpdated }: { inquiry: Inquiry; onUpdated: () =
               {submitting === "answer" ? "Mengirim..." : "Jawab (ANSWERED)"}
             </button>
             <button
+              type="button"
               className="clay-button ghost size-small"
               onClick={onClose}
               disabled={submitting !== null}
@@ -163,7 +170,7 @@ function InquiryCard({ inquiry, onUpdated }: { inquiry: Inquiry; onUpdated: () =
           </div>
         </>
       )}
-    </div>
+    </Form>
   );
 }
 

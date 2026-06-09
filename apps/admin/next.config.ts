@@ -1,9 +1,13 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
   // output: "standalone" agar image Docker kecil dan hanya berisi file yang
   // dibutuhkan runtime. Aktif di build produksi.
   output: "standalone",
+  // `outputFileTracingRoot` di-set eksplisit ke monorepo root. Lihat
+  // apps/portal/next.config.ts untuk penjelasan lengkap.
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   // Workspace packages di-monorepo ini dipublish sebagai TypeScript source
   // (`"main": "./src/index.ts"`), bukan build output. Tanpa daftar ini
   // Next.js tidak akan men-transpile `.ts` di dalamnya, dan import

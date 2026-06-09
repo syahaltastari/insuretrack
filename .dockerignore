@@ -1,0 +1,84 @@
+# Root .dockerignore — dipakai oleh SEMUA build yang context-nya monorepo root
+# (saat ini: apps/portal/Dockerfile + apps/admin/Dockerfile, dipanggil dari
+# docker-compose.yml dengan `context: .`).
+#
+# PENTING: Docker HANYA baca .dockerignore dari build-context root, BUKAN dari
+# folder Dockerfile. Tanpa file ini, build context membengkak jadi ratusan MB
+# (node_modules, target/, .next/, document/ PDF, dll.) dan Next.js standalone
+# hang di "Collecting build traces" karena harus scan symlink pnpm yang rumit.
+#
+# Setelah exclude ini, build context portal/admin jadi ~5-10 MB (cukup untuk
+# source TS + workspace package sources + manifests).
+
+# --- Build artifacts & dependency caches --------------------------------
+# Folder terbesar: node_modules bisa >500MB, target/ Rust ~1GB.
+**/node_modules
+**/node_modules/**
+**/target
+**/target/**
+**/.next
+**/.next/**
+**/out
+**/dist
+**/build
+**/.turbo
+**/.pnpm-store
+
+# --- App yang tidak dipakai dalam build ini -----------------------------
+# Saat build portal, kita TIDAK perlu source backend (Rust). Begitu sebaliknya.
+# apps/backend tidak dipakai di context portal/admin — exclude total.
+apps/backend
+apps/backend/**
+
+# --- Repository metadata & dev tooling ----------------------------------
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+.husky
+.turbo
+.turbo/**
+*.log
+**/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# --- Environment files (tidak boleh masuk image) ------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# --- Documents & misc ----------------------------------------------------
+# document/ berisi PDF spec + folder screenshots — bukan runtime asset.
+document
+document/**
+README.md
+CONTRIBUTING.md
+MIGRATION.md
+DESIGN.md
+CLAUDE.md
+LICENSE
+LICENSE.md
+
+# --- Local upload artifacts (kalau ada, tidak boleh masuk image) ---------
+**/uploads
+**/tmp
+**/coverage
+**/.nyc_output
+**/.cache
+
+# --- Monorepo boot files (tidak ada runtime meaning) --------------------
+# Catatan: file INI dibutuhkan oleh Docker (lihat Dockerfile portal/admin):
+#   pnpm-workspace.yaml, package.json, pnpm-lock.yaml, .npmrc
+# JANGAN di-exclude di sini.

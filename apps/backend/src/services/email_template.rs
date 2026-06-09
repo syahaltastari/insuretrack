@@ -10,7 +10,8 @@
 //!
 //! Untuk teks polos: header + body + footer plain. Untuk HTML: layout
 //! 3-section (header hitam, content putih, footer krem) dengan CTA
-//! button hitam jika URL tersedia.
+//! button hitam di ATAS body (kalau URL tersedia), supaya CTA jadi
+//! elemen visual pertama yang dilihat pembaca.
 
 /// Input untuk render template.
 pub struct EmailTemplate<'a> {
@@ -106,8 +107,8 @@ fn render_html(t: &EmailTemplate) -> String {
   </div>
   <div style="background:#ffffff;padding:32px 24px;">
     <h1 style="font-size:22px;font-weight:700;margin:0 0 20px 0;line-height:1.3;">{subject}</h1>
-    {body_html}
     {cta_html}
+    {body_html}
   </div>
   <div style="background:#faf9f7;padding:20px 24px;text-align:center;border-radius:0 0 8px 8px;border-top:1px solid #dad4c8;">
     <p style="color:#9f9b93;font-size:12px;margin:4px 0;">{brand} — {company}</p>

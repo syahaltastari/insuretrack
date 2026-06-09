@@ -1,77 +1,97 @@
 # syntax=docker/dockerfile:1.7
+# =============================================================================
+# Admin Next.js (backoffice surface) — production image.
+#
+# Pattern identik dengan apps/portal/Dockerfile — port 3001, otherwise sama.
+# Lihat portal Dockerfile untuk komentar mendetail per stage.
+# =============================================================================
 
-# ----- Stage 1: deps (workspace-aware) -----
-# Build context harus monorepo root (lihat docker-compose.yml).
-FROM node:22-alpine AS deps
+ARG NODE_VERSION=22-alpine
+ARG PNPM_VERSION=10.15.0
+
+
+# ----- 1. deps ---------------------------------------------------------------
+FROM node:${NODE_VERSION} AS deps
 WORKDIR /repo
 
-# Enable pnpm via corepack supaya `pnpm install` paham `workspace:*`
-# protocol yang dipakai di package.json monorepo ini.
-RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 
-# Copy monorepo files yang diperlukan `pnpm install` untuk resolve
-# workspace deps: root package.json, lockfile, workspace yaml, dan
-# individual package.json's + .npmrc.
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
+COPY apps/portal/package.json ./apps/portal/
 COPY apps/admin/package.json ./apps/admin/
 COPY packages ./packages
 
-RUN pnpm install --recursive --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
-# ----- Stage 2: build -----
-FROM node:22-alpine AS builder
+# pnpm `node-linker=hoisted` tidak auto-symlink workspace packages — buat
+# manual. Lihat apps/portal/Dockerfile untuk penjelasan.
+RUN mkdir -p /repo/node_modules/@insuretrack && \
+    for pkg in /repo/packages/*/; do \
+      name=$(basename "$pkg"); \
+      ln -s "$pkg" "/repo/node_modules/@insuretrack/$name"; \
+    done
+
+
+# ----- 2. builder ------------------------------------------------------------
+FROM node:${NODE_VERSION} AS builder
 WORKDIR /repo
-RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
 
-# Bring in the installed node_modules from the deps stage. pnpm with
-# `node-linker=hoisted` puts everything at the root, so we mirror it
-# into the workspace package's own node_modules so the framework's
-# CLI scripts (`next build`) can find their binaries via local lookup.
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+
 COPY --from=deps /repo/node_modules ./node_modules
-COPY --from=deps /repo/apps/admin/node_modules ./apps/admin/node_modules
 COPY --from=deps /repo/packages ./packages
 
-# Copy the admin source to a temp dir, lalu move isinya
-# (excluding node_modules + .next) ke /repo/apps/admin. Menghindari
-# COPY yang menimpa symlinked node_modules dari deps stage.
-COPY apps/admin /tmp/admin-src
-WORKDIR /tmp/admin-src
-RUN find . -maxdepth 1 -mindepth 1 ! -name node_modules ! -name .next -exec cp -r {} /repo/apps/admin/ \;
-WORKDIR /repo/apps/admin
+# Workspace root files — wajib untuk pnpm detect workspace di subdir.
+COPY package.json pnpm-workspace.yaml .npmrc ./
 
-# Build-time env (NEXT_PUBLIC_* disuntik saat build).
+COPY apps/portal ./apps/portal
+COPY apps/admin ./apps/admin
+
 ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
+    NEXT_TELEMETRY_DISABLED=1
 
+WORKDIR /repo/apps/admin
 RUN pnpm run build
 
-# ----- Stage 3: runtime -----
-FROM node:22-alpine AS runtime
+
+# ----- 3. runner -------------------------------------------------------------
+FROM node:${NODE_VERSION} AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    NEXT_PUBLIC_API_URL=http://localhost:8080/api
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3001 \
+    HOSTNAME=0.0.0.0
 
-# nextjs user untuk run app sebagai non-root.
-RUN adduser --system --uid 1001 --ingroup node nextjs
+RUN addgroup --system --gid 1001 nodejs || true \
+    && adduser --system --uid 1001 --ingroup nodejs nextjs || true
 
-# Salin hasil standalone build Next.js.
-COPY --from=builder /repo/apps/admin/public ./public
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/admin/.next/standalone ./
+# Standalone output preserve project path
+# (`.next/standalone/apps/admin/server.js`).
+COPY --from=builder --chown=nextjs:nodejs /repo/apps/admin/.next/standalone/apps/admin ./
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/admin/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /repo/apps/admin/public ./public
 
-# The standalone output contains symlinks under node_modules/ that point
-# into the builder's filesystem. Those don't exist in the runtime image,
-# so the symlinks dangle and `Cannot find module 'next'` at boot. Fix:
-# blow away the symlink dir and replace with the resolved packages.
-USER root
-RUN rm -rf /app/node_modules
-COPY --from=deps --chown=nextjs:nodejs /repo/node_modules /app/node_modules
-COPY --from=deps --chown=nextjs:nodejs /repo/apps/admin/node_modules /app/node_modules_tmp
-RUN cp -al /app/node_modules_tmp/. /app/node_modules/ && rm -rf /app/node_modules_tmp
+# Replace partial node_modules di standalone dengan full set, deref symlinks.
+# Hapus symlink @insuretrack/* dari deps (point ke /repo/packages/* yang
+# tidak ada di runner), re-create yang point ke /app/packages/*.
+COPY --from=deps --chown=nextjs:nodejs /repo/packages /app/packages
+COPY --from=deps /repo/node_modules /tmp/deps-node_modules
+RUN rm -rf /tmp/deps-node_modules/@insuretrack \
+    && cp -aL /tmp/deps-node_modules/. /app/node_modules/ \
+    && rm -rf /tmp/deps-node_modules \
+    && mkdir -p /app/node_modules/@insuretrack \
+    && for pkg in /app/packages/*/; do \
+         name=$(basename "$pkg"); \
+         ln -s "$pkg" "/app/node_modules/@insuretrack/$name"; \
+       done
+
 USER nextjs
-
 EXPOSE 3001
-ENV PORT=3001 HOSTNAME="0.0.0.0"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD node -e "require('http').get('http://127.0.0.1:3001/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"
 
 CMD ["node", "server.js"]

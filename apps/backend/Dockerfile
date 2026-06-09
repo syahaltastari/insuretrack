@@ -35,8 +35,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-
 # ----- Stage 2: runtime -----
 FROM debian:bookworm-slim AS runtime
 
+# `wget` dipakai oleh healthcheck di docker-compose.yml untuk hit /health.
+# Image base debian-slim tidak include util jaringan — tanpa ini healthcheck
+# fail dan servis dependent (portal/admin) tidak start.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -22,10 +22,16 @@ type Claim = {
   submitted_at: string;
 };
 
+type PoliciesResponse = { data?: Array<unknown>; total?: number };
+
 export default function PortalClaimsPage() {
   const [data, setData] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Cek apakah customer punya polis aktif. Kalau 0, tombol "Ajukan Klaim"
+  // di-disable + tampilkan alert. Endpoint dipanggil terpisah dari /claims
+  // karena butuh total count (bukan list) — pakai page_size=1 supaya ringan.
+  const [activePolicyCount, setActivePolicyCount] = useState<number | null>(null);
 
   useEffect(() => {
     const token = getCustomerToken();
@@ -38,7 +44,17 @@ export default function PortalClaimsPage() {
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+
+    // Fetch active policies count (best-effort — failure tidak block UI utama).
+    fetch(`${API_BASE}/customer/policies?status=ACTIVE&page=1&page_size=1`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: PoliciesResponse | null) => setActivePolicyCount(j?.total ?? 0))
+      .catch(() => setActivePolicyCount(0));
   }, []);
+
+  const noActivePolicy = activePolicyCount === 0;
 
   return (
     <>
@@ -50,10 +66,49 @@ export default function PortalClaimsPage() {
           <h1 className="page-title">Klaim & Status</h1>
           <p className="page-subtitle">Lacak klaim Anda hingga keputusan final.</p>
         </div>
-        <Link href="/portal/claims/new" className="clay-button solid-pomegranate">
-          + Ajukan Klaim
-        </Link>
+        {noActivePolicy ? (
+          <button
+            type="button"
+            className="clay-button solid-pomegranate"
+            disabled
+            title="Anda belum memiliki polis aktif"
+            style={{ opacity: 0.5, cursor: "not-allowed" }}
+          >
+            + Ajukan Klaim
+          </button>
+        ) : (
+          <Link href="/portal/claims/new" className="clay-button solid-pomegranate">
+            + Ajukan Klaim
+          </Link>
+        )}
       </div>
+
+      {noActivePolicy && activePolicyCount !== null && (
+        <div
+          className="clay-card"
+          style={{
+            borderColor: "var(--pomegranate-400)",
+            background: "#fff5f5",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>⚠️</span>
+          <div>
+            <p className="body" style={{ margin: 0, fontWeight: 600 }}>
+              Anda belum memiliki polis aktif untuk diklaim.
+            </p>
+            <p className="caption" style={{ color: "var(--warm-charcoal)", marginTop: 4, marginBottom: 0 }}>
+              Selesaikan pendaftaran asuransi dan lakukan pembayaran terlebih dahulu di{" "}
+              <Link href="/portal/insurance/new" style={{ color: "var(--pomegranate-400)", textDecoration: "underline" }}>
+                halaman pendaftaran
+              </Link>
+              . Setelah polis Anda aktif, menu ini dapat digunakan untuk mengajukan klaim.
+            </p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}>
@@ -61,7 +116,7 @@ export default function PortalClaimsPage() {
         </div>
       )}
       {loading && <p>Memuat...</p>}
-      {!loading && data.length === 0 && (
+      {!loading && data.length === 0 && !noActivePolicy && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
           <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
             Belum ada klaim.

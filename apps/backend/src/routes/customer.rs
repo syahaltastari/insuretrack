@@ -270,8 +270,24 @@ struct MeSummary {
     full_name: String,
     /// Nomor HP customer (diperlukan oleh form edit profil).
     mobile_number: String,
+    // ---- Insurance fields (NULLable — di-prefill ke form registrasi
+    // insurance kalau customer sudah pernah submit sebelumnya) ----
+    /// NIK 16 digit. Null untuk customer yang baru registrasi akun dan
+    /// belum pernah apply insurance.
+    nik: Option<String>,
+    birth_place: Option<String>,
+    birth_date: Option<chrono::NaiveDate>,
+    gender: Option<String>,
+    address: Option<String>,
+    rt_rw: Option<String>,
+    village: Option<String>,
+    district: Option<String>,
+    city: Option<String>,
+    province: Option<String>,
+    postal_code: Option<String>,
+    // ---- Stats ----
     active_policy_count: i64,
-    total_sum_assured: Decimal,
+    total_sum_assured: Option<Decimal>,
     open_claim_count: i64,
     open_inquiry_count: i64,
 }
@@ -282,9 +298,34 @@ async fn me(
 ) -> AppResult<Json<MeSummary>> {
     let customer_id = customer_id_from(&claims)?;
 
-    let summary: (Uuid, String, String, String, i64, Option<Decimal>, i64, i64) = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct MeRow {
+        id: Uuid,
+        email: String,
+        full_name: String,
+        mobile_number: String,
+        nik: Option<String>,
+        birth_place: Option<String>,
+        birth_date: Option<chrono::NaiveDate>,
+        gender: Option<String>,
+        address: Option<String>,
+        rt_rw: Option<String>,
+        village: Option<String>,
+        district: Option<String>,
+        city: Option<String>,
+        province: Option<String>,
+        postal_code: Option<String>,
+        active_policy_count: i64,
+        total_sum_assured: Option<Decimal>,
+        open_claim_count: i64,
+        open_inquiry_count: i64,
+    }
+
+    let row: MeRow = sqlx::query_as(
         r#"
         SELECT c.id, c.email, c.full_name, c.mobile_number,
+               c.nik, c.birth_place, c.birth_date, c.gender,
+               c.address, c.rt_rw, c.village, c.district, c.city, c.province, c.postal_code,
                (SELECT COUNT(*) FROM policies  p WHERE p.registration_id IN
                   (SELECT id FROM registrations WHERE customer_id = c.id) AND p.status = 'ACTIVE')
                  AS active_policy_count,
@@ -304,14 +345,25 @@ async fn me(
     .await?;
 
     Ok(Json(MeSummary {
-        customer_id: summary.0,
-        email: summary.1,
-        full_name: summary.2,
-        mobile_number: summary.3,
-        active_policy_count: summary.4,
-        total_sum_assured: summary.5.unwrap_or_default(),
-        open_claim_count: summary.6,
-        open_inquiry_count: summary.7,
+        customer_id: row.id,
+        email: row.email,
+        full_name: row.full_name,
+        mobile_number: row.mobile_number,
+        nik: row.nik,
+        birth_place: row.birth_place,
+        birth_date: row.birth_date,
+        gender: row.gender,
+        address: row.address,
+        rt_rw: row.rt_rw,
+        village: row.village,
+        district: row.district,
+        city: row.city,
+        province: row.province,
+        postal_code: row.postal_code,
+        active_policy_count: row.active_policy_count,
+        total_sum_assured: row.total_sum_assured,
+        open_claim_count: row.open_claim_count,
+        open_inquiry_count: row.open_inquiry_count,
     }))
 }
 
