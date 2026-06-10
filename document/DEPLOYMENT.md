@@ -380,27 +380,92 @@ Dokploy akan:
 - Apply Traefik labels
 - Start containers
 
-### 5.7 Configure env vars (Dokploy Secrets)
+### 5.7 Configure env vars (Dokploy Secrets + Environment)
 
-Di service Compose → tab **Environment** → **Secrets** (bukan Environment, karena secret):
+Ada 2 kategori: **Secrets** (tidak boleh kelihatan di runtime logs / `docker inspect`) dan **Environment** (aman di-bake ke image runtime). Dokploy UI pisahkan jadi 2 tab.
 
-Tambah satu per satu:
+#### Step 1 — Generate .env dengan script
 
-| Name | Value | Catatan |
+Jalankan `scripts/generate-env.sh` (bisa di lokal Windows via Git Bash / WSL, atau di VPS):
+
+```bash
+# Production: real domain
+scripts/generate-env.sh --domain=insuretrack.id --from-email=noreply@insuretrack.id
+
+# Dev/demo: sslip.io
+scripts/generate-env.sh --slip=20.189.121.230 --from-email=noreply@example.com
+
+# Simpan langsung ke .env file (untuk Dokploy "Import .env" atau local dev)
+scripts/generate-env.sh --domain=insuretrack.id > .env
+```
+
+Output: lengkap `.env` dengan secret yang sudah di-generate (`POSTGRES_PASSWORD`, `JWT_SECRET`, `PAYMENT_WEBHOOK_SECRET`). `RESEND_API_KEY` masih placeholder — isi manual dari [dashboard Resend](https://resend.com/api-keys).
+
+#### Step 2 — Copy ke Dokploy **Secrets** tab
+
+Di service Compose → tab **Environment** → section **Secrets** (bukan "Environment"):
+
+```env
+POSTGRES_USER=insurance_admin
+POSTGRES_PASSWORD=<tempel dari output generate-env.sh>
+POSTGRES_DB=digital_insurance
+DATABASE_URL=postgres://insurance_admin:<sama dengan POSTGRES_PASSWORD>@db:5432/digital_insurance
+JWT_SECRET=<tempel dari output generate-env.sh>
+PAYMENT_WEBHOOK_SECRET=<tempel dari output generate-env.sh>
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxx
+RESEND_FROM_EMAIL=noreply@insuretrack.id
+APP_BASE_URL=https://portal.insuretrack.id
+MEDIA_BASE_URL=https://api.insuretrack.id
+DOMAIN=insuretrack.id
+REPLICAS=2
+RUST_LOG=info,insuretrack_backend=debug
+```
+
+> Replace `<tempel dari output generate-env.sh>` dengan nilai dari script output.
+> `RESEND_API_KEY` ambil dari https://resend.com/api-keys (format: `re_...`).
+> `DOMAIN` = base domain saja (tanpa `api.` / `portal.` prefix).
+
+#### Step 3 — Copy ke Dokploy **Environment** tab (non-secret)
+
+Tab **Environment** (aman di-expose, di-bake ke Next.js client bundle):
+
+```env
+NEXT_PUBLIC_API_URL=https://api.insuretrack.id
+```
+
+`NEXT_PUBLIC_*` di-bake ke client JS saat build, browser bisa baca — tapi tidak masalah karena URL API memang publik. Yang **rahasia** (JWT_SECRET, password, API key private) selalu di tab Secrets.
+
+#### Reference table (untuk cek ulang)
+
+| Var | Kategori | Sumber / cara dapat |
 |---|---|---|
-| `POSTGRES_USER` | `insurance_admin` | DB user |
-| `POSTGRES_PASSWORD` | `<dari openssl rand>` | **Generate baru, jangan pakai default** |
-| `POSTGRES_DB` | `digital_insurance` | |
-| `JWT_SECRET` | `<dari openssl rand -hex 64>` | |
-| `PAYMENT_WEBHOOK_SECRET` | `<dari openssl rand -hex 32>` | |
-| `RESEND_API_KEY` | `re_xxxxx` | Dari dashboard Resend |
-| `RESEND_FROM_EMAIL` | `noreply@insuretrack.id` | Domain yang sudah verify di Resend |
-| `DOMAIN` | `insuretrack.id` (atau sslip.io form) | Tanpa subdomain |
-| `REPLICAS` | `2` | 2 instance per app service |
-| `RUST_LOG` | `info,insuretrack_backend=debug` | |
+| `POSTGRES_USER` | Secret | Manual: `insurance_admin` |
+| `POSTGRES_PASSWORD` | Secret | `openssl rand -hex 24` (auto via script) |
+| `POSTGRES_DB` | Secret | Manual: `digital_insurance` |
+| `DATABASE_URL` | Secret | Auto-generate dari `POSTGRES_*` |
+| `JWT_SECRET` | Secret | `openssl rand -hex 64` (auto via script) |
+| `PAYMENT_WEBHOOK_SECRET` | Secret | `openssl rand -hex 32` (auto via script) |
+| `RESEND_API_KEY` | Secret | https://resend.com/api-keys |
+| `RESEND_FROM_EMAIL` | Secret | Domain yang sudah verify di Resend |
+| `APP_BASE_URL` | Secret | `https://portal.${DOMAIN}` (auto-derive) |
+| `MEDIA_BASE_URL` | Secret | `https://api.${DOMAIN}` (auto-derive) |
+| `DOMAIN` | Secret | Real domain atau sslip.io form |
+| `REPLICAS` | Secret | `2` (production), `1` (dev) |
+| `RUST_LOG` | Secret | `info,insuretrack_backend=debug` |
+| `NEXT_PUBLIC_API_URL` | Environment | `https://api.${DOMAIN}` |
 
-Tab **Environment** (non-secret, public):
-- `NEXT_PUBLIC_API_URL=https://api.${DOMAIN}`
+#### Manual fallback (tanpa script)
+
+Kalau tidak bisa jalankan script (mis. Windows tanpa WSL / Git Bash), generate secret satu per satu:
+
+```bash
+# Generate satu per satu (jalankan di Git Bash / WSL / Mac / Linux)
+openssl rand -hex 24    # → POSTGRES_PASSWORD (48 char hex)
+openssl rand -hex 64    # → JWT_SECRET (128 char hex)
+openssl rand -hex 32    # → PAYMENT_WEBHOOK_SECRET (64 char hex)
+```
+
+Copy output ke clipboard, paste manual di Dokploy Secrets tab.
 
 ### 5.8 Configure domains
 
@@ -1135,6 +1200,7 @@ Semua script di `scripts/` direktori repo. Salin ke VPS (otomatis ada di working
 
 | Script | Purpose | Usage |
 |---|---|---|
+| `generate-env.sh` | Generate `.env` dengan secret (POSTGRES_PASSWORD, JWT_SECRET, dll.) | `scripts/generate-env.sh [--domain=X \| --slip=IP]` |
 | `preflight.sh` | Pre-deploy checker (env, docker, disk, port, DNS) | `scripts/preflight.sh` atau `scripts/preflight.sh --strict` |
 | `deploy.sh` | Selective blue-green deploy 1 service | `scripts/deploy.sh {portal\|admin\|backend\|all}` |
 | `backup-now.sh` | Manual trigger DB backup | `scripts/backup-now.sh [--list\|--offsite]` |
@@ -1145,7 +1211,8 @@ Semua script di `scripts/` direktori repo. Salin ke VPS (otomatis ada di working
 
 | Situasi | Script |
 |---|---|
-| Sebelum deploy pertama | `preflight.sh` |
+| Deploy pertama (siapkan env + secret) | `generate-env.sh` |
+| Sebelum deploy pertama (verify environment) | `preflight.sh` |
 | Sebelum update code | `preflight.sh` + `deploy.sh <svc>` |
 | Sebelum risky operation (migrasi, schema change) | `backup-now.sh` |
 | DB terasa lambat / data corrupt / accident delete | `restore-db.sh` |
