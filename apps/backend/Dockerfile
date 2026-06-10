@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-
 # Base image di-pin ke date-tag untuk reproducible build. Update tag ini
 # setiap ~3-6 bulan untuk pickup security patches dari Debian (bookworm-LTS).
 # Untuk cek image yang lebih baru: https://hub.docker.com/_/debian/tags
-FROM debian:bookworm-20250515-slim AS runtime
+FROM debian:bookworm-20260518-slim AS runtime
 
 # `wget` dipakai oleh healthcheck di docker-compose.yml untuk hit /health.
 # Image base debian-slim tidak include util jaringan — tanpa ini healthcheck

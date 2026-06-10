@@ -13,7 +13,7 @@
 #   3. runner  — image runtime minimal, non-root, hanya artifact yang dibutuhkan
 # =============================================================================
 
-ARG NODE_VERSION=22.13.1-alpine
+ARG NODE_VERSION=22.22.3-alpine
 ARG PNPM_VERSION=10.15.0
 
 

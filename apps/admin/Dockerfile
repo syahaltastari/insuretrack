@@ -6,7 +6,7 @@
 # Lihat portal Dockerfile untuk komentar mendetail per stage.
 # =============================================================================
 
-ARG NODE_VERSION=22.13.1-alpine
+ARG NODE_VERSION=22.22.3-alpine
 ARG PNPM_VERSION=10.15.0
 
 
