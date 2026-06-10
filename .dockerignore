@@ -24,11 +24,17 @@
 **/.turbo
 **/.pnpm-store
 
-# --- App yang tidak dipakai dalam build ini -----------------------------
-# Saat build portal, kita TIDAK perlu source backend (Rust). Begitu sebaliknya.
-# apps/backend tidak dipakai di context portal/admin — exclude total.
-apps/backend
-apps/backend/**
+# --- Apps service sources (JARANG perlu di build context) ---------------
+# Backend Dockerfile (di apps/backend/) pake context `.` dan COPY
+# `Cargo.toml`/`src`/`migrations` (resolved ke apps/backend/*). JANGAN exclude
+# `apps/backend` di root .dockerignore — backend build akan dapat context
+# kosong dan COPY fail. Folder `target/` (artifact compile) sudah di-exclude
+# via pattern `**/target` di bawah, jadi frontend builds tidak kena Rust
+# compiled output (~1GB). Frontend builds MENDAPAT apps/backend sources
+# (~2-3MB) — itu OK karena Dockerfile-nya tidak COPY path itu.
+#
+# apps/backend        ← JANGAN ada di sini, backend build butuh
+# apps/backend/**     ← JANGAN ada di sini
 
 # --- Repository metadata & dev tooling ----------------------------------
 .git
