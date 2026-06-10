@@ -6,7 +6,7 @@
 # Lihat portal Dockerfile untuk komentar mendetail per stage.
 # =============================================================================
 
-ARG NODE_VERSION=22-alpine
+ARG NODE_VERSION=22.13.1-alpine
 ARG PNPM_VERSION=10.15.0
 
 
@@ -91,7 +91,23 @@ RUN rm -rf /tmp/deps-node_modules/@insuretrack \
 USER nextjs
 EXPOSE 3001
 
+# Metadata OCI standar — supaya image bisa di-trace via `docker inspect`
+# dan terintegrasi dengan GHCR/Docker Hub UI.
+LABEL org.opencontainers.image.title="insuretrack-admin" \
+      org.opencontainers.image.description="InsureTrack admin backoffice (Next.js 15)" \
+      org.opencontainers.image.source="https://github.com/syahaltastari/insuretrack" \
+      org.opencontainers.image.licenses="Proprietary"
+
+# Explicit stop signal — Next.js standalone handle SIGTERM dengan graceful
+# shutdown. Default sudah SIGTERM, tapi eksplisit lebih jelas untuk
+# orchestrator (Kubernetes, Nomad) yang respect field ini.
+STOPSIGNAL SIGTERM
+
+# HEALTHCHECK pakai threshold < 400 (2xx & 3xx pass, 4xx & 5xx fail).
+# Threshold lama < 500 PASSED pada 404 — artinya container dianggap healthy
+# walau app broken. Sekarang fail pada client error & server error.
+# Compose override dengan check yang sama (lihat docker-compose.yml).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD node -e "require('http').get('http://127.0.0.1:3001/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"
+    CMD node -e "require('http').get('http://127.0.0.1:3001/', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))"
 
 CMD ["node", "server.js"]
