@@ -120,7 +120,7 @@ services:
   #
   # Restore: `scripts/restore-db.sh backups/<file>` (lihat document/DEPLOYMENT.md §8).
   db-backup:
-    image: prodrigestivill/postgres-backup-local:18.5-3
+    image: prodrigestivill/postgres-backup-local:15-alpine
     container_name: insuretrack_db_backup
     restart: unless-stopped
     environment:
