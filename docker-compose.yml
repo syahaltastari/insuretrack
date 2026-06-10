@@ -156,8 +156,8 @@ services:
   # Dengan healthcheck probe setiap 10s, transition <15 detik.
   backend:
     build:
-      context: .
-      dockerfile: apps/backend/Dockerfile
+      context: ./apps/backend
+      dockerfile: Dockerfile
     # container_name dihapus supaya replicas=2 tidak konflik
     restart: unless-stopped
     deploy:
