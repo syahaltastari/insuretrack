@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
+import { toast } from "sonner";
 import type { ParticipantData } from "@insuretrack/api-client";
 
 /**
@@ -118,6 +119,16 @@ export function ParticipantImport({ onImport }: ParticipantImportProps) {
       >
         Import CSV / Excel
       </label>
+
+      <button
+        type="button"
+        className="clay-button ghost size-small"
+        onClick={downloadSampleCsv}
+        style={{ display: "inline-flex", cursor: "pointer" }}
+        title="Download file CSV contoh dengan 3 baris peserta valid (untuk produk Jiwa)"
+      >
+        ⬇ Download Template
+      </button>
 
       {parseError && (
         <div
@@ -249,6 +260,106 @@ export function ParticipantImport({ onImport }: ParticipantImportProps) {
 }
 
 // ---- helpers --------------------------------------------------------------
+
+/** Sample data untuk CSV template. 3 baris peserta valid dengan data
+ *  realistis (nama Indonesia, alamat, NIK format). Semua untuk produk
+ *  Jiwa — Ahli Waris diisi di kolom terakhir. Untuk produk PA/HEALTH,
+ *  kolom Ahli Waris boleh dikosongkan. */
+const SAMPLE_ROWS: Array<Record<string, string>> = [
+  {
+    NIK: "3174012508900001",
+    "Nama Lengkap": "Budi Santoso",
+    "Tempat Lahir": "Jakarta",
+    "Tanggal Lahir": "1990-08-25",
+    "Jenis Kelamin": "MALE",
+    Alamat: "Jalan Merdeka No. 17",
+    "RT/RW": "001/002",
+    Kelurahan: "Gambir",
+    Kecamatan: "Gambir",
+    Kota: "Jakarta Pusat",
+    Provinsi: "DKI Jakarta",
+    "Kode Pos": "10110",
+    Email: "budi.santoso@example.com",
+    "No HP": "081234567890",
+    "Ahli Waris": "Siti Aminah (istri)",
+  },
+  {
+    NIK: "3578015503920002",
+    "Nama Lengkap": "Siti Aminah",
+    "Tempat Lahir": "Surabaya",
+    "Tanggal Lahir": "1992-03-15",
+    "Jenis Kelamin": "FEMALE",
+    Alamat: "Jalan Pahlawan No. 5",
+    "RT/RW": "003/004",
+    Kelurahan: "Krembangan Selatan",
+    Kecamatan: "Krembangan",
+    Kota: "Surabaya",
+    Provinsi: "Jawa Timur",
+    "Kode Pos": "60175",
+    Email: "siti.aminah@example.com",
+    "No HP": "082345678901",
+    "Ahli Waris": "Budi Santoso (suami)",
+  },
+  {
+    NIK: "3273011505950003",
+    "Nama Lengkap": "Ahmad Fauzi",
+    "Tempat Lahir": "Bandung",
+    "Tanggal Lahir": "1995-05-15",
+    "Jenis Kelamin": "MALE",
+    Alamat: "Jalan Sudirman Kavling 21",
+    "RT/RW": "002/005",
+    Kelurahan: "Cikawao",
+    Kecamatan: "Lengkong",
+    Kota: "Bandung",
+    Provinsi: "Jawa Barat",
+    "Kode Pos": "40261",
+    Email: "",
+    "No HP": "083456789012",
+    "Ahli Waris": "Dewi Lestari (ibu)",
+  },
+];
+
+/** Trigger browser download untuk sample CSV. Pakai papaparse unparse
+ *  (handles quoting, escaping) lalu Blob URL + anchor click. */
+function downloadSampleCsv() {
+  // Column order — fixed untuk konsistensi. Pakai nama header utama
+  // (bukan alias) supaya user langsung tahu format yang diharapkan.
+  const columns = [
+    "NIK",
+    "Nama Lengkap",
+    "Tempat Lahir",
+    "Tanggal Lahir",
+    "Jenis Kelamin",
+    "Alamat",
+    "RT/RW",
+    "Kelurahan",
+    "Kecamatan",
+    "Kota",
+    "Provinsi",
+    "Kode Pos",
+    "Email",
+    "No HP",
+    "Ahli Waris",
+  ];
+  const csv = Papa.unparse(
+    { fields: columns, data: SAMPLE_ROWS.map((row) => columns.map((c) => row[c] ?? "")) },
+    { quotes: true, newline: "\r\n" },
+  );
+  // Prepend BOM (﻿) supaya Excel detect UTF-8 (karakter Indonesia
+  // seperti 'é' di "Dé" atau nama dengan diacritics aman).
+  const blob = new Blob(["﻿" + csv], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "template-peserta-instansi.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast.success("Template CSV terdownload — buka dengan Excel/Google Sheets untuk edit");
+}
 
 function parseCsv(file: File): Promise<Record<string, unknown>[]> {
   return new Promise((resolve, reject) => {
