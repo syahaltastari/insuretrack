@@ -64,11 +64,14 @@ type MeResponse = {
 
 export default function PortalProfilePage() {
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<MeResponse | null>(null);
   const [profileSubmitting, setProfileSubmitting] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
 
   const profileMethods = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema) as never,
@@ -91,6 +94,7 @@ export default function PortalProfilePage() {
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const json = (await r.json()) as MeResponse;
+        setProfile(json);
         profileMethods.reset({
           full_name: json.full_name,
           email: json.email,
@@ -134,6 +138,10 @@ export default function PortalProfilePage() {
         email: updated.email,
         mobile_number: updated.mobile_number,
       });
+      // Update profile summary card juga
+      setProfile((p) =>
+        p ? { ...p, full_name: updated.full_name, email: updated.email, mobile_number: updated.mobile_number } : p,
+      );
       toast.success("Profil berhasil diperbarui");
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Gagal update profil");
@@ -164,6 +172,8 @@ export default function PortalProfilePage() {
         throw new Error(json?.error?.message ?? `HTTP ${r.status}`);
       }
       passwordMethods.reset({ current_password: "", new_password: "", confirm_password: "" });
+      setShowCurrentPw(false);
+      setShowNewPw(false);
       toast.success("Password berhasil diperbarui");
     } catch (err) {
       setPasswordError(err instanceof Error ? err.message : "Ganti password gagal");
@@ -172,142 +182,422 @@ export default function PortalProfilePage() {
     }
   };
 
+  // Inisial avatar: 2 huruf pertama dari nama (uppercase)
+  const initials = (profile?.full_name ?? "??")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join("");
+
   return (
     <>
-      <p className="uppercase-label" style={{ color: "var(--matcha-600)", marginBottom: 8 }}>
+      <p
+        className="uppercase-label"
+        style={{ color: "var(--matcha-600)", marginBottom: 8 }}
+      >
         ✦ Akun Saya
       </p>
       <h1 className="page-title">Profil Saya</h1>
-      <p className="page-subtitle">
-        Perbarui data diri dan password Anda.
-      </p>
+      <p className="page-subtitle">Perbarui data diri dan password Anda.</p>
 
       {loading ? (
-        <p>Memuat...</p>
+        <p style={{ marginTop: 24, color: "var(--warm-silver)" }}>Memuat...</p>
       ) : (
-        <div style={{ display: "grid", gap: 24, maxWidth: 560 }}>
-          <Form
-            methods={profileMethods}
-            onSubmit={onProfileSubmit}
-            className="clay-card feature"
+        <div style={{ display: "grid", gap: 24, marginTop: 24, maxWidth: 880 }}>
+          {/* ===== PROFILE HERO CARD ===== */}
+          <section
+            className="clay-card section"
+            style={{
+              padding: 32,
+              display: "flex",
+              alignItems: "center",
+              gap: 24,
+              flexWrap: "wrap",
+            }}
           >
-            <h2 className="feature-title" style={{ marginBottom: 16 }}>
-              Data Diri
-            </h2>
-            <FormError message={profileError} />
-
-            <FormField label="Nama Lengkap" name="full_name" required>
-              <input
-                id="full_name"
-                className="clay-input"
-                autoComplete="name"
-                {...profileMethods.register("full_name")}
-              />
-            </FormField>
-
-            <FormField label="Email" name="email" required>
-              <input
-                id="email"
-                className="clay-input"
-                type="email"
-                autoComplete="email"
-                {...profileMethods.register("email")}
-              />
-            </FormField>
-
-            <FormField label="Nomor HP" name="mobile_number" required hint="10-15 digit, contoh: 081234567890">
-              <input
-                id="mobile_number"
-                className="clay-input"
-                type="tel"
-                autoComplete="tel"
-                {...profileMethods.register("mobile_number")}
-              />
-            </FormField>
-
-            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <button
-                type="submit"
-                disabled={profileSubmitting}
-                className="clay-button solid-matcha"
-              >
-                {profileSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
-              </button>
+            {/* Avatar circle dengan inisial nama */}
+            <div
+              aria-hidden="true"
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: "50%",
+                background: "var(--matcha-600)",
+                color: "var(--pure-white)",
+                display: "grid",
+                placeItems: "center",
+                fontWeight: 700,
+                fontSize: "1.75rem",
+                fontFamily: "var(--font-jakarta), sans-serif",
+                letterSpacing: "-0.02em",
+                flexShrink: 0,
+                boxShadow: "var(--shadow-clay)",
+              }}
+            >
+              {initials || "??"}
             </div>
-          </Form>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <h2
+                className="card-heading"
+                style={{ marginBottom: 4, fontSize: "1.35rem" }}
+              >
+                {profile?.full_name || "—"}
+              </h2>
+              <p
+                className="body"
+                style={{
+                  color: "var(--warm-charcoal)",
+                  margin: 0,
+                  fontFamily: "var(--font-space-mono), monospace",
+                  fontSize: "0.9rem",
+                }}
+              >
+                {profile?.email || "—"}
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginTop: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  className="clay-badge matcha"
+                  aria-label="Tipe akun"
+                >
+                  Customer
+                </span>
+                {profile && profile.active_policy_count > 0 && (
+                  <span
+                    className="clay-badge ube"
+                    aria-label="Polis aktif"
+                  >
+                    {profile.active_policy_count} polis aktif
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
 
-          <Form
-            id="ganti-password"
-            methods={passwordMethods}
-            onSubmit={onPasswordSubmit}
-            className="clay-card feature"
+          {/* ===== 2-COLUMN GRID: Data Diri + Ganti Password ===== */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: 24,
+            }}
           >
-            <h2 className="feature-title" style={{ marginBottom: 16 }}>
-              Ganti Password
-            </h2>
-            <FormError message={passwordError} />
-
-            <FormField label="Password Lama" name="current_password" required>
-              <input
-                id="current_password"
-                className="clay-input"
-                type="password"
-                autoComplete="current-password"
-                {...passwordMethods.register("current_password")}
-              />
-            </FormField>
-
-            <FormField
-              label="Password Baru"
-              name="new_password"
-              required
-              hint="Minimal 8 karakter, 1 huruf besar, 1 angka"
+            {/* Data Diri card */}
+            <Form
+              methods={profileMethods}
+              onSubmit={onProfileSubmit}
+              className="clay-card feature"
             >
-              <input
-                id="new_password"
-                className="clay-input"
-                type="password"
-                autoComplete="new-password"
-                {...passwordMethods.register("new_password")}
+              <SectionHeader
+                icon="User"
+                title="Data Diri"
+                hint="Perbarui nama, email, atau nomor HP Anda."
               />
-            </FormField>
+              <FormError message={profileError} />
 
-            <FormField label="Konfirmasi Password Baru" name="confirm_password" required>
-              <input
-                id="confirm_password"
-                className="clay-input"
-                type="password"
-                autoComplete="new-password"
-                {...passwordMethods.register("confirm_password")}
-              />
-            </FormField>
+              <FormField label="Nama Lengkap" name="full_name" required>
+                <input
+                  id="full_name"
+                  className="clay-input"
+                  autoComplete="name"
+                  {...profileMethods.register("full_name")}
+                />
+              </FormField>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <button
-                type="submit"
-                disabled={passwordSubmitting}
-                className="clay-button solid-matcha"
+              <FormField label="Email" name="email" required>
+                <input
+                  id="email"
+                  className="clay-input"
+                  type="email"
+                  autoComplete="email"
+                  {...profileMethods.register("email")}
+                />
+              </FormField>
+
+              <FormField
+                label="Nomor HP"
+                name="mobile_number"
+                required
+                hint="10-15 digit"
               >
-                {passwordSubmitting ? "Menyimpan..." : "Ganti Password"}
-              </button>
-            </div>
+                <input
+                  id="mobile_number"
+                  className="clay-input"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  {...profileMethods.register("mobile_number")}
+                />
+              </FormField>
 
-            <p
-              className="caption"
-              style={{ color: "var(--warm-silver)", marginTop: 16, marginBottom: 0 }}
+              <FormActions
+                submitting={profileSubmitting}
+                submitLabel="Simpan Perubahan"
+              />
+            </Form>
+
+            {/* Ganti Password card */}
+            <Form
+              id="ganti-password"
+              methods={passwordMethods}
+              onSubmit={onPasswordSubmit}
+              className="clay-card feature"
             >
-              Lupa password lama? Gunakan{" "}
-              <a
-                href="/portal/reset"
-                style={{ color: "var(--matcha-600)", textDecoration: "underline" }}
+              <SectionHeader
+                icon="Lock"
+                title="Ganti Password"
+                hint="Minimal 8 karakter, 1 huruf besar, 1 angka."
+              />
+              <FormError message={passwordError} />
+
+              <FormField label="Password Lama" name="current_password" required>
+                <PasswordInput
+                  id="current_password"
+                  show={showCurrentPw}
+                  onToggle={() => setShowCurrentPw((v) => !v)}
+                  autoComplete="current-password"
+                  {...passwordMethods.register("current_password")}
+                />
+              </FormField>
+
+              <FormField label="Password Baru" name="new_password" required>
+                <PasswordInput
+                  id="new_password"
+                  show={showNewPw}
+                  onToggle={() => setShowNewPw((v) => !v)}
+                  autoComplete="new-password"
+                  {...passwordMethods.register("new_password")}
+                />
+              </FormField>
+
+              <FormField
+                label="Konfirmasi Password Baru"
+                name="confirm_password"
+                required
               >
-                fitur reset password
-              </a>{" "}
-              (link akan dikirim ke email Anda).
-            </p>
-          </Form>
+                <input
+                  id="confirm_password"
+                  className="clay-input"
+                  type="password"
+                  autoComplete="new-password"
+                  {...passwordMethods.register("confirm_password")}
+                />
+              </FormField>
+
+              <FormActions
+                submitting={passwordSubmitting}
+                submitLabel="Ganti Password"
+              />
+
+              <p
+                className="caption"
+                style={{
+                  color: "var(--warm-silver)",
+                  marginTop: 16,
+                  marginBottom: 0,
+                  paddingTop: 16,
+                  borderTop: "1px dashed var(--oat-border)",
+                }}
+              >
+                Lupa password lama?{" "}
+                <a
+                  href="/portal/reset"
+                  style={{
+                    color: "var(--matcha-600)",
+                    textDecoration: "underline",
+                    fontWeight: 500,
+                  }}
+                >
+                  Reset via email
+                </a>
+              </p>
+            </Form>
+          </div>
         </div>
       )}
     </>
   );
+}
+
+// ---- Sub-components -------------------------------------------------------
+
+/** Section header untuk form card — icon + title + hint di top. */
+function SectionHeader({
+  icon,
+  title,
+  hint,
+}: {
+  icon: "User" | "Lock";
+  title: string;
+  hint?: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        marginBottom: 20,
+        paddingBottom: 16,
+        borderBottom: "1px dashed var(--oat-border)",
+      }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          background: icon === "User" ? "var(--matcha-300)" : "var(--ube-300)",
+          color: icon === "User" ? "var(--matcha-800)" : "var(--ube-900)",
+          display: "grid",
+          placeItems: "center",
+          flexShrink: 0,
+        }}
+      >
+        <IconSvg name={icon} />
+      </div>
+      <div>
+        <h2 className="card-heading" style={{ margin: 0, fontSize: "1.1rem" }}>
+          {title}
+        </h2>
+        {hint && (
+          <p
+            className="caption"
+            style={{
+              color: "var(--warm-charcoal)",
+              margin: "2px 0 0 0",
+              fontSize: "0.82rem",
+            }}
+          >
+            {hint}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Password input dengan show/hide toggle. */
+function PasswordInput({
+  show,
+  onToggle,
+  ...inputProps
+}: {
+  show: boolean;
+  onToggle: () => void;
+} & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        {...inputProps}
+        type={show ? "text" : "password"}
+        className="clay-input"
+        style={{ paddingRight: 44 }}
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={show ? "Sembunyikan password" : "Tampilkan password"}
+        aria-pressed={show}
+        style={{
+          position: "absolute",
+          right: 8,
+          top: "50%",
+          transform: "translateY(-50%)",
+          background: "transparent",
+          border: 0,
+          cursor: "pointer",
+          color: "var(--warm-silver)",
+          padding: 4,
+          display: "grid",
+          placeItems: "center",
+          borderRadius: 6,
+        }}
+      >
+        <IconSvg name={show ? "EyeOff" : "Eye"} size={16} />
+      </button>
+    </div>
+  );
+}
+
+/** Submit button row di bawah form — right-aligned, full-width on mobile. */
+function FormActions({
+  submitting,
+  submitLabel,
+}: {
+  submitting: boolean;
+  submitLabel: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        marginTop: 20,
+        paddingTop: 16,
+        borderTop: "1px dashed var(--oat-border)",
+        justifyContent: "flex-end",
+      }}
+    >
+      <button
+        type="submit"
+        disabled={submitting}
+        className="clay-button solid-matcha size-small"
+      >
+        {submitting ? "Menyimpan..." : submitLabel}
+      </button>
+    </div>
+  );
+}
+
+// ---- Inline SVG icons (avoid extra dep on lucide-react for 3 icons) ---------
+
+function IconSvg({ name, size = 18 }: { name: "User" | "Lock" | "Eye" | "EyeOff"; size?: number }) {
+  const props = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  switch (name) {
+    case "User":
+      return (
+        <svg {...props} aria-hidden="true">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+      );
+    case "Lock":
+      return (
+        <svg {...props} aria-hidden="true">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+      );
+    case "Eye":
+      return (
+        <svg {...props} aria-hidden="true">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
+    case "EyeOff":
+      return (
+        <svg {...props} aria-hidden="true">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </svg>
+      );
+  }
 }
