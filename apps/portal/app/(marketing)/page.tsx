@@ -38,8 +38,11 @@ async function fetchProducts(): Promise<Product[]> {
   try {
     const r = await fetch(`${API}/public/products`, { cache: "no-store" });
     if (!r.ok) return [];
-    const json = (await r.json()) as { data: Product[] };
-    return json.data ?? [];
+    // Backend response shape: `{ data: { products: Product[], plans: ProductPlan[] } }`
+    // — nested object, bukan flat array. Lihat `apps/backend/src/routes/public.rs`
+    // ::list_products() dan wire DTO comment di `packages/api-client/src/dto/products.ts`.
+    const json = (await r.json()) as { data?: { products?: Product[] } };
+    return json.data?.products ?? [];
   } catch {
     return [];
   }
