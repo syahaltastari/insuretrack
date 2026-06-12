@@ -206,7 +206,7 @@ export default async function HomePage() {
                 return (
                   <Reveal key={p.code} delay={i * 120} from="up">
                     <Link
-                      href={`/products/${p.code}`}
+                      href={`/products/${(p as { slug?: string }).slug ?? p.code.toLowerCase()}`}
                       className="clay-card feature clay-card-hoverable"
                       style={{
                         height: "100%",

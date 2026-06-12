@@ -1,4 +1,4 @@
-// Halaman detail produk (/products/[code]).
+// Halaman detail produk (/products/[slug]).
 //
 // Server component. Konten diambil dari lib/product-details.ts (static data
 // yang sinkron dengan backend Product struct di dto/mod.rs). Tidak ada
@@ -11,7 +11,7 @@ import { Reveal } from "@/components/Reveal";
 import {
   formatIdr,
   formatIdrShort,
-  getProductDetail,
+  getProductBySlug,
   PRODUCT_DETAILS,
   ALL_PRODUCT_CODES,
 } from "@/lib/product-details";
@@ -25,10 +25,10 @@ export const dynamic = "force-dynamic";
 export default async function ProductDetailPage({
   params,
 }: {
-  params: Promise<{ code: string }>;
+  params: Promise<{ slug: string }>;
 }) {
-  const { code } = await params;
-  const product = getProductDetail(code);
+  const { slug } = await params;
+  const product = getProductBySlug(slug);
   if (!product) notFound();
 
   const coverageRows: Array<{ label: string; value: string }> = [
@@ -154,7 +154,16 @@ export default async function ProductDetailPage({
             <Reveal from="up" delay={150}>
               <div
                 className="clay-card feature"
-                style={{ background: "var(--pure-white)", padding: 28 }}
+                style={{
+                  background: "var(--pure-white)",
+                  // Eksplisit reset color — hero section pakai swatch yang
+                  // set color di parent (e.g. var(--pure-white) untuk
+                  // swatch-matcha). Tanpa reset, text di dalam white
+                  // card inherit white → invisible ("Mulai dari" bug di
+                  // LIFE/HEALTH).
+                  color: "var(--clay-black)",
+                  padding: 28,
+                }}
               >
                 <p className="uppercase-label" style={{ marginBottom: 8 }}>
                   Mulai dari
@@ -597,7 +606,7 @@ export default async function ProductDetailPage({
               return (
                 <Reveal key={otherCode} from="up">
                   <Link
-                    href={`/products/${other.code}`}
+                    href={`/products/${other.slug}`}
                     className="clay-card feature"
                     style={{
                       height: "100%",

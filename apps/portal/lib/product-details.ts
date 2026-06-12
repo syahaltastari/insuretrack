@@ -26,13 +26,16 @@ export type ProductFaq = {
 
 export type ProductDetail = {
   code: string;
+  /** URL slug (kebab-case) untuk halaman detail. Mis. "personal-accident"
+   *  untuk `PERSONAL_ACCIDENT`. Selalu lowercase. */
+  slug: "life" | "personal-accident" | "health";
   name: string;
   tagline: string;
   description: string;
   icon: IconName;
   tone: ProductTone;
   /** Section background util (lihat packages/ui globals.css). */
-  swatch: `swatch-${ProductTone}`;
+  swatch: `swatch-${ProductTone}` | `swatch-${ProductTone}-light`;
   /** Section background util untuk CTA dark variant. */
   swatchDeep: `swatch-${ProductTone}-deep`;
   /** Light tone untuk icon chip. */
@@ -96,6 +99,7 @@ const HEALTH_BASE_PREMIUM = 100_000_000 * 0.015 * 1; // 1.500.000
 export const PRODUCT_DETAILS: Record<string, ProductDetail> = {
   LIFE: {
     code: "LIFE",
+    slug: "life",
     name: "Asuransi Jiwa",
     tagline:
       "Lindungi masa depan keluarga, sekalipun Anda tidak ada di samping mereka.",
@@ -103,7 +107,10 @@ export const PRODUCT_DETAILS: Record<string, ProductDetail> = {
       "Perlindungan jiwa dengan manfaat uang pertanggungan kepada ahli waris.",
     icon: "HeartPulse",
     tone: "matcha",
-    swatch: "swatch-matcha",
+    // Light swatch: hero text dark di atas matcha-300 (konsisten dengan PA yang
+    // juga light bg). Tanpa light variant, hero pakai swatch-matcha (matcha-600
+    // + white text) yang bikin white card "Mulai dari" inherit color white.
+    swatch: "swatch-matcha-light",
     swatchDeep: "swatch-matcha-deep",
     iconTone: "matcha-300",
     premiumRate: 0.01,
@@ -195,6 +202,7 @@ export const PRODUCT_DETAILS: Record<string, ProductDetail> = {
 
   PERSONAL_ACCIDENT: {
     code: "PERSONAL_ACCIDENT",
+    slug: "personal-accident",
     name: "Asuransi Kecelakaan Diri",
     tagline: "Santunan finansial saat tak terduga. Aktif hari ini, lindungi esok hari.",
     description:
@@ -295,13 +303,15 @@ export const PRODUCT_DETAILS: Record<string, ProductDetail> = {
 
   HEALTH: {
     code: "HEALTH",
+    slug: "health",
     name: "Asuransi Kesehatan",
     tagline: "Rawat inap & perawatan kesehatan tanpa beban biaya.",
     description:
       "Penggantian biaya rawat inap dan perawatan kesehatan.",
     icon: "Stethoscope",
     tone: "ube",
-    swatch: "swatch-ube",
+    // Light swatch: sama rationale dengan LIFE — light bg + dark text.
+    swatch: "swatch-ube-light",
     swatchDeep: "swatch-ube-deep",
     iconTone: "ube-300",
     premiumRate: 0.015,
@@ -402,6 +412,21 @@ export const PRODUCT_DETAILS: Record<string, ProductDetail> = {
 export function getProductDetail(code: string | undefined | null): ProductDetail | null {
   if (!code) return null;
   return PRODUCT_DETAILS[code.toUpperCase()] ?? null;
+}
+
+/**
+ * Lookup product detail by URL slug (kebab-case). Slug sudah selalu
+ * lowercase, jadi tidak perlu case-fold di sini. Return `null` untuk
+ * slug tidak dikenal — caller render not-found.
+ */
+export function getProductBySlug(
+  slug: string | undefined | null,
+): ProductDetail | null {
+  if (!slug) return null;
+  const target = slug.toLowerCase();
+  return (
+    Object.values(PRODUCT_DETAILS).find((p) => p.slug === target) ?? null
+  );
 }
 
 /** All product codes, in stable display order. */
