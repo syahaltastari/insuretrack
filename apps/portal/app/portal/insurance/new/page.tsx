@@ -438,9 +438,9 @@ function InsuranceNewPageInner() {
 
   return (
     <>
-      <main className="clay-section" style={{ minHeight: "100vh", paddingTop: 48 }}>
+      <main className="clay-section" style={{ minHeight: "100vh", paddingTop: 0 }}>
         <Reveal>
-          <a href="/" className="clay-button ghost size-small" style={{ marginBottom: 24 }}>
+          <a href="/portal/dashboard" className="clay-button ghost size-small" style={{ marginBottom: 24 }}>
             ← Beranda
           </a>
           <h1 className="page-title">Form Pendaftaran</h1>

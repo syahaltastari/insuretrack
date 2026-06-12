@@ -76,7 +76,7 @@ export function PlanPicker({
                 marginBottom: 12,
               }}
             >
-              <span className="card-heading" style={{ margin: 0 }}>
+              <span className="text-base font-bold" style={{ margin: 0 }}>
                 {plan.name}
               </span>
               {isRecommended && (
@@ -86,7 +86,7 @@ export function PlanPicker({
               )}
             </div>
             <div
-              className="display-secondary"
+              className="text-xl font-bold"
               style={{ marginBottom: 4, color: "var(--clay-black)" }}
             >
               {formatIdr(plan.sum_assured)}
