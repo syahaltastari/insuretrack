@@ -280,11 +280,14 @@ export default function PortalProfilePage() {
             </div>
           </section>
 
-          {/* ===== 2-COLUMN GRID: Data Diri + Ganti Password ===== */}
+          {/* ===== SINGLE-COLUMN STACK: Data Diri + Ganti Password =====
+              Single column biar tiap form pakai full-width container —
+              form fields lebih lapang, label tidak cramped. Stack vertikal
+              dengan gap 24 antar form. */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gridTemplateColumns: "1fr",
               gap: 24,
             }}
           >
