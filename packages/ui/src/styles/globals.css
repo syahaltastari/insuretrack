@@ -1594,6 +1594,11 @@ details > summary::marker { display: none; content: ""; }
    ============================================================ */
 .client-logo img {
   filter: grayscale(100%) opacity(0.65);
+  /* `mix-blend-mode: multiply` bikin pixel putih di image blend dengan
+     background section (warm-cream) — efektif menghilangkan white BG
+     yang baked-in di banyak logo korporat tanpa harus re-export file
+     PNG/SVG ke transparent. Aman untuk grayscale + color (hover). */
+  mix-blend-mode: multiply;
   transition: filter 240ms ease, transform 240ms ease;
 }
 .client-logo:hover img,
