@@ -95,6 +95,10 @@ pub struct RegistrationData {
     /// — schema DB tidak berubah, hanya request shape.
     pub plan_code: String,
     pub coverage_term: i32,
+    /// Nama ahli waris/penerima manfaat. Wajib untuk produk LIFE
+    /// (validate_registration enforce); opsional untuk PA/HEALTH.
+    #[serde(default)]
+    pub beneficiary_name: Option<String>,
 }
 
 async fn get_registration(
@@ -419,14 +423,23 @@ pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
     // Plan_code adalah source of truth untuk product + sum_assured.
     // Lookup sekali di sini — handler `submit_insurance_application` di
     // customer.rs reuse hasil lookup yang sama.
-    if find_plan(&d.plan_code).is_none() {
-        return Err(AppError::Validation(format!(
-            "invalid plan_code: {}",
-            d.plan_code
-        )));
-    }
+    let plan = find_plan(&d.plan_code).ok_or_else(|| {
+        AppError::Validation(format!("invalid plan_code: {}", d.plan_code))
+    })?;
     if d.coverage_term < 1 {
         return Err(AppError::Validation("coverage_term must be >= 1".into()));
+    }
+    // Beneficiary wajib untuk produk LIFE (sesuai benefit list "Ahli Waris
+    // Fleksibel" di product-details.ts). PA & HEALTH tidak butuh.
+    if plan.product_code == "LIFE" {
+        match d.beneficiary_name.as_deref().map(str::trim) {
+            Some(n) if (1..=120).contains(&n.len()) => {}
+            _ => {
+                return Err(AppError::Validation(
+                    "Nama ahli waris wajib diisi untuk Asuransi Jiwa".into(),
+                ));
+            }
+        }
     }
     Ok(())
 }

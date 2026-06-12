@@ -1774,8 +1774,9 @@ async fn submit_insurance_application(
     let reg_id: (Uuid,) = sqlx::query_as(
         r#"
         INSERT INTO registrations
-          (registration_no, customer_id, product, sum_assured, coverage_term, status)
-        VALUES ($1, $2, $3, $4, $5, 'PENDING')
+          (registration_no, customer_id, product, sum_assured, coverage_term,
+           status, beneficiary_name)
+        VALUES ($1, $2, $3, $4, $5, 'PENDING', $6)
         RETURNING id
         "#,
     )
@@ -1784,6 +1785,7 @@ async fn submit_insurance_application(
     .bind(plan.product_code)
     .bind(plan.sum_assured)
     .bind(data.coverage_term)
+    .bind(data.beneficiary_name.as_deref().map(str::trim))
     .fetch_one(&mut *tx)
     .await?;
 
@@ -1934,6 +1936,7 @@ async fn submit_insurance_application(
                 "monthly_premium": plan.monthly_premium.to_string(),
                 "premium": premium_amount.to_string(),
                 "via": "customer_portal",
+                "beneficiary_name": data.beneficiary_name.as_deref().map(str::trim),
             })),
             ip_address: None,
         },
