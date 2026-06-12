@@ -28,7 +28,7 @@ export function ApplicantTypePicker({ value, onChange }: ApplicantTypePickerProp
       type: "INDIVIDU",
       icon: "👤",
       title: "Individu",
-      desc: "Daftarkan 1 peserta. Cocok untuk perlindungan diri sendiri atau keluarga inti.",
+      desc: "Daftarkan diri anda. Cocok untuk perlindungan diri sendiri atau keluarga inti.",
     },
     {
       type: "INSTANSI",

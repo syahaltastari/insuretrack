@@ -444,9 +444,6 @@ function InsuranceNewPageInner() {
             ← Beranda
           </a>
           <h1 className="page-title">Form Pendaftaran</h1>
-          <p className="page-subtitle">
-            Isi data dengan benar. KTP wajib diupload (JPG/PNG/PDF, max 5 MB).
-          </p>
         </Reveal>
 
         {/* Banner aktivasi: kalau akun belum diaktivasi, backend akan
