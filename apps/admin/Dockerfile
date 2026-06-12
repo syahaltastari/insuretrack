@@ -1,16 +1,15 @@
 # syntax=docker/dockerfile:1.7
 # =============================================================================
-# Admin Next.js (backoffice surface) — production image.
-#
-# Pattern identik dengan apps/portal/Dockerfile — port 3001, otherwise sama.
-# Lihat portal Dockerfile untuk komentar mendetail per stage.
+# Admin Next.js (backoffice) — production image.
+# Pattern identik dengan apps/portal/Dockerfile (lihat sana untuk komentar
+# mendetail per stage). Bedanya: port 3001, dan build dir `apps/admin`.
 # =============================================================================
 
 ARG NODE_VERSION=22.22.3-alpine
 ARG PNPM_VERSION=10.15.0
 
 
-# ----- 1. deps ---------------------------------------------------------------
+# Stage 1 — deps.
 FROM node:${NODE_VERSION} AS deps
 WORKDIR /repo
 
@@ -24,8 +23,7 @@ COPY packages ./packages
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-# pnpm `node-linker=hoisted` tidak auto-symlink workspace packages — buat
-# manual. Lihat apps/portal/Dockerfile untuk penjelasan.
+# pnpm `node-linker=hoisted` tidak auto-symlink workspace packages — manual.
 RUN mkdir -p /repo/node_modules/@insuretrack && \
     for pkg in /repo/packages/*/; do \
       name=$(basename "$pkg"); \
@@ -33,7 +31,7 @@ RUN mkdir -p /repo/node_modules/@insuretrack && \
     done
 
 
-# ----- 2. builder ------------------------------------------------------------
+# Stage 2 — builder.
 FROM node:${NODE_VERSION} AS builder
 WORKDIR /repo
 
@@ -41,10 +39,7 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 
 COPY --from=deps /repo/node_modules ./node_modules
 COPY --from=deps /repo/packages ./packages
-
-# Workspace root files — wajib untuk pnpm detect workspace di subdir.
 COPY package.json pnpm-workspace.yaml .npmrc ./
-
 COPY apps/portal ./apps/portal
 COPY apps/admin ./apps/admin
 
@@ -56,7 +51,8 @@ WORKDIR /repo/apps/admin
 RUN pnpm run build
 
 
-# ----- 3. runner -------------------------------------------------------------
+# Stage 3 — runner. Standalone output preserve project path
+# (`.next/standalone/apps/admin/server.js`).
 FROM node:${NODE_VERSION} AS runner
 WORKDIR /app
 
@@ -68,15 +64,12 @@ ENV NODE_ENV=production \
 RUN addgroup --system --gid 1001 nodejs || true \
     && adduser --system --uid 1001 --ingroup nodejs nextjs || true
 
-# Standalone output preserve project path
-# (`.next/standalone/apps/admin/server.js`).
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/admin/.next/standalone/apps/admin ./
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/admin/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/admin/public ./public
 
-# Replace partial node_modules di standalone dengan full set, deref symlinks.
-# Hapus symlink @insuretrack/* dari deps (point ke /repo/packages/* yang
-# tidak ada di runner), re-create yang point ke /app/packages/*.
+# `cp -aL` dereference symlink pnpm; symlink @insuretrack/* di-recreate ke
+# /app/packages/* (lihat apps/portal/Dockerfile untuk penjelasan lengkap).
 COPY --from=deps --chown=nextjs:nodejs /repo/packages /app/packages
 COPY --from=deps /repo/node_modules /tmp/deps-node_modules
 RUN rm -rf /tmp/deps-node_modules/@insuretrack \
@@ -90,23 +83,12 @@ RUN rm -rf /tmp/deps-node_modules/@insuretrack \
 
 USER nextjs
 EXPOSE 3001
+STOPSIGNAL SIGTERM
 
-# Metadata OCI standar — supaya image bisa di-trace via `docker inspect`
-# dan terintegrasi dengan GHCR/Docker Hub UI.
 LABEL org.opencontainers.image.title="insuretrack-admin" \
-      org.opencontainers.image.description="InsureTrack admin backoffice (Next.js 15)" \
       org.opencontainers.image.source="https://github.com/syahaltastari/insuretrack" \
       org.opencontainers.image.licenses="Proprietary"
 
-# Explicit stop signal — Next.js standalone handle SIGTERM dengan graceful
-# shutdown. Default sudah SIGTERM, tapi eksplisit lebih jelas untuk
-# orchestrator (Kubernetes, Nomad) yang respect field ini.
-STOPSIGNAL SIGTERM
-
-# HEALTHCHECK pakai threshold < 400 (2xx & 3xx pass, 4xx & 5xx fail).
-# Threshold lama < 500 PASSED pada 404 — artinya container dianggap healthy
-# walau app broken. Sekarang fail pada client error & server error.
-# Compose override dengan check yang sama (lihat docker-compose.yml).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD node -e "require('http').get('http://127.0.0.1:3001/', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))"
 

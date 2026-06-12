@@ -71,7 +71,7 @@ export default function PortalClaimsPage() {
         {noActivePolicy ? (
           <button
             type="button"
-            className="clay-button ghost"
+            className="clay-button ghost mb-2"
             disabled
             title="Anda belum memiliki polis aktif"
             style={{ opacity: 0.5, cursor: "not-allowed" }}

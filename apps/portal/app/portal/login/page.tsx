@@ -155,18 +155,6 @@ function LoginInner() {
             </p>
           </Form>
 
-          <p
-            className="caption"
-            style={{ textAlign: "center", marginTop: 16, color: "var(--warm-charcoal)" }}
-          >
-            Anda admin?{" "}
-            <Link
-              href="/admin/login"
-              style={{ color: "var(--ube-800)", textDecoration: "underline" }}
-            >
-              Login di sini
-            </Link>
-          </p>
         </div>
       </main>
     </>

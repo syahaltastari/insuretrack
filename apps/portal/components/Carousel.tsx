@@ -3,6 +3,7 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
+import AutoScroll from "embla-carousel-auto-scroll";
 import { Icon } from "@insuretrack/ui";
 
 /**
@@ -13,18 +14,27 @@ import { Icon } from "@insuretrack/ui";
  *   - Bundle kecil (~8 KB gzipped) & tree-shakable.
  *   - TypeScript-first, maintained aktif, dipakai shadcn/ui (standar de
  *     facto untuk React 19 / Next 15).
- *   - Plugin resmi untuk autoplay, class names, dll — bukan hack.
+ *   - Plugin resmi untuk autoplay, auto-scroll (marquee), class names, dll.
+ *
+ * Dua mode auto-rotation:
+ *   - **Snap + autoplay** (default): discrete snap, jeda `autoMs` ms per slide.
+ *     Cocok untuk konten yang perlu dibaca (testimoni, promo copy).
+ *   - **Continuous** (`continuous: true`): linear marquee-style, slide bergeser
+ *     halus tanpa jeda. Cocok untuk logo strip, banner, dekoratif.
+ *     `autoMs` diabaikan — kecepatan pakai default plugin (bisa di-tune nanti).
  *
  * Props publik:
  *   - `items` — daftar konten (JSX) untuk setiap slide.
- *   - `autoMs` — interval perpindahan otomatis (default 5 detik). Pause
- *     saat hover (via Autoplay plugin `stopOnMouseEnter`).
+ *   - `autoMs` — interval snap ke slide berikutnya (default 5 detik). Hanya
+ *     berlaku untuk mode snap. Pause saat hover via `stopOnMouseEnter`.
+ *   - `continuous` — true = marquee linear, false = snap discrete (default).
+ *   - `showControls` — true = tampilkan dot + arrow (default), false = auto-only.
  *   - `itemsPerSlideDesktop` — jumlah slide yang terlihat di desktop (≥1024px).
  *   - `itemsPerSlideTablet` — jumlah slide yang terlihat di tablet (≥640px & <1024px).
  *   - Di mobile (<640px), default 1 slide per view.
  *   - `ariaLabel` — label untuk region (a11y).
  *
- * Mode: `loop: true` — slides循环 terus tanpa henti.
+ * Mode: `loop: true` — slides loop terus tanpa henti.
  */
 export function Carousel({
   items,
@@ -32,25 +42,50 @@ export function Carousel({
   itemsPerSlideDesktop = 3,
   itemsPerSlideTablet = 2,
   ariaLabel,
+  showControls = true,
+  continuous = false,
 }: {
   items: ReactNode[];
   autoMs?: number;
   itemsPerSlideDesktop?: number;
   itemsPerSlideTablet?: number;
   ariaLabel?: string;
+  // Tampilkan dot pagination + arrow prev/next. Set `false` untuk auto-play
+  // saja (mis. landing page sections yang cuma butuh slide otomatis, tanpa
+  // chrome visible). Autoplay/autoscroll tetap jalan regardless.
+  showControls?: boolean;
+  // `false` (default) = mode snap discrete + autoplay delay (autoMs).
+  // `true` = mode continuous linear scroll (marquee), autoMs diabaikan.
+  continuous?: boolean;
 }) {
   // `slidesToScroll` = jumlah slide yang di-skip per navigasi (1 = satu per satu,
   // yang paling predictable). Alignment `start` = snap ke awal slide.
+  // Plugin sesuai mode: continuous → AutoScroll (linear marquee), snap → Autoplay
+  // (delay-based). Untuk continuous, speed default plugin (~2s/full) dipakai —
+  // pass `autoMs` jadi tidak relevan; tambahkan prop `continuousSpeed` kalau
+  // perlu tune. `stopOnMouseEnter: false` — continuous marquee dimaksudkan
+  // sebagai visual interest, bukan readability, jadi tidak pause saat hover.
+  // `stopOnInteraction: true` masih aktif (drag manual = pause, beda sinyal).
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
       loop: true,
       align: "start",
       slidesToScroll: 1,
     },
-    // Autoplay plugin: stop pada hover/focus, jalan lagi saat mouse leave.
-    // `stopOnInteraction: false` — user interaction tidak mematikan autoplay
-    // selamanya (cuma pause sekali).
-    [Autoplay({ delay: autoMs, stopOnMouseEnter: true, stopOnInteraction: false })],
+    continuous
+      ? [
+          AutoScroll({
+            stopOnMouseEnter: false,
+            stopOnInteraction: true,
+            stopOnFocusIn: true,
+          }),
+        ]
+      : [
+          // Autoplay plugin: stop pada hover/focus, jalan lagi saat mouse leave.
+          // `stopOnInteraction: false` — user interaction tidak mematikan autoplay
+          // selamanya (cuma pause sekali).
+          Autoplay({ delay: autoMs, stopOnMouseEnter: true, stopOnInteraction: false }),
+        ],
   );
 
   // Track selected index buat dot indicator.
@@ -140,9 +175,9 @@ export function Carousel({
         </div>
       </div>
 
-      {/* Controls (dot + arrow) — only when ada lebih dari 1 snap.
-          Untuk < 2 slide, control makes no sense. */}
-      {snapCount > 1 && (
+      {/* Controls (dot + arrow) — only when ada lebih dari 1 snap DAN caller
+          minta control visible. Untuk < 2 slide, control makes no sense. */}
+      {showControls && snapCount > 1 && (
         <div
           className="carousel-controls"
           style={{

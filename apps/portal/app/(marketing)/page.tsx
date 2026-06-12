@@ -6,10 +6,11 @@
 
 import Link from "next/link";
 import { Icon, SafeImage, type IconName } from "@insuretrack/ui";
+import { API_BASE } from "@insuretrack/api-client";
 import { Reveal } from "@/components/Reveal";
 import { Carousel } from "@/components/Carousel";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
+const API = API_BASE;
 
 type Product = { code: string; name: string; description: string };
 
@@ -351,6 +352,8 @@ export default async function HomePage() {
             itemsPerSlideDesktop={5}
             itemsPerSlideTablet={3}
             ariaLabel="Logo klien korporat"
+            showControls={false}
+            continuous
             items={clients.map((c) => (
               <a
                 key={c.id}
@@ -404,6 +407,8 @@ export default async function HomePage() {
             itemsPerSlideDesktop={3}
             itemsPerSlideTablet={2}
             ariaLabel="Testimoni customer"
+            showControls={false}
+            continuous
             items={testimonials.map((t) => (
               <div
                 key={t.id}

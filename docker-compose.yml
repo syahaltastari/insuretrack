@@ -1,330 +1,136 @@
 # =============================================================================
-# InsureTrack — Docker Compose (hardened, Dokploy-ready)
+# InsureTrack — Docker Compose
 #
-# Enam servis dalam satu stack:
-#   db         — Postgres 15 (strictly internal, no public port)
-#   db-backup  — Daily local backup, retention 7d/4w/6mo/1y
-#   backend    — Rust + Axum (×2 untuk HA + zero-downtime deploy)
-#   portal     — Next.js customer surface (×2)
-#   admin      — Next.js backoffice (×2)
+# 4 service (db, backend, portal, admin), direct port mapping, no proxy lokal.
 #
-# Single source of truth: setiap perubahan pada service di sini
-# berlaku untuk local dev (`docker compose up`) dan Dokploy (mode Compose).
+# Quick start (lokal):
+#   cp .env.example .env
+#   docker compose up -d --build
+#   → http://localhost:3000  (portal customer)
+#   → http://localhost:3001  (admin backoffice)
+#   → http://localhost:8080/api (backend)
+#   → postgresql://localhost:5433 (psql dari host)
 #
-# Konvensi:
-#   - Service name = hostname internal Docker network (mis. `db`, `backend`).
-#     Antar service pakai nama itu, BUKAN `localhost` atau IP.
-#   - Traefik labels di service yang butuh publik. Tidak ada `ports:` host
-#     untuk service yang di belakang Traefik — replicas=2 + host port = konflik.
-#   - Replicas dikontrol via env `REPLICAS` (default 2 untuk prod, set 1 untuk dev).
-#   - Resource limits + cap_drop + no-new-privileges + read_only (dimana aman)
-#     sesuai rekomendasi CIS Docker Benchmark.
-#   - `depends_on` pakai `condition: service_healthy` (bukan hanya `service_started`)
-#     supaya urutan startup benar — backend tidak start sebelum DB healthy.
+# Deploy ke VPS + Dokploy: lihat document/RUNBOOK_VPS_DEV.md.
+# Traefik labels di bawah aktif saat Traefik hadir (Dokploy); di lokal
+# Traefik tidak jalan, label diabaikan. Entry point `web` (HTTP 80) karena
+# Dev belum pakai SSL — saat migrasi ke HTTPS ganti `web` → `websecure`
+# dan tambah `tls.certresolver=letsencrypt` (lihat DEPLOYMENT.md §6.2).
 #
-# Deploy (Dokploy mode Compose): import file ini sebagai service di UI Dokploy,
-# set env di tab Environment, domains di tab Domains, redeploy.
-# Deploy (local): `cp .env.example .env`, edit, `docker compose up -d --build`.
+# Reset: docker compose down -v  ← HAPUS VOLUME, data hilang.
 # =============================================================================
 
-
-# ---- Reusable YAML anchors ---------------------------------------------------
-# `x-pnpm-base` dishare oleh portal & admin (NEXT_PUBLIC_API_URL di-bake ke
-# bundle saat build). Pola `<<: *pnpm-base` merge ke mapping `args:` atau
-# `environment:`.
-x-pnpm-base: &pnpm-base
-  NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.${DOMAIN}}
-
-# Backend env vars — pakai env_file `.env` di root untuk secret, dan
-# `environment:` di bawah untuk override/eksplisit. Pattern ini memisahkan
-# secret (file) dari config (compose).
-x-backend-env: &backend-env
-  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET wajib di-set (lihat .env.example)}
-  PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET wajib di-set}
-  APP_BASE_URL: ${APP_BASE_URL:-https://portal.${DOMAIN}}
-  MEDIA_BASE_URL: ${MEDIA_BASE_URL:-https://api.${DOMAIN}}
-  UPLOAD_DIR: /var/uploads
-  RUST_LOG: ${RUST_LOG:-info,insuretrack_backend=debug}
-
-# Logging rotation: 10MB per file, max 3 file = 30MB per service.
-# Tanpa ini, logs di `/var/lib/docker/containers/<id>/` tumbuh unbounded
-# dan akhirnya penuhi disk. json-file driver standard, no extra dep.
-x-logging: &logging
-  logging:
-    driver: json-file
-    options:
-      max-size: "10m"
-      max-file: "3"
-
-
-# ---- Services ---------------------------------------------------------------
 services:
-  # ---- Database (Postgres 15) -----------------------------------------------
-  # Strictly internal. Port host di-bind ke 127.0.0.1 SAJA agar:
-  #   - Local dev: `psql localhost:5433` masih jalan
-  #   - Production: tidak ada jalan masuk publik ke Postgres
-  #   - Traefik tidak route ke db (no labels)
+  # ---- Postgres ------------------------------------------------------------
   db:
     image: postgres:15-alpine
     container_name: insuretrack_db
-    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER wajib di-set}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib di-set}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB wajib di-set}
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # 127.0.0.1: psql dari host saat lokal. Di Dokploy binding ini tetap
+    # aman (hanya listen di localhost VPS), backend akses via service name.
     ports:
-      # Hanya untuk local dev. Hapus baris ini di production kalau tidak butuh
-      # akses DB langsung dari host. Dokploy mode: abaikan (Dokploy override).
-      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
-    healthcheck:
-      # pg_isready returns 0 kalau siap accept connection. 5s interval karena
-      # startup Postgres butuh waktu apply migrations dari backend pertama kali.
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    # Grace period saat stop: Postgres harus flush WAL & close conns gracefully.
-    # Tanpa ini, SIGKILL setelah 10s (default) bisa korup pgdata.
-    stop_grace_period: 60s
-    # PID 1 = postgres (handle SIGTERM), tapi init: true kasih tiny init
-    # process untuk reap zombie children (jika ada parallel workers).
-    init: true
-    # Hardening:
-    #   security_opt: no-new-privileges = container tidak bisa escalate ke root
-    #   cap_drop ALL + cap_add hanya yang Postgres butuhkan (file ownership, setuid)
-    #   read_only: filesystem immutable, postgres pakai tmpfs untuk runtime dirs
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-      - DAC_OVERRIDE
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /var/run/postgresql
-    <<: *logging
-    networks:
-      - insuretrack
-
-  # ---- DB Backup (prodrigestivill/postgres-backup-local) -------------------
-  # Daily backup ke host dir `./backups/`. Retention: 7 harian / 4 mingguan /
-  # 6 bulanan / 1 tahunan. Format `custom` = binary pg_dump yang bisa di-restore
-  # dengan pg_restore (cepat, partial restore bisa).
-  #
-  # Restore: `scripts/restore-db.sh backups/<file>` (lihat document/DEPLOYMENT.md §8).
-  db-backup:
-    image: prodrigestivill/postgres-backup-local:15-alpine
-    container_name: insuretrack_db_backup
+      - "127.0.0.1:5433:5432"
     restart: unless-stopped
-    environment:
-      POSTGRES_HOST: db
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      SCHEDULE: ${BACKUP_CRON_SCHEDULE:-@daily}
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
-      BACKUP_KEEP_WEEKS: ${BACKUP_KEEP_WEEKS:-4}
-      BACKUP_KEEP_MONTHS: ${BACKUP_KEEP_MONTHS:-6}
-      BACKUP_KEEP_YEARS: ${BACKUP_KEEP_YEARS:-1}
-      BACKUP_FORMAT: custom
-      BACKUP_COMPRESS: "true"
-    volumes:
-      - ./backups:/backups
-    depends_on:
-      db:
-        condition: service_healthy
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    <<: *logging
-    networks:
-      - insuretrack
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ---- Backend (Rust + Axum) -----------------------------------------------
-  # 2 instance untuk HA. Traefik load-balance ke keduanya dan auto-shift ke
-  # instance yang healthy kalau salah satu mati. Saat deploy, image baru di-build,
-  # Traefik hentikan traffic ke instance lama, start instance baru, restore traffic.
-  # Dengan healthcheck probe setiap 10s, transition <15 detik.
   backend:
-    build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
-    # container_name dihapus supaya replicas=2 tidak konflik
-    restart: unless-stopped
-    deploy:
-      replicas: ${REPLICAS:-2}
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          # Reservasi = minimal resource yang dijadwalkan. Limit = max yang
-          # boleh dipakai. Saat OOM, container di-restart (bukan kill VM).
-          cpus: '0.25'
-          memory: 256M
+    build: ./apps/backend
+    container_name: insuretrack_backend
     env_file: .env
+    # `db` = service name Postgres di Docker network (otomatis resolve).
+    # `localhost` di dalam container = container itu sendiri, BUKAN host.
     environment:
-      <<: *backend-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       - backend_uploads:/var/uploads
+    ports:
+      - "127.0.0.1:8080:8080"
     depends_on:
-      db:
-        condition: service_healthy
+      db: { condition: service_healthy }
+    restart: unless-stopped
     healthcheck:
-      # Pakai wget (sudah installed di apps/backend/Dockerfile runtime stage).
-      # Compose-level healthcheck override Dockerfile-level (compose menang).
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    # USER app (uid 1000) — di-buat di Dockerfile runtime stage.
-    # Match dengan `user:` di compose agar volume mount ownership benar.
-    user: "1000:1000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`api.${DOMAIN}`)"
-      - "traefik.http.routers.backend.entrypoints=websecure"
-      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend.rule=Host(`api.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.backend.entrypoints=web"
       - "traefik.http.services.backend.loadbalancer.server.port=8080"
-      # Traefik health probe — kalau /health fail, instance di-skip dari LB pool.
-      - "traefik.http.services.backend.loadbalancer.healthcheck.path=/health"
-      - "traefik.http.services.backend.loadbalancer.healthcheck.interval=10s"
-      - "traefik.http.services.backend.loadbalancer.healthcheck.timeout=5s"
-    <<: *logging
-    networks:
-      - insuretrack
 
-  # ---- Portal (Next.js customer surface) -----------------------------------
-  # NEXT_PUBLIC_API_URL di-bake ke client bundle saat build. Browser fetch
-  # ke URL ini. Traefik label route `portal.${DOMAIN}` ke container.
+  # ---- Portal (Next.js customer surface) ----------------------------------
   portal:
     build:
       context: .
       dockerfile: apps/portal/Dockerfile
       args:
-        <<: *pnpm-base
-    restart: unless-stopped
-    deploy:
-      replicas: ${REPLICAS:-2}
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 768M
-        reservations:
-          cpus: '0.1'
-          memory: 256M
+        # NEXT_PUBLIC_* di-bake ke client bundle saat build, bukan runtime.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     environment:
-      # Runtime override — kalau env berubah setelah image di-build
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.${DOMAIN}}
+      # BACKEND_URL: untuk Next.js SSR/RSC fetch dari dalam container.
+      # Harus pakai service name `backend` (Docker internal DNS), BUKAN
+      # `localhost` (= container itu sendiri) atau public URL (tidak
+      # resolve dari dalam network). Wajib di-set di Dokploy Secrets juga.
+      BACKEND_URL: http://backend:8080
+    container_name: insuretrack_portal
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
-      - backend
+      backend: { condition: service_healthy }
+    restart: unless-stopped
     healthcheck:
-      # node -e (sudah di node:alpine) — tidak perlu install wget di image.
-      # Threshold < 400: 2xx & 3xx pass, 4xx (404 dsb) & 5xx fail.
-      # Lebih ketat dari Dockerfile default < 500 yang pass pada 404.
       test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    # USER nextjs (uid 1001) — di-buat di apps/portal/Dockerfile runner stage
-    user: "1001:1001"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portal.rule=Host(`portal.${DOMAIN}`)"
-      - "traefik.http.routers.portal.entrypoints=websecure"
-      - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portal.rule=Host(`portal.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.portal.entrypoints=web"
       - "traefik.http.services.portal.loadbalancer.server.port=3000"
-    <<: *logging
-    networks:
-      - insuretrack
 
-  # ---- Admin (Next.js backoffice) ------------------------------------------
-  # Pola sama dengan portal — port internal 3001, host `admin.${DOMAIN}`.
+  # ---- Admin (Next.js backoffice) -----------------------------------------
   admin:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
       args:
-        <<: *pnpm-base
-    restart: unless-stopped
-    deploy:
-      replicas: ${REPLICAS:-2}
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 768M
-        reservations:
-          cpus: '0.1'
-          memory: 256M
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.${DOMAIN}}
+      # BACKEND_URL: untuk Next.js SSR/RSC fetch dari dalam container.
+      # Wajib di-set di Dokploy Secrets juga (lihat RUNBOOK_VPS_DEV.md).
+      BACKEND_URL: http://backend:8080
+    container_name: insuretrack_admin
+    ports:
+      - "127.0.0.1:3001:3001"
     depends_on:
-      - backend
+      backend: { condition: service_healthy }
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3001/', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
-    init: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    user: "1002:1002"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.admin.rule=Host(`admin.${DOMAIN}`)"
-      - "traefik.http.routers.admin.entrypoints=websecure"
-      - "traefik.http.routers.admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.admin.rule=Host(`admin.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.admin.entrypoints=web"
       - "traefik.http.services.admin.loadbalancer.server.port=3001"
-    <<: *logging
-    networks:
-      - insuretrack
 
-
-# ---- Named volumes ----------------------------------------------------------
-# `pgdata` — Postgres data dir. Persistent across container recreate.
-# `backend_uploads` — file upload (KTP, claim docs, e-policy PDF). Backend
-# tulis ke `/var/uploads`, di-mount sebagai volume supaya data tidak hilang
-# saat container recreate.
-#
-# Untuk offsite backup, lihat BACKUP_OFFSITE_TARGET di .env.example (Phase 2).
 volumes:
   pgdata:
   backend_uploads:
-
-
-# ---- Networks ---------------------------------------------------------------
-# Satu network `insuretrack` (bridge) untuk semua service. Default DNS
-# resolution di sini yang bikin `db`, `backend`, `portal`, `admin` saling kenal
-# sebagai hostname. Tidak perlu IP manual atau link.
-#
-# Pakai bridge (bukan host) karena:
-#   - Traefik bisa auto-detect container ke network ini via Docker socket
-#   - Port mapping via Traefik labels, bukan host network
-#   - Isolasi dari host network stack
-networks:
-  insuretrack:
-    driver: bridge

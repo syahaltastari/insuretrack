@@ -56,11 +56,28 @@ declare -A STATE_COUNTS=([running]=0 [exited]=0 [restarting]=0 [other]=0)
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
 
-    SERVICE=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Service','?'))" 2>/dev/null || echo "?")
-    STATE=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('State','?'))" 2>/dev/null || echo "?")
-    HEALTH=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Health','none'))" 2>/dev/null || echo "none")
-    PORTS=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Publishers',[{}])[0].get('PublishedPort','') if d.get('Publishers') else '-')" 2>/dev/null || echo "-")
-    STATUS=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Status',''))" 2>/dev/null || echo "")
+    # Parser portable: coba python3 dulu (VPS biasanya ada), fallback
+    # ke grep/sed (penting untuk Windows/Git Bash di mana python3 =
+    # Microsoft Store stub).
+    if command -v python3 >/dev/null 2>&1 && python3 -c "import json" 2>/dev/null; then
+        SERVICE=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Service','?'))" 2>/dev/null || echo "?")
+        STATE=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('State','?'))" 2>/dev/null || echo "?")
+        HEALTH=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Health','none'))" 2>/dev/null || echo "none")
+        PORTS=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Publishers',[{}])[0].get('PublishedPort','') if d.get('Publishers') else '-')" 2>/dev/null || echo "-")
+        STATUS=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('Status',''))" 2>/dev/null || echo "")
+    else
+        # Fallback: grep + sed extract field values dari single-line JSON.
+        # Field di-quote dengan double-quote, value di antara :" dan ".
+        SERVICE=$(echo "$line" | sed -n 's/.*"Service":"\([^"]*\)".*/\1/p')
+        STATE=$(echo "$line" | sed -n 's/.*"State":"\([^"]*\)".*/\1/p')
+        HEALTH=$(echo "$line" | sed -n 's/.*"Health":"\([^"]*\)".*/\1/p')
+        PORTS=$(echo "$line" | sed -n 's/.*"PublishedPort":\([0-9]*\).*/\1/p')
+        STATUS=$(echo "$line" | sed -n 's/.*"Status":"\([^"]*\)".*/\1/p')
+        SERVICE="${SERVICE:-?}"
+        STATE="${STATE:-?}"
+        HEALTH="${HEALTH:-none}"
+        PORTS="${PORTS:--}"
+    fi
 
     # Simbol untuk state & health
     case "$STATE" in

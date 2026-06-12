@@ -117,12 +117,16 @@ deploy_service() {
 
         docker compose up -d --no-deps --scale "$svc=$TARGET" "$svc"
 
-        # Tunggu instance baru healthy (max 90 detik)
+        # Tunggu instance baru healthy (max 90 detik).
+        # Portable: pakai python3 kalau available, fallback ke grep+sed
+        # (penting untuk Windows/Git Bash yang python3 = Microsoft Store stub).
         echo -e "${CYAN}▶ Tunggu instance baru healthy...${NC}"
         local waited=0
         local target_healthy=$TARGET
         while [[ $waited -lt 90 ]]; do
-            local healthy=$(docker compose ps "$svc" --format json 2>/dev/null | python3 -c "
+            local healthy
+            if command -v python3 >/dev/null 2>&1 && python3 -c "import json" 2>/dev/null; then
+                healthy=$(docker compose ps "$svc" --format json 2>/dev/null | python3 -c "
 import json, sys
 count = 0
 for line in sys.stdin:
@@ -133,6 +137,10 @@ for line in sys.stdin:
     except: pass
 print(count)
 " 2>/dev/null || echo "0")
+            else
+                # Fallback: hitung JSON lines dengan Health=healthy
+                healthy=$(docker compose ps "$svc" --format json 2>/dev/null | grep -c '"Health":"healthy"' || echo "0")
+            fi
             if [[ "$healthy" -ge "$target_healthy" ]]; then
                 echo -e "${GREEN}✓ Semua $target_healthy instance healthy${NC}"
                 break
@@ -154,11 +162,14 @@ print(count)
         docker compose up -d --no-deps --scale "$svc=$CURRENT_COUNT" "$svc"
     fi
 
-    # 5. Tunggu service healthy (post-deploy)
+    # 5. Tunggu service healthy (post-deploy). Portable parser (lihat
+    # komentar di blok rolling update di atas untuk rationale).
     echo -e "\n${CYAN}▶ Tunggu $svc healthy (max 60 detik)...${NC}"
     local waited=0
     while [[ $waited -lt 60 ]]; do
-        local unhealthy=$(docker compose ps "$svc" --format json 2>/dev/null | python3 -c "
+        local unhealthy all_healthy
+        if command -v python3 >/dev/null 2>&1 && python3 -c "import json" 2>/dev/null; then
+            unhealthy=$(docker compose ps "$svc" --format json 2>/dev/null | python3 -c "
 import json, sys
 count = 0
 for line in sys.stdin:
@@ -170,8 +181,8 @@ for line in sys.stdin:
     except: pass
 print(count)
 " 2>/dev/null || echo "0")
-        if [[ "$unhealthy" -eq 0 ]]; then
-            local all_healthy=$(docker compose ps "$svc" --format json 2>/dev/null | python3 -c "
+            if [[ "$unhealthy" -eq 0 ]]; then
+                all_healthy=$(docker compose ps "$svc" --format json 2>/dev/null | python3 -c "
 import json, sys
 total = 0
 healthy = 0
@@ -184,6 +195,19 @@ for line in sys.stdin:
     except: pass
 print(f'{healthy}/{total}')
 " 2>/dev/null || echo "?")
+            else
+                all_healthy="?"
+            fi
+        else
+            # Fallback grep+sed untuk Windows / Git Bash tanpa python3
+            local total_count
+            total_count=$(docker compose ps "$svc" --format json 2>/dev/null | grep -c '"Service":' || echo "0")
+            local healthy_count
+            healthy_count=$(docker compose ps "$svc" --format json 2>/dev/null | grep -c '"Health":"healthy"' || echo "0")
+            unhealthy=$((total_count - healthy_count))
+            all_healthy="${healthy_count}/${total_count}"
+        fi
+        if [[ "$unhealthy" -eq 0 ]]; then
             echo -e "${GREEN}✓ $svc deployed: $all_healthy healthy${NC}"
             return 0
         fi
