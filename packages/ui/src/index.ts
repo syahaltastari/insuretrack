@@ -59,4 +59,10 @@ export {
   AlertDialogCancel,
 } from "./components/ui/alert-dialog";
 export { Confirm } from "./components/ui/confirm";
+export {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "./components/ui/tabs";
 export { Toaster } from "./components/ui/sonner";

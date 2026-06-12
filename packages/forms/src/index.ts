@@ -10,4 +10,5 @@ export {
   dateNotFutureSchema,
   imageFileSchema,
   optionalString,
+  beneficiaryNameSchema,
 } from "./schemas/common";

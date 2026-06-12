@@ -75,3 +75,13 @@ export const optionalString = (max: number) =>
     .max(max)
     .transform((s) => (s === "" ? undefined : s))
     .optional();
+
+/** Nama ahli waris / penerima manfaat. Wajib untuk produk LIFE
+ *  (enforced di backend), opsional untuk PA/HEALTH. Di client, validasi
+ *  min/max length saja — backend yang enforce product-specific requirement. */
+export const beneficiaryNameSchema = z
+  .string()
+  .trim()
+  .max(120, "Nama ahli waris maksimal 120 karakter")
+  .transform((s) => (s === "" ? undefined : s))
+  .optional();

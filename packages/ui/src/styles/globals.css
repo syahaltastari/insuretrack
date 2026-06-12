@@ -490,6 +490,74 @@ a:hover {
   color: var(--pure-white);
 }
 
+/* Light swatch variants — digunakan untuk hero section produk yang butuh
+   kontras tinggi (text gelap di background terang). Pattern sama dengan
+   .swatch-slushie (yang pakai warna terang + clay-black). */
+.swatch-matcha-light {
+  background: var(--matcha-300);
+  color: var(--clay-black);
+}
+.swatch-ube-light {
+  background: var(--ube-300);
+  color: var(--clay-black);
+}
+
+/* ============================================================
+   Tabs
+   ============================================================ */
+.clay-tabs-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--warm-cream);
+  border: 1px solid var(--oat-border);
+  overflow-x: auto;
+  max-width: 100%;
+}
+.clay-tabs-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--warm-charcoal);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  font-feature-settings: "ss03", "ss10", "ss11", "ss12";
+}
+.clay-tabs-trigger:hover {
+  color: var(--clay-black);
+}
+.clay-tabs-trigger:focus-visible {
+  outline: 2px solid var(--matcha-600);
+  outline-offset: 2px;
+}
+.clay-tabs-trigger[data-state="active"] {
+  background: var(--matcha-600);
+  color: var(--pure-white);
+  box-shadow: var(--shadow-clay);
+}
+.clay-tabs-trigger[data-state="active"] .clay-tabs-check {
+  color: var(--pure-white);
+}
+.clay-tabs-content {
+  margin-top: 24px;
+  outline: none;
+}
+.clay-tabs-check {
+  font-size: 0.85rem;
+  color: var(--matcha-600);
+  font-weight: 700;
+}
+
 /* ============================================================
    Inputs
    ============================================================ */
