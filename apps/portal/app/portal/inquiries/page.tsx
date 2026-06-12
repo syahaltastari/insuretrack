@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { StatusBadge } from "@insuretrack/ui";
+import { Confirm, StatusBadge } from "@insuretrack/ui";
+import { toast } from "sonner";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE, getCustomerToken } from "@insuretrack/api-client";
 
@@ -164,6 +165,7 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
   const [replyError, setReplyError] = useState<string | null>(null);
   const [closeSubmitting, setCloseSubmitting] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeOpen, setCloseOpen] = useState(false);
 
   const sendReply = async (values: ReplyValues) => {
     const token = getCustomerToken();
@@ -196,9 +198,6 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
   };
 
   const handleClose = async () => {
-    if (!confirm("Tutup tiket ini? Kamu tidak bisa menambah balasan lagi setelah ditutup.")) {
-      return;
-    }
     const token = getCustomerToken();
     if (!token) return;
     setCloseSubmitting(true);
@@ -221,6 +220,8 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
         throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
       }
       replyMethods.reset({ message: "" });
+      setCloseOpen(false);
+      toast.success("Tiket berhasil ditutup");
       onUpdated();
     } catch (e) {
       setCloseError(e instanceof Error ? e.message : "Gagal menutup tiket");
@@ -319,7 +320,7 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
             <button
               type="button"
               className="clay-button ghost size-small"
-              onClick={handleClose}
+              onClick={() => setCloseOpen(true)}
               disabled={anySubmitting}
               title="Tutup tiket — tidak bisa menambah balasan lagi"
             >
@@ -328,6 +329,16 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
           </div>
         </Form>
       )}
+
+      <Confirm
+        open={closeOpen}
+        onOpenChange={(o) => !closeSubmitting && setCloseOpen(o)}
+        title="Tutup tiket ini?"
+        description="Kamu tidak bisa menambah balasan lagi setelah tiket ditutup."
+        confirmLabel={closeSubmitting ? "Menutup..." : "Tutup Tiket"}
+        cancelLabel="Batal"
+        onConfirm={handleClose}
+      />
     </div>
   );
 }
