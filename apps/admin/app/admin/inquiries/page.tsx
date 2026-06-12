@@ -5,11 +5,16 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
+import { Confirm, SkeletonCard, StatusBadge } from "@insuretrack/ui";
+import { toast } from "sonner";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE, getAdminToken } from "@insuretrack/api-client";
+
+type InquiryStatus = "OPEN" | "ANSWERED" | "CLOSED";
+const STATUSES: InquiryStatus[] = ["OPEN", "ANSWERED", "CLOSED"];
 
 // ---- Types ---------------------------------------------------------------
 
@@ -158,6 +163,7 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
   const [replyError, setReplyError] = useState<string | null>(null);
   const [closeSubmitting, setCloseSubmitting] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [closeOpen, setCloseOpen] = useState(false);
 
   // Fetch detail saat expanded pertama kali
   useEffect(() => {
@@ -217,9 +223,6 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
   };
 
   const handleClose = async () => {
-    if (!confirm(`Tutup tiket ${inquiry.inquiry_no}? Customer tidak bisa menambah balasan lagi.`)) {
-      return;
-    }
     const token = getAdminToken();
     if (!token) return;
     setCloseSubmitting(true);
@@ -242,6 +245,8 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
         throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
       }
       methods.reset({ message: "" });
+      setCloseOpen(false);
+      toast.success(`Tiket ${inquiry.inquiry_no} berhasil ditutup`);
       onUpdated();
     } catch (e) {
       setCloseError(e instanceof Error ? e.message : "Gagal menutup tiket");
@@ -399,7 +404,7 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
                     <button
                       type="button"
                       className="clay-button ghost size-small"
-                      onClick={handleClose}
+                      onClick={() => setCloseOpen(true)}
                       disabled={anySubmitting}
                       title="Tutup tiket — customer tidak bisa menambah balasan lagi"
                     >
@@ -408,6 +413,16 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
                   </div>
                 </Form>
               )}
+
+              <Confirm
+                open={closeOpen}
+                onOpenChange={(o) => !closeSubmitting && setCloseOpen(o)}
+                title={`Tutup tiket ${inquiry.inquiry_no}?`}
+                description="Customer tidak bisa menambah balasan lagi setelah tiket ditutup."
+                confirmLabel={closeSubmitting ? "Menutup..." : "Tutup Tiket"}
+                cancelLabel="Batal"
+                onConfirm={handleClose}
+              />
             </>
           )}
         </>
@@ -419,18 +434,63 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
 // ---- Main page -----------------------------------------------------------
 
 export default function AdminInquiriesPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<AdminInquiry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Filter state — URL-driven supaya shareable. `q` di-debounce 300ms
+  // supaya tidak spam fetch tiap keystroke. `status` langsung dari URL
+  // (instant, 4 opsi tetap).
+  const qFromUrl = searchParams.get("q") ?? "";
+  const statusFromUrl = searchParams.get("status") ?? "";
+  const [qInput, setQInput] = useState(qFromUrl);
+
+  /** Update URL searchParams. Pakai replace (bukan push) supaya history
+   *  tidak penuh dengan perubahan filter. */
+  const setFilterParams = (next: { q?: string; status?: string }) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next.q !== undefined) {
+      if (next.q) params.set("q", next.q);
+      else params.delete("q");
+    }
+    if (next.status !== undefined) {
+      if (next.status) params.set("status", next.status);
+      else params.delete("status");
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  };
+
+  // Debounce search input → URL. 300ms adalah sweet-spot: cukup
+  // responsive tapi tidak spam fetch pada rapid typing.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (qInput !== qFromUrl) setFilterParams({ q: qInput });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qInput]);
+
+  // Sync local input kalau URL berubah dari luar (back/forward, link)
+  useEffect(() => {
+    setQInput(qFromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qFromUrl]);
+
   useEffect(() => {
     const token = getAdminToken();
     if (!token) return;
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/admin/inquiries?page=1&page_size=50`, {
+    const qs = new URLSearchParams({ page: "1", page_size: "50" });
+    if (qFromUrl) qs.set("q", qFromUrl);
+    if (statusFromUrl) qs.set("status", statusFromUrl);
+    fetch(`${API_BASE}/admin/inquiries?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
@@ -440,7 +500,9 @@ export default function AdminInquiriesPage() {
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setLoading(false));
-  }, [refreshKey]);
+  }, [refreshKey, qFromUrl, statusFromUrl]);
+
+  const hasFilter = Boolean(qFromUrl || statusFromUrl);
 
   return (
     <>
@@ -452,6 +514,63 @@ export default function AdminInquiriesPage() {
         Balas thread pertanyaan customer. Setiap balasan akan dikirim lewat email ke
         customer, dan customer bisa reply sampai tiket ditutup.
       </p>
+
+      {/* Filter bar: search input + 4 status pill buttons. URL-driven
+          supaya state bisa di-share / di-bookmark. */}
+      <div
+        className="clay-card"
+        style={{
+          padding: 16,
+          marginTop: 24,
+          marginBottom: 16,
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <input
+          type="search"
+          className="clay-input"
+          placeholder="Cari inquiry / subject / nama customer…"
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
+          aria-label="Cari inquiry"
+        />
+        <div
+          role="tablist"
+          aria-label="Filter status inquiry"
+          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+        >
+          {(["", ...STATUSES] as const).map((s) => {
+            const isActive = statusFromUrl === s;
+            const label = s === "" ? "Semua" : s;
+            return (
+              <button
+                key={s || "all"}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setFilterParams({ status: s })}
+                className={`clay-button ${isActive ? "solid-ube" : "ghost"} size-small`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {hasFilter && (
+          <button
+            type="button"
+            className="clay-button ghost size-small"
+            onClick={() => {
+              setQInput("");
+              setFilterParams({ q: "", status: "" });
+            }}
+            style={{ justifySelf: "start" }}
+          >
+            Reset filter
+          </button>
+        )}
+      </div>
 
       {error && (
         <div
@@ -469,11 +588,29 @@ export default function AdminInquiriesPage() {
         </div>
       )}
 
-      {!loading && data.length === 0 && (
+      {!loading && data.length === 0 && !hasFilter && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
           <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
             Belum ada pertanyaan masuk.
           </p>
+        </div>
+      )}
+
+      {!loading && data.length === 0 && hasFilter && (
+        <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 32 }}>
+          <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0, marginBottom: 12 }}>
+            Tidak ada inquiry yang cocok dengan filter.
+          </p>
+          <button
+            type="button"
+            className="clay-button solid-ube size-small"
+            onClick={() => {
+              setQInput("");
+              setFilterParams({ q: "", status: "" });
+            }}
+          >
+            Reset filter
+          </button>
         </div>
       )}
 
