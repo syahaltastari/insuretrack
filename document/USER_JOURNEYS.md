@@ -303,6 +303,87 @@ Content-Type: multipart/form-data
 
 ---
 
+### J7b. Apply for Group Insurance (Instansi Flow, Multi-Participant)
+
+**Goal:** A representative submits a group registration for N participants at once. Supports bulk import via CSV/Excel.
+
+**Path:** `http://localhost:3000/portal/insurance/new` (after login) → pilih "Instansi" tab.
+
+**Form structure (4 tabs):**
+1. **Data Instansi** — `company_name` (wajib), `company_npwp` (opsional), `company_industry` (opsional); `rep_nik`, `rep_full_name`, `rep_email`, `rep_mobile` untuk data perwakilan.
+2. **Informasi Asuransi** — produk (LIFE/PA/HEALTH), plan (Basic/Standard/Premium), masa pertanggungan. Shared by all peserta.
+3. **Data Peserta** — tambahkan peserta via "+ Tambah Manual" atau "Import CSV/Excel". Kolom Ahli Waris wajib untuk produk Jiwa.
+4. **Konfirmasi** — review ringkasan + total premi.
+
+**Expected CSV/Excel columns (header row, case-insensitive):**
+```
+NIK, Nama Lengkap, Tempat Lahir, Tanggal Lahir (YYYY-MM-DD),
+Jenis Kelamin (MALE/FEMALE), Alamat, RT/RW (format 001/002),
+Kelurahan, Kecamatan, Kota, Provinsi, Kode Pos (5 digit),
+Email, No HP, Ahli Waris (untuk LIFE)
+```
+
+**API:**
+```
+POST /api/customer/registrations
+Content-Type: multipart/form-data
+
+data: {
+  "applicant_type": "INSTANSI",
+  "nik": "representative NIK",
+  "full_name": "representative name",
+  "email": "...",
+  "mobile_number": "...",
+  "company_name": "PT ABC",
+  "plan_code": "LIFE_STANDARD",
+  "coverage_term": 5,
+  "participants": [
+    { "nik": "...", "full_name": "...", "birth_place": "...", "birth_date": "1990-01-15",
+      "gender": "MALE", "address": "...", "rt_rw": "001/002", "village": "...",
+      "district": "...", "city": "...", "province": "...", "postal_code": "12345",
+      "beneficiary_name": "..." },
+    { ... 14 more ... }
+  ]
+}
+```
+
+**What to verify:**
+- [ ] `registrations.applicant_type = 'INSTANSI'`, `company_name` populated.
+- [ ] `SELECT COUNT(*) FROM registration_participants WHERE registration_id = $1` == jumlah peserta.
+- [ ] `invoices.premium_amount` = N × `monthly_premium × 12 × coverage_term`.
+- [ ] (Setelah payment webhook) `SELECT COUNT(*) FROM policies WHERE registration_id = $1` == N. Tiap policy punya `participant_id` berbeda.
+- [ ] Email `INVOICE_NOTIFICATION` mention "N peserta".
+- [ ] Di portal `/portal/policies`, N baris muncul dengan kolom "Peserta" berisi nik + nama.
+
+**Limit:** Maksimal 500 peserta per registrasi. Minimal 1.
+
+---
+
+### J7c. Import CSV/Excel Peserta (Bulk Upload)
+
+**Goal:** Validasi CSV/Excel import flow + error handling.
+
+**Path:** `http://localhost:3000/portal/insurance/new` → tab "Instansi" → tab "Data Peserta" → "Import CSV / Excel".
+
+**Steps:**
+1. Siapkan CSV/Excel dengan header row + 3+ baris data (sengaja buat 1 invalid).
+2. Klik tombol import → pilih file.
+3. Preview muncul dengan color coding: hijau = valid, merah = invalid + error message.
+4. Edit baris invalid langsung di preview (klik cell → input).
+5. Klik "Terapkan N baris valid" → baris masuk ke ParticipantTable.
+6. Lanjutkan submit seperti J7b.
+
+**Test it:**
+- [ ] Upload CSV dengan 5 baris valid → semua apply.
+- [ ] Upload dengan 1 baris NIK format salah → preview shows error.
+- [ ] Fix NIK di preview → row jadi valid → bisa di-apply.
+- [ ] Upload Excel (.xlsx) → parsed sama seperti CSV (ExcelJS, bukan SheetJS).
+- [ ] Upload file non-CSV/Excel (mis. .pdf) → error message: "Format file tidak didukung".
+
+**API:** Pure client-side parse. Tidak ada endpoint upload file ke backend — file di-parse di browser lalu di-submit sebagai JSON.
+
+---
+
 ### J8. Pay the Invoice (Simulated Webhook)
 
 **Goal:** Customer (or payment gateway) calls the webhook to mark invoice as paid. The system then issues the e-policy.

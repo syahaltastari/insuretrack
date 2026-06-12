@@ -1784,11 +1784,14 @@ components:
         data:
           type: string
           description: |
-            JSON string with the registration payload. See example.
+            JSON string with the registration payload. Schema: `RegistrationDataPayload`.
+            Pilih `applicant_type: "INDIVIDU"` atau `"INSTANSI"` (lihat FS-21).
         id_card:
           type: string
           format: binary
-          description: KTP image (JPG/PNG/PDF, max 5 MB).
+          description: |
+            KTP image (JPG/PNG/PDF, max 5 MB). Required untuk INDIVIDU.
+            Untuk INSTANSI, opsional (bisa ditambah per-peserta di iterasi berikut).
 
     SubmitRegistrationResponse:
       type: object
@@ -1813,6 +1816,93 @@ components:
           type: string
           enum: [ACTIVE, LAPSED, EXPIRED]
         pdf_path: { type: string, nullable: true }
+        # Untuk policy hasil Instansi flow: info peserta yg dicakup.
+        # NULL untuk Individu flow.
+        participant: { $ref: "#/components/schemas/ParticipantSummary", nullable: true }
+
+    ParticipantSummary:
+      type: object
+      description: |
+        Subset of registration_participants. Hanya di-include di
+        response GET /customer/policies untuk policy yang berasal dari
+        Instansi registration.
+      required: [id, nik, full_name, birth_date]
+      properties:
+        id: { type: string, format: uuid }
+        nik: { type: string, example: "3201234567890001" }
+        full_name: { type: string, example: "Budi Santoso" }
+        birth_date: { type: string, format: date, example: "1990-01-15" }
+
+    RegistrationDataPayload:
+      type: object
+      description: |
+        JSON shape dari `data` field di multipart SubmitRegistration.
+        Applicant_type discriminator pilih flow:
+        - INDIVIDU: 1 peserta, data peserta di root fields
+        - INSTANSI: N peserta, root fields = data representative;
+                     peserta di `participants[]`
+      required: [applicant_type, plan_code, coverage_term, email, mobile_number, full_name, nik]
+      properties:
+        applicant_type:
+          type: string
+          enum: [INDIVIDU, INSTANSI]
+          description: Discriminator flow pendaftaran.
+        # === Representative fields (root) — selalu required ===
+        nik: { type: string, description: "16 digit NIK representative (yang login)" }
+        full_name: { type: string }
+        birth_place: { type: string, description: "Required untuk INDIVIDU, boleh kosong untuk INSTANSI" }
+        birth_date: { type: string, format: date, description: "YYYY-MM-DD. Same as birth_place." }
+        gender:
+          type: string
+          enum: [MALE, FEMALE]
+        address: { type: string }
+        rt_rw: { type: string, description: "Format 001/002" }
+        village: { type: string }
+        district: { type: string }
+        city: { type: string }
+        province: { type: string }
+        postal_code: { type: string, description: "5 digit" }
+        email: { type: string, format: email }
+        mobile_number: { type: string, description: "10-15 digit, digits only" }
+        plan_code: { type: string, description: "Composite plan id, mis. LIFE_BASIC" }
+        coverage_term: { type: integer, minimum: 1, maximum: 50 }
+        beneficiary_name: { type: string, nullable: true, description: "WAJIB untuk produk LIFE (Individu flow)" }
+        # === Institution fields (INSTANSI only) ===
+        company_name: { type: string, nullable: true, description: "WAJIB untuk INSTANSI" }
+        company_npwp: { type: string, nullable: true }
+        company_industry: { type: string, nullable: true }
+        # === Participants array (INSTANSI only) ===
+        participants:
+          type: array
+          nullable: true
+          description: "Untuk INDIVIDU: kosong. Untuk INSTANSI: 1-500 rows."
+          items: { $ref: "#/components/schemas/ParticipantData" }
+
+    ParticipantData:
+      type: object
+      description: 1 peserta dalam Instansi registration.
+      required: [nik, full_name, birth_place, birth_date, gender, address, rt_rw, village, district, city, province, postal_code]
+      properties:
+        nik: { type: string, description: "16 digit" }
+        full_name: { type: string }
+        birth_place: { type: string }
+        birth_date: { type: string, format: date }
+        gender:
+          type: string
+          enum: [MALE, FEMALE]
+        address: { type: string }
+        rt_rw: { type: string }
+        village: { type: string }
+        district: { type: string }
+        city: { type: string }
+        province: { type: string }
+        postal_code: { type: string, description: "5 digit" }
+        email: { type: string, nullable: true }
+        mobile_number: { type: string, nullable: true }
+        beneficiary_name:
+          type: string
+          nullable: true
+          description: "WAJIB untuk produk LIFE, NULL untuk PA/HEALTH"
 
     InvoiceRow:
       type: object
