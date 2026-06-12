@@ -12,3 +12,9 @@ export {
   optionalString,
   beneficiaryNameSchema,
 } from "./schemas/common";
+export {
+  participantSchema,
+  institutionSchema,
+  type ParticipantValues,
+  type InstitutionValues,
+} from "./schemas/registration";

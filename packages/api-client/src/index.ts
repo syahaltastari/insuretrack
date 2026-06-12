@@ -16,3 +16,9 @@ export type {
   ProductPlan,
   TierCode,
 } from "./dto/products";
+export type {
+  ApplicantType,
+  ParticipantData,
+  RegistrationRequest,
+  RegistrationResponse,
+} from "./dto/registrations";
