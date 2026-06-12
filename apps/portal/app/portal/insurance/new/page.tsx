@@ -3,13 +3,21 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { API_BASE, ApiError, getCustomerToken } from "@insuretrack/api-client";
+import {
+  API_BASE,
+  ApiError,
+  getCustomerToken,
+  type ProductCatalog,
+  type ProductCode,
+  type ProductPlan,
+} from "@insuretrack/api-client";
 import { Reveal } from "@/components/Reveal";
+import { PlanPicker } from "@/components/PlanPicker";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import {
   emailSchema,
@@ -18,9 +26,11 @@ import {
   dateNotFutureSchema,
 } from "@insuretrack/forms";
 
-const PRODUCTS = ["LIFE", "PERSONAL_ACCIDENT", "HEALTH"] as const;
 const GENDERS = ["MALE", "FEMALE"] as const;
 
+// `plan_code` adalah composite id (mis. "LIFE_BASIC") yang dikirim ke
+// backend. Validasi shape regex di sini — backend akan lookup & reject
+// unknown codes via find_plan().
 const registerSchema = z.object({
   nik: nikSchema,
   full_name: z.string().trim().min(1, "Nama lengkap wajib diisi").max(120),
@@ -39,11 +49,13 @@ const registerSchema = z.object({
   postal_code: z.string().trim().regex(/^\d{5}$/, "Kode pos 5 digit"),
   email: emailSchema.refine((s) => s.length > 0, { message: "Email wajib diisi" }),
   mobile_number: phoneSchema,
-  product: z.enum(PRODUCTS),
-  sum_assured: z.coerce
-    .number({ invalid_type_error: "Uang pertanggungan harus angka" })
-    .positive("Harus lebih dari 0")
-    .int("Harus bilangan bulat"),
+  plan_code: z
+    .string()
+    .min(1, "Pilih plan terlebih dahulu")
+    .regex(
+      /^[A-Z_]+_(BASIC|STANDARD|PREMIUM)$/,
+      "Plan tidak valid",
+    ),
   coverage_term: z.coerce
     .number({ invalid_type_error: "Masa pertanggungan harus angka" })
     .int()
@@ -74,16 +86,48 @@ function InsuranceNewPageInner() {
     invoice_no: string;
   } | null>(null);
   const [portalStatus, setPortalStatus] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<ProductCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ProductCode>("LIFE");
 
   // Pre-select product dari query param `?product=LIFE|PERSONAL_ACCIDENT|HEALTH`
   // (link dari halaman /products/[code]). Validate agar tidak bisa di-spoof
-  // ke value di luar enum PRODUCTS.
+  // ke value di luar enum.
   const searchParams = useSearchParams();
   const queryProduct = searchParams.get("product");
-  const initialProduct: (typeof PRODUCTS)[number] =
-    queryProduct === "PERSONAL_ACCIDENT" || queryProduct === "HEALTH" || queryProduct === "LIFE"
-      ? queryProduct
-      : "LIFE";
+  useEffect(() => {
+    if (
+      queryProduct === "LIFE" ||
+      queryProduct === "PERSONAL_ACCIDENT" ||
+      queryProduct === "HEALTH"
+    ) {
+      setSelectedProduct(queryProduct);
+    }
+  }, [queryProduct]);
+
+  // Fetch product & plan catalog dari backend (single source of truth).
+  // Loading: tampilkan skeleton. Error: tampilkan pesan + retry-able.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/public/products`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const json = (await r.json()) as { data: ProductCatalog };
+        if (!cancelled) setCatalog(json.data);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setCatalogError(
+            e instanceof Error
+              ? `Gagal memuat katalog plan: ${e.message}`
+              : "Gagal memuat katalog plan.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const methods = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema) as never,
@@ -102,12 +146,39 @@ function InsuranceNewPageInner() {
       postal_code: "",
       email: "",
       mobile_number: "",
-      product: initialProduct,
-      sum_assured: 100000000,
+      plan_code: "",
       coverage_term: 10,
     },
     mode: "onBlur",
   });
+
+  // Plan untuk produk yang sedang dipilih (filtered dari catalog).
+  // useMemo agar tidak re-filter setiap render.
+  const visiblePlans: ProductPlan[] = useMemo(() => {
+    if (!catalog) return [];
+    return catalog.plans
+      .filter((p) => p.product_code === selectedProduct)
+      .sort((a, b) => {
+        const order = { BASIC: 0, STANDARD: 1, PREMIUM: 2 };
+        return order[a.tier] - order[b.tier];
+      });
+  }, [catalog, selectedProduct]);
+
+  // Set plan_code default ke plan BASIC (atau plan pertama) dari produk
+  // yang dipilih. Trigger setiap kali catalog selesai load ATAU user
+  // ganti produk. Tidak override kalau user sudah memilih plan lain
+  // yang masih valid untuk produk saat ini.
+  useEffect(() => {
+    if (!catalog || visiblePlans.length === 0) return;
+    const current = methods.getValues("plan_code");
+    const stillValid = visiblePlans.some((p) => p.code === current);
+    if (!stillValid) {
+      methods.setValue("plan_code", visiblePlans[0].code, {
+        shouldValidate: false,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog, selectedProduct]);
 
   // Auth guard: redirect to login kalau belum authenticated. Customer
   // insurance application requires customer JWT (backend enforces via
@@ -217,8 +288,9 @@ function InsuranceNewPageInner() {
           postal_code: values.postal_code.trim(),
           email: values.email.trim(),
           mobile_number: values.mobile_number,
-          product: values.product,
-          sum_assured: Number(values.sum_assured),
+          // plan_code adalah composite id (mis. "LIFE_BASIC") — backend
+          // lookup via find_plan() untuk derive product & sum_assured.
+          plan_code: values.plan_code,
           coverage_term: Number(values.coverage_term),
         }),
       );
@@ -482,32 +554,84 @@ function InsuranceNewPageInner() {
 
             <Reveal delay={180}>
               <Section title="Informasi Asuransi">
-                <Grid>
-                  <FormField label="Produk" name="product" required>
-                    <select
-                      id="product"
-                      className="clay-select"
-                      {...methods.register("product")}
+                {/* Product selector — segmented pill row, lebih visual
+                    dari <select> untuk 3 opsi yang setara. Pilih produk
+                    → filter plan cards di bawah. */}
+                <div
+                  role="tablist"
+                  aria-label="Pilih produk asuransi"
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    marginBottom: 24,
+                  }}
+                >
+                  {(catalog?.products ?? [
+                    { code: "LIFE" as ProductCode, name: "Life Insurance", description: "" },
+                    { code: "PERSONAL_ACCIDENT" as ProductCode, name: "Personal Accident Insurance", description: "" },
+                    { code: "HEALTH" as ProductCode, name: "Health Insurance", description: "" },
+                  ]).map((p) => {
+                    const isActive = p.code === selectedProduct;
+                    return (
+                      <button
+                        key={p.code}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        onClick={() => setSelectedProduct(p.code)}
+                        className={`clay-button ${isActive ? "solid-ube" : "ghost"} size-small`}
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Plan picker — 3 plan cards (Basic/Standard/Premium)
+                    untuk produk yang dipilih. UP & premi tampil otomatis
+                    dari plan. UP & premi tidak user-input lagi. */}
+                <FormField label="Plan" name="plan_code" required>
+                  {catalogError ? (
+                    <div
+                      className="clay-card"
+                      style={{
+                        padding: 16,
+                        borderColor: "var(--pomegranate-400)",
+                        background: "#fff5f5",
+                        color: "var(--pomegranate-400)",
+                      }}
+                      role="alert"
                     >
-                      <option value="LIFE">Life Insurance</option>
-                      <option value="PERSONAL_ACCIDENT">Personal Accident</option>
-                      <option value="HEALTH">Health Insurance</option>
-                    </select>
-                  </FormField>
-                  <FormField
-                    label="Uang Pertanggungan (Rp)"
-                    name="sum_assured"
-                    required
-                    hint="Minimal Rp 1"
-                  >
-                    <input
-                      id="sum_assured"
-                      className="clay-input"
-                      type="number"
-                      min={1}
-                      {...methods.register("sum_assured")}
+                      {catalogError}
+                    </div>
+                  ) : !catalog ? (
+                    <div
+                      className="clay-card"
+                      style={{
+                        padding: 16,
+                        color: "var(--warm-silver)",
+                        textAlign: "center",
+                      }}
+                    >
+                      Memuat plan…
+                    </div>
+                  ) : (
+                    <PlanPicker
+                      plans={visiblePlans}
+                      name="plan_code"
+                      selectedPlanCode={methods.watch("plan_code") ?? ""}
+                      onChange={(code) =>
+                        methods.setValue("plan_code", code, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        })
+                      }
                     />
-                  </FormField>
+                  )}
+                </FormField>
+
+                <div style={{ marginTop: 16 }}>
                   <FormField
                     label="Masa Pertanggungan (tahun)"
                     name="coverage_term"
@@ -523,7 +647,7 @@ function InsuranceNewPageInner() {
                       {...methods.register("coverage_term")}
                     />
                   </FormField>
-                </Grid>
+                </div>
               </Section>
             </Reveal>
 

@@ -513,7 +513,7 @@ export default function PortalInquiriesPage() {
             onClick={() => setSelectedId(null)}
             style={{ marginBottom: 12 }}
           >
-            ← Kembali ke daftar
+            ← Kembali ke daftar tiket
           </button>
           {detailLoading && <p>Memuat thread...</p>}
           {detailError && (

@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::{
     auth::{hash_password, Role, TokenService},
     domain::identifier::{next_id, EntityType},
-    dto::product_catalog,
+    dto::{find_plan, product_catalog, product_name_from_code, product_plan_catalog, ProductPlan},
     error::{AppError, AppResult},
     services::{
         audit::{write as audit_write, AuditEntry},
@@ -51,7 +51,14 @@ pub fn router() -> Router<AppState> {
 // ---- GET /products ----
 
 async fn list_products() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "data": product_catalog() }))
+    // Nested shape: { data: { products: [...], plans: [...] } }.
+    // Frontend fetch sekali untuk render plan picker — single source of truth.
+    Json(serde_json::json!({
+        "data": {
+            "products": product_catalog(),
+            "plans": product_plan_catalog(),
+        }
+    }))
 }
 
 
@@ -83,8 +90,10 @@ pub struct RegistrationData {
     pub postal_code: String,
     pub email: String,
     pub mobile_number: String,
-    pub product: String,
-    pub sum_assured: Decimal,
+    /// Kode plan yang dipilih customer (mis. "LIFE_BASIC"). Backend lookup
+    /// untuk derive `product` & `sum_assured` saat INSERT ke `registrations`
+    /// — schema DB tidak berubah, hanya request shape.
+    pub plan_code: String,
     pub coverage_term: i32,
 }
 
@@ -407,17 +416,14 @@ pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
             "mobile_number must be 10-15 digits, digits only".into(),
         ));
     }
-    if !matches!(
-        d.product.as_str(),
-        "LIFE" | "PERSONAL_ACCIDENT" | "HEALTH"
-    ) {
+    // Plan_code adalah source of truth untuk product + sum_assured.
+    // Lookup sekali di sini — handler `submit_insurance_application` di
+    // customer.rs reuse hasil lookup yang sama.
+    if find_plan(&d.plan_code).is_none() {
         return Err(AppError::Validation(format!(
-            "invalid product: {} (allowed: LIFE, PERSONAL_ACCIDENT, HEALTH)",
-            d.product
+            "invalid plan_code: {}",
+            d.plan_code
         )));
-    }
-    if d.sum_assured <= Decimal::ZERO {
-        return Err(AppError::Validation("sum_assured must be > 0".into()));
     }
     if d.coverage_term < 1 {
         return Err(AppError::Validation("coverage_term must be >= 1".into()));
@@ -443,29 +449,12 @@ fn is_email_valid(s: &str) -> bool {
         && !domain.ends_with('.')
 }
 
-pub fn calculate_premium(product: &str, sum_assured: Decimal, coverage_term: i32) -> Decimal {
-    // Pricing rule (placeholder): LIFE = 1.0% per tahun, PA = 0.5% per tahun,
-    // HEALTH = 1.5% per tahun dari sum_assured. Spec menyebut "configured pricing
-    // rule" — di MVP, hard-coded; production: tabel `pricing_rules` atau config.
-    let rate = match product {
-        "LIFE" => Decimal::new(10, 3),             // 0.010
-        "PERSONAL_ACCIDENT" => Decimal::new(5, 3), // 0.005
-        "HEALTH" => Decimal::new(15, 3),           // 0.015
-        _ => Decimal::new(10, 3),
-    };
+pub fn calculate_premium(plan: &ProductPlan, coverage_term: i32) -> Decimal {
+    // Pricing model: `premium = monthly_premium × 12 × coverage_term_years`.
+    // Plan adalah source of truth — UP & rate sudah ter-bundle di plan.
+    // Contoh: LIFE_BASIC (75rb/bulan) × 12 × 10 tahun = Rp 9.000.000.
     let years = Decimal::from(coverage_term);
-    (sum_assured * rate * years).round_dp(2)
-}
-
-pub fn product_name_from_code(code: &str) -> &str {
-    // pub supaya customer.rs::submit_insurance_application bisa lookup
-    // product name untuk InvoicePdfInput.
-    match code {
-        "LIFE" => "Life Insurance",
-        "PERSONAL_ACCIDENT" => "Personal Accident Insurance",
-        "HEALTH" => "Health Insurance",
-        _ => "Insurance Product",
-    }
+    (plan.monthly_premium * Decimal::from(12) * years).round_dp(2)
 }
 
 async fn customer_id_from_registration(

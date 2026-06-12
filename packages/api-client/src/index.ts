@@ -8,4 +8,11 @@ export {
   setCustomerToken,
   clearCustomerToken,
 } from "./auth";
-export { cn } from "./utils";
+export { cn, formatIdr, formatIdrShort } from "./utils";
+export type {
+  Product,
+  ProductCatalog,
+  ProductCode,
+  ProductPlan,
+  TierCode,
+} from "./dto/products";

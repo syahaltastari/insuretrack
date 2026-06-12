@@ -33,12 +33,12 @@ use crate::{
     auth::{password::hash_password, password::verify_password, Role, RequireCustomer},
     domain::{claim::can_transition as claim_can_transition, identifier::{next_id, EntityType}},
     dto::{
-        ActivateRequest, LoginRequest, LoginResponse, PasswordResetConsumeRequest,
-        PasswordResetRequest,
+        find_plan, product_name_from_code, ActivateRequest, LoginRequest, LoginResponse,
+        PasswordResetConsumeRequest, PasswordResetRequest,
     },
     error::{AppError, AppResult},
     repo::{Page, PageQuery},
-    routes::public::{calculate_premium, product_name_from_code, validate_registration, RegistrationData},
+    routes::public::{calculate_premium, validate_registration, RegistrationData},
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
@@ -1727,6 +1727,10 @@ async fn submit_insurance_application(
     let data: RegistrationData = serde_json::from_str(&data_json)
         .map_err(|e| AppError::Validation(format!("invalid data JSON: {e}")))?;
     validate_registration(&data)?;
+    // Plan lookup — `validate_registration` sudah pasti return Ok untuk
+    // plan_code valid, jadi `expect` di sini aman. `ProductPlan` adalah
+    // source of truth untuk product, sum_assured, dan pricing.
+    let plan = find_plan(&data.plan_code).expect("plan_code validated above");
 
     let mut tx = state.pool.begin().await?;
 
@@ -1764,7 +1768,7 @@ async fn submit_insurance_application(
     .await?;
 
     let registration_no = next_id(&mut tx, EntityType::Registration).await?;
-    let premium_amount = calculate_premium(&data.product, data.sum_assured, data.coverage_term);
+    let premium_amount = calculate_premium(plan, data.coverage_term);
     let due_date = (Utc::now() + chrono::Duration::days(7)).date_naive();
 
     let reg_id: (Uuid,) = sqlx::query_as(
@@ -1777,8 +1781,8 @@ async fn submit_insurance_application(
     )
     .bind(&registration_no)
     .bind(customer_id)
-    .bind(&data.product)
-    .bind(data.sum_assured)
+    .bind(plan.product_code)
+    .bind(plan.sum_assured)
     .bind(data.coverage_term)
     .fetch_one(&mut *tx)
     .await?;
@@ -1805,7 +1809,7 @@ async fn submit_insurance_application(
     // Render invoice PDF + save ke storage. UPDATE pdf_path di luar tx
     // (mirror pattern payment_webhook di public.rs:292 — agar policy/invoice
     // row tetap exist kalau storage atau email gagal).
-    let product_name = product_name_from_code(&data.product);
+    let product_name = product_name_from_code(plan.product_code);
     // Susun alamat lengkap multi-baris (PDF word-wraps di 38 char/line).
     // Order: jalan, RT/RW, kelurahan-kecamatan, kota-provinsi-kodepos.
     let customer_address = format!(
@@ -1836,7 +1840,7 @@ async fn submit_insurance_application(
         customer_mobile: &data.mobile_number,
         customer_address: &customer_address,
         product_name,
-        sum_assured: data.sum_assured,
+        sum_assured: plan.sum_assured,
         premium: premium_amount,
         coverage_term_years: data.coverage_term,
         due_date,
@@ -1924,8 +1928,10 @@ async fn submit_insurance_application(
                 "registration_no": registration_no,
                 "invoice_no": invoice_no,
                 "invoice_id": invoice_id.to_string(),
-                "product": data.product,
-                "sum_assured": data.sum_assured.to_string(),
+                "plan_code": plan.code,
+                "product": plan.product_code,
+                "sum_assured": plan.sum_assured.to_string(),
+                "monthly_premium": plan.monthly_premium.to_string(),
                 "premium": premium_amount.to_string(),
                 "via": "customer_portal",
             })),

@@ -1533,3 +1533,34 @@ details > summary::marker { display: none; content: ""; }
   filter: grayscale(0%) opacity(1);
   transform: scale(1.04);
 }
+
+/* =============================================================
+   Radio card (untuk plan picker dll.)
+   Click-target kartu yang merepresentasikan satu opsi pilihan.
+   Selected state: outline matcha + clay shadow. Pakai design tokens
+   yang sudah ada — tidak menambah token baru.
+   ============================================================= */
+.clay-radio-card {
+  position: relative;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  background: var(--warm-cream);
+  border: 2px solid transparent;
+  transition: border-color 200ms ease, transform 200ms ease,
+    box-shadow 200ms ease;
+}
+.clay-radio-card:hover {
+  transform: translateY(-2px);
+}
+.clay-radio-card.selected {
+  border-color: var(--matcha-600);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04), var(--shadow-clay);
+}
+.clay-radio-card.selected:hover {
+  transform: translateY(-2px);
+}
+.clay-radio-card:focus-visible {
+  outline: 2px solid var(--blueberry-800);
+  outline-offset: 2px;
+}
