@@ -38,7 +38,9 @@ import { Icon } from "@insuretrack/ui";
  */
 export function Carousel({
   items,
-  autoMs = 5000,
+  // 9 detik default — cukup lama untuk baca testimoni/konten singkat
+  // tanpa terasa lambat. User dapat override per-call-site kalau perlu.
+  autoMs = 9000,
   itemsPerSlideDesktop = 3,
   itemsPerSlideTablet = 2,
   ariaLabel,
