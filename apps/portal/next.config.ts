@@ -23,6 +23,23 @@ const nextConfig: NextConfig = {
     "@insuretrack/forms",
     "@insuretrack/ui",
   ],
+  // Webpack alias untuk fix dep resolution issue di Windows. Beberapa
+  // paket (mis. `prop-types` via `recharts` chain) declare `react-is`
+  // sebagai dep, dan webpack пытается resolve ke
+  // `node_modules/prop-types/node_modules/react-is/...` yang tidak di-install
+  // oleh pnpm (hanya top-level `react-is` yang ada). Alias ke top-level
+  // menyelesaikan ENOENT error saat build.
+  webpack: (config) => {
+    config.resolve = config.resolve ?? {};
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      "prop-types/node_modules/react-is": path.resolve(
+        __dirname,
+        "../../node_modules/react-is",
+      ),
+    };
+    return config;
+  },
   // Default API URL untuk build lokal. Saat run di Docker, env disuntik
   // saat build via docker-compose.
   env: {

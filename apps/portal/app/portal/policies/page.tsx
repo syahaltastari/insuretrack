@@ -9,6 +9,13 @@ import { StatusBadge } from "@insuretrack/ui";
 import { API_BASE } from "@insuretrack/api-client";
 import { getCustomerToken } from "@insuretrack/api-client";
 
+type Participant = {
+  id: string;
+  nik: string;
+  full_name: string;
+  birth_date: string;
+};
+
 type Policy = {
   id: string;
   policy_no: string;
@@ -19,6 +26,8 @@ type Policy = {
   expiry_date: string;
   status: string;
   pdf_path: string | null;
+  /** Untuk policy Instansi: info peserta. NULL untuk Individu. */
+  participant: Participant | null;
 };
 
 export default function PortalPoliciesPage() {
@@ -83,6 +92,7 @@ export default function PortalPoliciesPage() {
               <tr>
                 <th>No. Polis</th>
                 <th>Produk</th>
+                <th>Peserta</th>
                 <th>UP</th>
                 <th>Premi</th>
                 <th>Efektif</th>
@@ -96,6 +106,26 @@ export default function PortalPoliciesPage() {
                 <tr key={p.id}>
                   <td className="mono">{p.policy_no}</td>
                   <td>{p.product}</td>
+                  <td>
+                    {p.participant ? (
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{p.participant.full_name}</div>
+                        <div
+                          style={{
+                            fontSize: "0.8rem",
+                            color: "var(--warm-silver)",
+                            fontFamily: "var(--font-space-mono), monospace",
+                          }}
+                        >
+                          {p.participant.nik}
+                        </div>
+                      </div>
+                    ) : (
+                      <span style={{ color: "var(--warm-silver)", fontSize: "0.85rem" }}>
+                        (diri sendiri)
+                      </span>
+                    )}
+                  </td>
                   <td>{new Intl.NumberFormat("id-ID").format(Number(p.sum_assured))}</td>
                   <td>{new Intl.NumberFormat("id-ID").format(Number(p.premium))}</td>
                   <td>{p.effective_date}</td>

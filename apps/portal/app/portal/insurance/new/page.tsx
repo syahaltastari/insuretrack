@@ -12,6 +12,7 @@ import {
   API_BASE,
   ApiError,
   getCustomerToken,
+  type ApplicantType,
   type ProductCatalog,
   type ProductCode,
   type ProductPlan,
@@ -19,6 +20,8 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@insuretrack/ui";
 import { Reveal } from "@/components/Reveal";
 import { PlanPicker } from "@/components/PlanPicker";
+import { ApplicantTypePicker } from "@/components/registration/ApplicantTypePicker";
+import { InstansiForm } from "./InstansiForm";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import {
   emailSchema,
@@ -125,6 +128,10 @@ function InsuranceNewPageInner() {
   const [selectedProduct, setSelectedProduct] = useState<ProductCode>("LIFE");
   // Tab aktif — diinisialisasi ke "personal". Controlled mode Radix Tabs.
   const [activeTab, setActiveTab] = useState<TabKey>("personal");
+  // Tipe pendaftaran — Individu (default) atau Instansi. Mengontrol
+  // form mana yang di-render di bawah. Selected by ApplicantTypePicker
+  // di top of form.
+  const [applicantType, setApplicantType] = useState<ApplicantType>("INDIVIDU");
 
   // Pre-select product dari query param `?product=LIFE|PERSONAL_ACCIDENT|HEALTH`
   // (link dari halaman /products/[code]). Validate agar tidak bisa di-spoof
@@ -472,6 +479,23 @@ function InsuranceNewPageInner() {
           </div>
         )}
 
+        {/* Tipe Pendaftaran picker — Individuals (1 peserta) atau Instansi
+            (N peserta kolektif). Selected value controls form mana yang
+            di-render di bawah. */}
+        <Reveal delay={40}>
+          <h2
+            className="card-heading"
+            style={{ marginTop: 24, marginBottom: 12, fontSize: "1.15rem" }}
+          >
+            Pilih Tipe Pendaftaran
+          </h2>
+          <ApplicantTypePicker
+            value={applicantType}
+            onChange={setApplicantType}
+          />
+        </Reveal>
+
+        {applicantType === "INDIVIDU" ? (
           <Form methods={methods} onSubmit={onSubmit} style={{ display: "grid", gap: 32 }}>
             <FormError message={formError} />
 
@@ -799,6 +823,16 @@ function InsuranceNewPageInner() {
               </button>
             </Reveal>
           </Form>
+        ) : (
+          <InstansiForm
+            catalog={catalog}
+            catalogError={catalogError}
+            selectedProduct={selectedProduct}
+            onSelectProduct={setSelectedProduct}
+            visiblePlans={visiblePlans}
+            portalStatus={portalStatus}
+          />
+        )}
       </main>
     </>
   );
