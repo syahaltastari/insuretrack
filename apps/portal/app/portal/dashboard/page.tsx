@@ -12,6 +12,7 @@ type Me = {
   customer_id: string;
   email: string;
   full_name: string;
+  portal_status: string;
   active_policy_count: number;
   total_sum_assured: string;
   open_claim_count: number;
@@ -64,6 +65,36 @@ export default function PortalDashboard() {
 
       {me && (
         <>
+          {/* Banner aktivasi: tampil kalau portal_status masih PENDING.
+              Arahkan user untuk klik link aktivasi di email sebelum
+              mengajukan form (gate di backend → AppError::EmailNotActivated). */}
+          {me.portal_status === "PENDING" && (
+            <div
+              className="clay-card feature"
+              style={{
+                marginTop: 24,
+                marginBottom: 32,
+                padding: 24,
+                background: "var(--lemon-400)",
+                borderLeft: "6px solid var(--lemon-700)",
+              }}
+              role="alert"
+            >
+              <p
+                className="uppercase-label"
+                style={{ color: "var(--lemon-800)", marginBottom: 8 }}
+              >
+                ✦ Aktivasi Email Diperlukan
+              </p>
+              <p className="body" style={{ color: "var(--clay-black)", margin: 0 }}>
+                Akun Anda belum diaktivasi. Cek kotak masuk email{" "}
+                <span className="mono">{me.email}</span> dan klik link
+                aktivasi. Aktivasi diperlukan untuk mengajukan polis, klaim,
+                dan pertanyaan baru.
+              </p>
+            </div>
+          )}
+
           {/* CTA: kalau user belum punya polis aktif, tampilkan banner
               prominent untuk apply asuransi. */}
           {me.active_policy_count === 0 && (

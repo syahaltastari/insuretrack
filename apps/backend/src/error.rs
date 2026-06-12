@@ -24,6 +24,13 @@ pub enum AppError {
     #[error("forbidden")]
     Forbidden,
 
+    /// User login OK tapi email belum diaktivasi (portal_status='PENDING').
+    /// Dipakai gate aksi yang butuh akun aktif (mis. submit aplikasi
+    /// asuransi, claim, inquiry). Frontend pakai error code ini untuk
+    /// tampilkan banner "aktivasi email".
+    #[error("email belum diaktivasi")]
+    EmailNotActivated,
+
     #[error("not found: {0}")]
     NotFound(String),
 
@@ -49,6 +56,7 @@ impl AppError {
             AppError::Validation(_) => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR"),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED"),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
+            AppError::EmailNotActivated => (StatusCode::FORBIDDEN, "EMAIL_NOT_ACTIVATED"),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
             AppError::IdempotentReplay => (StatusCode::OK, "OK"),

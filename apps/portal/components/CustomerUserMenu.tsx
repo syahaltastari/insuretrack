@@ -80,15 +80,6 @@ export function CustomerUserMenu({ profile }: { profile: CustomerProfile | null 
             <Icon name="User" size="sm" />
             <span>Profil Saya</span>
           </Link>
-          <Link
-            href="/portal/password"
-            className="user-menu-item"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-          >
-            <Icon name="KeyRound" size="sm" />
-            <span>Ganti Password</span>
-          </Link>
           <div className="user-menu-divider" />
           <button
             type="button"

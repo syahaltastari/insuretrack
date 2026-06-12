@@ -148,9 +148,11 @@ async fn login(
     if !verify_password(&req.password, stored_hash)? {
         return Err(AppError::Unauthorized);
     }
-    if customer.portal_status.as_deref() != Some("ACTIVE") {
-        return Err(AppError::Forbidden);
-    }
+    // Login diizinkan untuk PENDING dan ACTIVE — user yang baru registrasi
+    // perlu bisa login untuk lihat dashboard & profile walau belum aktivasi
+    // email. Gate "wajib aktivasi" dipasang di endpoint aksi (mis.
+    // submit_insurance_application) sehingga alur registrasi → aktivasi
+    // → apply asuransi bisa dipandu step-by-step dari portal.
 
     let token = state
         .tokens
@@ -270,6 +272,11 @@ struct MeSummary {
     customer_id: Uuid,
     email: String,
     full_name: String,
+    /// Status aktivasi portal. PENDING = akun dibuat, belum klik link
+    /// aktivasi email; ACTIVE = sudah aktivasi. Frontend pakai ini untuk
+    /// tampilkan banner "aktivasi email" sebelum user mencoba submit
+    /// form yang butuh akun aktif.
+    portal_status: String,
     /// Nomor HP customer (diperlukan oleh form edit profil).
     mobile_number: String,
     // ---- Insurance fields (NULLable — di-prefill ke form registrasi
@@ -305,6 +312,7 @@ async fn me(
         id: Uuid,
         email: String,
         full_name: String,
+        portal_status: String,
         mobile_number: String,
         nik: Option<String>,
         birth_place: Option<String>,
@@ -325,7 +333,7 @@ async fn me(
 
     let row: MeRow = sqlx::query_as(
         r#"
-        SELECT c.id, c.email, c.full_name, c.mobile_number,
+        SELECT c.id, c.email, c.full_name, c.portal_status, c.mobile_number,
                c.nik, c.birth_place, c.birth_date, c.gender,
                c.address, c.rt_rw, c.village, c.district, c.city, c.province, c.postal_code,
                (SELECT COUNT(*) FROM policies  p WHERE p.registration_id IN
@@ -350,6 +358,7 @@ async fn me(
         customer_id: row.id,
         email: row.email,
         full_name: row.full_name,
+        portal_status: row.portal_status,
         mobile_number: row.mobile_number,
         nik: row.nik,
         birth_place: row.birth_place,
@@ -1657,17 +1666,22 @@ async fn submit_insurance_application(
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
     let customer_id = claims.sub.parse::<Uuid>().map_err(|_| AppError::Unauthorized)?;
-    let customer_email = claims.sub.clone();
 
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT portal_status FROM customers WHERE id = $1",
+    // `claims.sub` adalah UUID (lihat auth::jwt::issue) — BUKAN email. Source
+    // email dari DB agar Resend menerima `to` berformat `email@example.com`.
+    // Sekaligus preload `portal_status` untuk gate aktivasi (lihat di bawah).
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT portal_status, email FROM customers WHERE id = $1",
     )
     .bind(customer_id)
     .fetch_optional(&state.pool)
     .await?;
-    let status = row.ok_or(AppError::NotFound("customer".into()))?.0;
-    if status != "ACTIVE" {
-        return Err(AppError::Forbidden);
+    let (portal_status, customer_email) =
+        row.ok_or(AppError::NotFound("customer".into()))?;
+    if portal_status != "ACTIVE" {
+        // Frontend menampilkan banner aktivasi berdasarkan portal_status di
+        // /me; error ini terjadi kalau user PENDING nyasar submit form.
+        return Err(AppError::EmailNotActivated);
     }
 
     let mut data_field: Option<String> = None;

@@ -335,60 +335,68 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ===== CLIENTS (carousel) — full-width ===== */}
+      {/* ===== CLIENTS (static grid) — full-width ===== */}
       {clients.length > 0 && (
         <section className="clay-section" style={{ paddingTop: 0, paddingBottom: 80 }}>
-          <div className="clay-container" style={{ marginBottom: 32 }}>
+          <div className="clay-container">
             <Reveal>
-              <div style={{ textAlign: "center" }}>
+              <div style={{ textAlign: "center", marginBottom: 32 }}>
                 <div style={{ display: "inline-flex" }}>
                   <SectionLabel color="var(--ube-800)">Dipercaya Oleh</SectionLabel>
                 </div>
                 <h2 className="section-heading">Klien korporat kami</h2>
               </div>
             </Reveal>
-          </div>
-          <Carousel
-            itemsPerSlideDesktop={5}
-            itemsPerSlideTablet={3}
-            ariaLabel="Logo klien korporat"
-            showControls={false}
-            continuous
-            items={clients.map((c) => (
-              <a
-                key={c.id}
-                href={c.website ?? "#"}
-                target={c.website ? "_blank" : undefined}
-                rel="noopener noreferrer"
-                className="clay-card dashed"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 24,
-                  height: 140,
-                  textDecoration: "none",
-                  color: "inherit",
-                  background: "var(--pure-white)",
-                }}
-              >
-                <SafeImage
-                  src={c.logo_url}
-                  alt={c.name}
-                  initials={c.name}
-                  size={88}
-                  rounded={false}
+            {/* Logo strip statis: tanpa scroll, tanpa container dashed per-logo,
+                grayscale default → warna saat hover, center ketika item
+                tidak penuh satu baris (flex-wrap + justify-content center). */}
+            <div
+              className="clients-strip"
+              role="list"
+              aria-label="Logo klien korporat"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: 32,
+                maxWidth: 960,
+                margin: "0 auto",
+              }}
+            >
+              {clients.map((c) => (
+                <a
+                  key={c.id}
+                  href={c.website ?? "#"}
+                  target={c.website ? "_blank" : undefined}
+                  rel="noopener noreferrer"
+                  role="listitem"
+                  className="client-logo"
                   style={{
-                    maxWidth: "100%",
-                    maxHeight: "100%",
-                    objectFit: "contain",
-                    filter: "grayscale(0.2)",
-                    transition: "filter 200ms",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textDecoration: "none",
+                    color: "inherit",
                   }}
-                />
-              </a>
-            ))}
-          />
+                >
+                  <SafeImage
+                    src={c.logo_url}
+                    alt={c.name}
+                    initials={c.name}
+                    size={88}
+                    rounded={false}
+                    style={{
+                      width: "auto",
+                      height: 72,
+                      maxWidth: 160,
+                      objectFit: "contain",
+                    }}
+                  />
+                </a>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 

@@ -1518,3 +1518,18 @@ details > summary::marker { display: none; content: ""; }
     flex: 0 0 20%;
   }
 }
+
+
+/* ============================================================
+   Klien korporat strip (landing page)
+   Logo grayscale default, kembali berwarna saat hover.
+   ============================================================ */
+.client-logo img {
+  filter: grayscale(100%) opacity(0.65);
+  transition: filter 240ms ease, transform 240ms ease;
+}
+.client-logo:hover img,
+.client-logo:focus-visible img {
+  filter: grayscale(0%) opacity(1);
+  transform: scale(1.04);
+}

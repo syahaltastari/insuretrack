@@ -73,6 +73,7 @@ function InsuranceNewPageInner() {
     registration_no: string;
     invoice_no: string;
   } | null>(null);
+  const [portalStatus, setPortalStatus] = useState<string | null>(null);
 
   // Pre-select product dari query param `?product=LIFE|PERSONAL_ACCIDENT|HEALTH`
   // (link dari halaman /products/[code]). Validate agar tidak bisa di-spoof
@@ -129,6 +130,7 @@ function InsuranceNewPageInner() {
           full_name: string;
           email: string;
           mobile_number: string;
+          portal_status: string;
           nik: string | null;
           birth_place: string | null;
           birth_date: string | null;
@@ -144,6 +146,10 @@ function InsuranceNewPageInner() {
       })
       .then((p) => {
         if (!p) return;
+        // Simpan portal_status untuk banner aktivasi. Backend akan reject
+        // submit (EMAIL_NOT_ACTIVATED) kalau user PENDING, jadi tampilkan
+        // banner upfront agar user tidak isi form sia-sia.
+        setPortalStatus(p.portal_status);
         methods.reset({
           ...methods.getValues(),
           full_name: p.full_name ?? "",
@@ -304,6 +310,36 @@ function InsuranceNewPageInner() {
             Isi data dengan benar. KTP wajib diupload (JPG/PNG/PDF, max 5 MB).
           </p>
         </Reveal>
+
+        {/* Banner aktivasi: kalau akun belum diaktivasi, backend akan
+            reject submit dengan EMAIL_NOT_ACTIVATED. Tampilkan banner
+            upfront + disable form biar user tidak isi data yang percuma. */}
+        {portalStatus === "PENDING" && (
+          <div
+            className="clay-card feature"
+            style={{
+              marginTop: 24,
+              marginBottom: 24,
+              padding: 24,
+              background: "var(--lemon-400)",
+              borderLeft: "6px solid var(--lemon-700)",
+              maxWidth: 720,
+            }}
+            role="alert"
+          >
+            <p
+              className="uppercase-label"
+              style={{ color: "var(--lemon-800)", marginBottom: 8 }}
+            >
+              ✦ Aktivasi Email Diperlukan
+            </p>
+            <p className="body" style={{ color: "var(--clay-black)", margin: 0 }}>
+              Anda belum bisa mengajukan asuransi sebelum akun diaktivasi.
+              Cek kotak masuk email Anda dan klik link aktivasi. Setelah
+              aktif, kembali ke halaman ini.
+            </p>
+          </div>
+        )}
 
           <Form methods={methods} onSubmit={onSubmit} style={{ display: "grid", gap: 32 }}>
             <FormError message={formError} />
@@ -521,11 +557,15 @@ function InsuranceNewPageInner() {
             <Reveal delay={300}>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || portalStatus === "PENDING"}
                 className="clay-button solid-ube size-large"
                 style={{ width: "100%" }}
               >
-                {submitting ? "Mengirim..." : "Daftar & Buat Invoice →"}
+                {portalStatus === "PENDING"
+                  ? "Aktivasi email dulu untuk mendaftar"
+                  : submitting
+                  ? "Mengirim..."
+                  : "Daftar & Buat Invoice →"}
               </button>
             </Reveal>
           </Form>
