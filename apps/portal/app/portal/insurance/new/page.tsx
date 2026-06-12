@@ -16,6 +16,7 @@ import {
   type ProductCode,
   type ProductPlan,
 } from "@insuretrack/api-client";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@insuretrack/ui";
 import { Reveal } from "@/components/Reveal";
 import { PlanPicker } from "@/components/PlanPicker";
 import { Form, FormField, FormError } from "@insuretrack/forms";
@@ -24,9 +25,38 @@ import {
   nikSchema,
   phoneSchema,
   dateNotFutureSchema,
+  beneficiaryNameSchema,
 } from "@insuretrack/forms";
 
 const GENDERS = ["MALE", "FEMALE"] as const;
+
+/** Field yang termasuk masing-masing tab. Dipakai untuk:
+ *   1. Render checkmark "✓" di tab trigger kalau semua field tab tsb valid.
+ *   2. (Opsional) Per-tab Next-gate validation.
+ *  Tidak gate perpindahan tab — user bebas klik tab manapun. Submit tetap
+ *  validasi full schema via RHF + zodResolver. */
+const TAB_FIELDS = {
+  personal: [
+    "nik",
+    "full_name",
+    "birth_place",
+    "birth_date",
+    "gender",
+    "address",
+    "rt_rw",
+    "village",
+    "district",
+    "city",
+    "province",
+    "postal_code",
+    "beneficiary_name",
+  ],
+  contact: ["email", "mobile_number"],
+  insurance: ["plan_code", "coverage_term"],
+  ktp: ["ktp"],
+} as const;
+
+type TabKey = keyof typeof TAB_FIELDS;
 
 // `plan_code` adalah composite id (mis. "LIFE_BASIC") yang dikirim ke
 // backend. Validasi shape regex di sini — backend akan lookup & reject
@@ -47,6 +77,10 @@ const registerSchema = z.object({
   city: z.string().trim().min(1, "Kota wajib diisi").max(80),
   province: z.string().trim().min(1, "Provinsi wajib diisi").max(80),
   postal_code: z.string().trim().regex(/^\d{5}$/, "Kode pos 5 digit"),
+  // Nama ahli waris / penerima manfaat. Backend enforce wajib untuk
+  // produk LIFE; PA/HEALTH menerima null/empty. Di client, validation
+  // longgar (max length only) — server yang enforce per-product.
+  beneficiary_name: beneficiaryNameSchema,
   email: emailSchema.refine((s) => s.length > 0, { message: "Email wajib diisi" }),
   mobile_number: phoneSchema,
   plan_code: z
@@ -89,6 +123,8 @@ function InsuranceNewPageInner() {
   const [catalog, setCatalog] = useState<ProductCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<ProductCode>("LIFE");
+  // Tab aktif — diinisialisasi ke "personal". Controlled mode Radix Tabs.
+  const [activeTab, setActiveTab] = useState<TabKey>("personal");
 
   // Pre-select product dari query param `?product=LIFE|PERSONAL_ACCIDENT|HEALTH`
   // (link dari halaman /products/[code]). Validate agar tidak bisa di-spoof
@@ -144,6 +180,7 @@ function InsuranceNewPageInner() {
       city: "",
       province: "",
       postal_code: "",
+      beneficiary_name: "",
       email: "",
       mobile_number: "",
       plan_code: "",
@@ -151,6 +188,25 @@ function InsuranceNewPageInner() {
     },
     mode: "onBlur",
   });
+
+  // Watch values per tab — untuk hitung checkmark "✓" di tab trigger.
+  // Watch granular (per field) supaya re-render minimal saat satu field
+  // berubah; compute `isTabValid` untuk tiap tab on the fly.
+  const watched = methods.watch();
+  const errors = methods.formState.errors;
+
+  /** True kalau semua field di tab tsb tidak punya error DAN (untuk field
+   *  string) tidak kosong. Untuk `ktp` (File), cek `ktpName` dari state
+   *  (RHF `setValue` tidak trigger watch untuk File objects secara
+   *  reliable). */
+  const isTabValid = (key: TabKey): boolean => {
+    if (key === "ktp") return Boolean(ktpName);
+    return TAB_FIELDS[key].every((field) => {
+      if (errors[field as keyof typeof errors]) return false;
+      const v = watched[field as keyof RegisterValues];
+      return typeof v === "string" ? v.trim().length > 0 : Boolean(v);
+    });
+  };
 
   // Plan untuk produk yang sedang dipilih (filtered dari catalog).
   // useMemo agar tidak re-filter setiap render.
@@ -286,6 +342,9 @@ function InsuranceNewPageInner() {
           city: values.city.trim(),
           province: values.province.trim(),
           postal_code: values.postal_code.trim(),
+          // Optional — empty string di-coerce ke undefined di
+          // beneficiaryNameSchema; backend enforce wajib untuk LIFE.
+          beneficiary_name: values.beneficiary_name?.trim() || undefined,
           email: values.email.trim(),
           mobile_number: values.mobile_number,
           // plan_code adalah composite id (mis. "LIFE_BASIC") — backend
@@ -416,267 +475,314 @@ function InsuranceNewPageInner() {
           <Form methods={methods} onSubmit={onSubmit} style={{ display: "grid", gap: 32 }}>
             <FormError message={formError} />
 
-            <Reveal delay={80}>
-              <Section title="Data Pribadi">
-                <Grid>
-                  <FormField label="NIK (16 digit)" name="nik" required>
-                    <input
-                      id="nik"
-                      className="clay-input"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      {...methods.register("nik")}
-                    />
-                  </FormField>
-                  <FormField label="Nama Lengkap" name="full_name" required>
-                    <input
-                      id="full_name"
-                      className="clay-input"
-                      autoComplete="name"
-                      {...methods.register("full_name")}
-                    />
-                  </FormField>
-                  <FormField label="Tempat Lahir" name="birth_place" required>
-                    <input
-                      id="birth_place"
-                      className="clay-input"
-                      autoComplete="off"
-                      {...methods.register("birth_place")}
-                    />
-                  </FormField>
-                  <FormField label="Tanggal Lahir" name="birth_date" required>
-                    <input
-                      id="birth_date"
-                      type="date"
-                      className="clay-input"
-                      {...methods.register("birth_date")}
-                    />
-                  </FormField>
-                  <FormField label="Jenis Kelamin" name="gender">
-                    <select
-                      id="gender"
-                      className="clay-select"
-                      {...methods.register("gender")}
-                    >
-                      <option value="MALE">Laki-laki</option>
-                      <option value="FEMALE">Perempuan</option>
-                    </select>
-                  </FormField>
-                  <FormField label="RT/RW" name="rt_rw" required hint="Format: 001/002">
-                    <input
-                      id="rt_rw"
-                      className="clay-input"
-                      autoComplete="off"
-                      placeholder="001/002"
-                      {...methods.register("rt_rw")}
-                    />
-                  </FormField>
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <FormField label="Alamat" name="address" required>
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => setActiveTab(v as TabKey)}
+            >
+              <TabsList aria-label="Bagian form pendaftaran">
+                <TabsTrigger value="personal">
+                  Data Pribadi
+                  {isTabValid("personal") && (
+                    <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="contact">
+                  Kontak
+                  {isTabValid("contact") && (
+                    <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="insurance">
+                  Informasi Asuransi
+                  {isTabValid("insurance") && (
+                    <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="ktp">
+                  Upload KTP
+                  {isTabValid("ktp") && (
+                    <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="personal">
+                <Section title="Data Pribadi">
+                  <Grid>
+                    <FormField label="NIK (16 digit)" name="nik" required>
                       <input
-                        id="address"
+                        id="nik"
                         className="clay-input"
-                        autoComplete="street-address"
-                        {...methods.register("address")}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        {...methods.register("nik")}
+                      />
+                    </FormField>
+                    <FormField label="Nama Lengkap" name="full_name" required>
+                      <input
+                        id="full_name"
+                        className="clay-input"
+                        autoComplete="name"
+                        {...methods.register("full_name")}
+                      />
+                    </FormField>
+                    <FormField label="Tempat Lahir" name="birth_place" required>
+                      <input
+                        id="birth_place"
+                        className="clay-input"
+                        autoComplete="off"
+                        {...methods.register("birth_place")}
+                      />
+                    </FormField>
+                    <FormField label="Tanggal Lahir" name="birth_date" required>
+                      <input
+                        id="birth_date"
+                        type="date"
+                        className="clay-input"
+                        {...methods.register("birth_date")}
+                      />
+                    </FormField>
+                    <FormField label="Jenis Kelamin" name="gender">
+                      <select
+                        id="gender"
+                        className="clay-select"
+                        {...methods.register("gender")}
+                      >
+                        <option value="MALE">Laki-laki</option>
+                        <option value="FEMALE">Perempuan</option>
+                      </select>
+                    </FormField>
+                    <FormField label="RT/RW" name="rt_rw" required hint="Format: 001/002">
+                      <input
+                        id="rt_rw"
+                        className="clay-input"
+                        autoComplete="off"
+                        placeholder="001/002"
+                        {...methods.register("rt_rw")}
+                      />
+                    </FormField>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <FormField label="Alamat" name="address" required>
+                        <input
+                          id="address"
+                          className="clay-input"
+                          autoComplete="street-address"
+                          {...methods.register("address")}
+                        />
+                      </FormField>
+                    </div>
+                    <FormField label="Kelurahan / Desa" name="village" required>
+                      <input
+                        id="village"
+                        className="clay-input"
+                        autoComplete="off"
+                        {...methods.register("village")}
+                      />
+                    </FormField>
+                    <FormField label="Kecamatan" name="district" required>
+                      <input
+                        id="district"
+                        className="clay-input"
+                        autoComplete="off"
+                        {...methods.register("district")}
+                      />
+                    </FormField>
+                    <FormField label="Kota / Kabupaten" name="city" required>
+                      <input
+                        id="city"
+                        className="clay-input"
+                        autoComplete="address-level2"
+                        {...methods.register("city")}
+                      />
+                    </FormField>
+                    <FormField label="Provinsi" name="province" required>
+                      <input
+                        id="province"
+                        className="clay-input"
+                        autoComplete="address-level1"
+                        {...methods.register("province")}
+                      />
+                    </FormField>
+                    <FormField label="Kode Pos" name="postal_code" required hint="5 digit">
+                      <input
+                        id="postal_code"
+                        className="clay-input"
+                        inputMode="numeric"
+                        autoComplete="postal-code"
+                        {...methods.register("postal_code")}
+                      />
+                    </FormField>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <FormField
+                        label="Nama Ahli Waris (Beneficiary)"
+                        name="beneficiary_name"
+                        hint="Wajib untuk Asuransi Jiwa. Penerima manfaat polis."
+                      >
+                        <input
+                          id="beneficiary_name"
+                          className="clay-input"
+                          autoComplete="off"
+                          placeholder="cth: Nama Istri / Anak / Saudara"
+                          {...methods.register("beneficiary_name")}
+                        />
+                      </FormField>
+                    </div>
+                  </Grid>
+                </Section>
+              </TabsContent>
+
+              <TabsContent value="contact">
+                <Section title="Kontak">
+                  <Grid cols={2}>
+                    <FormField label="Email" name="email" required>
+                      <input
+                        id="email"
+                        className="clay-input"
+                        type="email"
+                        autoComplete="email"
+                        {...methods.register("email")}
+                      />
+                    </FormField>
+                    <FormField label="Nomor HP" name="mobile_number" required hint="10–15 digit">
+                      <input
+                        id="mobile_number"
+                        className="clay-input"
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        {...methods.register("mobile_number")}
+                      />
+                    </FormField>
+                  </Grid>
+                </Section>
+              </TabsContent>
+
+              <TabsContent value="insurance">
+                <Section title="Informasi Asuransi">
+                  {/* Product selector — segmented pill row, lebih visual
+                      dari <select> untuk 3 opsi yang setara. Pilih produk
+                      → filter plan cards di bawah. */}
+                  <div
+                    role="tablist"
+                    aria-label="Pilih produk asuransi"
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      marginBottom: 24,
+                    }}
+                  >
+                    {(catalog?.products ?? [
+                      { code: "LIFE" as ProductCode, name: "Life Insurance", description: "" },
+                      { code: "PERSONAL_ACCIDENT" as ProductCode, name: "Personal Accident Insurance", description: "" },
+                      { code: "HEALTH" as ProductCode, name: "Health Insurance", description: "" },
+                    ]).map((p) => {
+                      const isActive = p.code === selectedProduct;
+                      return (
+                        <button
+                          key={p.code}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          onClick={() => setSelectedProduct(p.code)}
+                          className={`clay-button ${isActive ? "solid-ube" : "ghost"} size-small`}
+                        >
+                          {p.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Plan picker — 3 plan cards (Basic/Standard/Premium)
+                      untuk produk yang dipilih. UP & premi tampil otomatis
+                      dari plan. UP & premi tidak user-input lagi. */}
+                  <FormField label="Plan" name="plan_code" required>
+                    {catalogError ? (
+                      <div
+                        className="clay-card"
+                        style={{
+                          padding: 16,
+                          borderColor: "var(--pomegranate-400)",
+                          background: "#fff5f5",
+                          color: "var(--pomegranate-400)",
+                        }}
+                        role="alert"
+                      >
+                        {catalogError}
+                      </div>
+                    ) : !catalog ? (
+                      <div
+                        className="clay-card"
+                        style={{
+                          padding: 16,
+                          color: "var(--warm-silver)",
+                          textAlign: "center",
+                        }}
+                      >
+                        Memuat plan…
+                      </div>
+                    ) : (
+                      <PlanPicker
+                        plans={visiblePlans}
+                        name="plan_code"
+                        selectedPlanCode={methods.watch("plan_code") ?? ""}
+                        onChange={(code) =>
+                          methods.setValue("plan_code", code, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          })
+                        }
+                      />
+                    )}
+                  </FormField>
+
+                  <div style={{ marginTop: 16 }}>
+                    <FormField
+                      label="Masa Pertanggungan (tahun)"
+                      name="coverage_term"
+                      required
+                      hint="1–50 tahun"
+                    >
+                      <input
+                        id="coverage_term"
+                        className="clay-input"
+                        type="number"
+                        min={1}
+                        max={50}
+                        {...methods.register("coverage_term")}
                       />
                     </FormField>
                   </div>
-                  <FormField label="Kelurahan / Desa" name="village" required>
-                    <input
-                      id="village"
-                      className="clay-input"
-                      autoComplete="off"
-                      {...methods.register("village")}
-                    />
-                  </FormField>
-                  <FormField label="Kecamatan" name="district" required>
-                    <input
-                      id="district"
-                      className="clay-input"
-                      autoComplete="off"
-                      {...methods.register("district")}
-                    />
-                  </FormField>
-                  <FormField label="Kota / Kabupaten" name="city" required>
-                    <input
-                      id="city"
-                      className="clay-input"
-                      autoComplete="address-level2"
-                      {...methods.register("city")}
-                    />
-                  </FormField>
-                  <FormField label="Provinsi" name="province" required>
-                    <input
-                      id="province"
-                      className="clay-input"
-                      autoComplete="address-level1"
-                      {...methods.register("province")}
-                    />
-                  </FormField>
-                  <FormField label="Kode Pos" name="postal_code" required hint="5 digit">
-                    <input
-                      id="postal_code"
-                      className="clay-input"
-                      inputMode="numeric"
-                      autoComplete="postal-code"
-                      {...methods.register("postal_code")}
-                    />
-                  </FormField>
-                </Grid>
-              </Section>
-            </Reveal>
+                </Section>
+              </TabsContent>
 
-            <Reveal delay={120}>
-              <Section title="Kontak">
-                <Grid cols={2}>
-                  <FormField label="Email" name="email" required>
+              <TabsContent value="ktp">
+                <Section title="Upload KTP">
+                  <FormField label="File KTP" name="ktp" required hint="JPG/PNG/PDF, max 5 MB">
                     <input
-                      id="email"
+                      id="ktp"
+                      type="file"
+                      accept="image/jpeg,image/png,application/pdf"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        methods.setValue("ktp", f, { shouldValidate: true });
+                        setKtpName(f?.name ?? null);
+                      }}
                       className="clay-input"
-                      type="email"
-                      autoComplete="email"
-                      {...methods.register("email")}
+                      style={{ padding: 12 }}
                     />
-                  </FormField>
-                  <FormField label="Nomor HP" name="mobile_number" required hint="10–15 digit">
-                    <input
-                      id="mobile_number"
-                      className="clay-input"
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      {...methods.register("mobile_number")}
-                    />
-                  </FormField>
-                </Grid>
-              </Section>
-            </Reveal>
-
-            <Reveal delay={180}>
-              <Section title="Informasi Asuransi">
-                {/* Product selector — segmented pill row, lebih visual
-                    dari <select> untuk 3 opsi yang setara. Pilih produk
-                    → filter plan cards di bawah. */}
-                <div
-                  role="tablist"
-                  aria-label="Pilih produk asuransi"
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                    marginBottom: 24,
-                  }}
-                >
-                  {(catalog?.products ?? [
-                    { code: "LIFE" as ProductCode, name: "Life Insurance", description: "" },
-                    { code: "PERSONAL_ACCIDENT" as ProductCode, name: "Personal Accident Insurance", description: "" },
-                    { code: "HEALTH" as ProductCode, name: "Health Insurance", description: "" },
-                  ]).map((p) => {
-                    const isActive = p.code === selectedProduct;
-                    return (
-                      <button
-                        key={p.code}
-                        type="button"
-                        role="tab"
-                        aria-selected={isActive}
-                        onClick={() => setSelectedProduct(p.code)}
-                        className={`clay-button ${isActive ? "solid-ube" : "ghost"} size-small`}
+                    {ktpName && (
+                      <p
+                        className="caption"
+                        style={{ color: "var(--warm-charcoal)", marginTop: 8 }}
                       >
-                        {p.name}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Plan picker — 3 plan cards (Basic/Standard/Premium)
-                    untuk produk yang dipilih. UP & premi tampil otomatis
-                    dari plan. UP & premi tidak user-input lagi. */}
-                <FormField label="Plan" name="plan_code" required>
-                  {catalogError ? (
-                    <div
-                      className="clay-card"
-                      style={{
-                        padding: 16,
-                        borderColor: "var(--pomegranate-400)",
-                        background: "#fff5f5",
-                        color: "var(--pomegranate-400)",
-                      }}
-                      role="alert"
-                    >
-                      {catalogError}
-                    </div>
-                  ) : !catalog ? (
-                    <div
-                      className="clay-card"
-                      style={{
-                        padding: 16,
-                        color: "var(--warm-silver)",
-                        textAlign: "center",
-                      }}
-                    >
-                      Memuat plan…
-                    </div>
-                  ) : (
-                    <PlanPicker
-                      plans={visiblePlans}
-                      name="plan_code"
-                      selectedPlanCode={methods.watch("plan_code") ?? ""}
-                      onChange={(code) =>
-                        methods.setValue("plan_code", code, {
-                          shouldValidate: true,
-                          shouldDirty: true,
-                        })
-                      }
-                    />
-                  )}
-                </FormField>
-
-                <div style={{ marginTop: 16 }}>
-                  <FormField
-                    label="Masa Pertanggungan (tahun)"
-                    name="coverage_term"
-                    required
-                    hint="1–50 tahun"
-                  >
-                    <input
-                      id="coverage_term"
-                      className="clay-input"
-                      type="number"
-                      min={1}
-                      max={50}
-                      {...methods.register("coverage_term")}
-                    />
+                        File: <span className="mono">{ktpName}</span>
+                      </p>
+                    )}
                   </FormField>
-                </div>
-              </Section>
-            </Reveal>
-
-            <Reveal delay={240}>
-              <Section title="Upload KTP">
-                <FormField label="File KTP" name="ktp" required hint="JPG/PNG/PDF, max 5 MB">
-                  <input
-                    id="ktp"
-                    type="file"
-                    accept="image/jpeg,image/png,application/pdf"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0] ?? null;
-                      methods.setValue("ktp", f, { shouldValidate: true });
-                      setKtpName(f?.name ?? null);
-                    }}
-                    className="clay-input"
-                    style={{ padding: 12 }}
-                  />
-                  {ktpName && (
-                    <p
-                      className="caption"
-                      style={{ color: "var(--warm-charcoal)", marginTop: 8 }}
-                    >
-                      File: <span className="mono">{ktpName}</span>
-                    </p>
-                  )}
-                </FormField>
-              </Section>
-            </Reveal>
+                </Section>
+              </TabsContent>
+            </Tabs>
 
             <Reveal delay={300}>
               <button
