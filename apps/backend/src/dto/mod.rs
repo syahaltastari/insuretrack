@@ -3,6 +3,8 @@
 //! Dipisah dari entity domain agar wire format bisa evolusi tanpa
 //! menyentuh struct internal.
 
+pub mod registration;
+
 use serde::{Deserialize, Serialize};
 
 // ---- Auth ----
@@ -198,6 +200,13 @@ pub fn find_plan(code: &str) -> Option<&'static ProductPlan> {
 pub fn product_name_from_code(code: &str) -> &'static str {
     product_meta(code).map(|p| p.name).unwrap_or("Insurance Product")
 }
+
+// ---- Registration (V3: group/Instansi) ----
+//
+// Definisi tipe + helper ada di sub-module `registration`. Di-re-export
+// di sini agar import path existing (`dto::RegistrationData`,
+// `dto::ParticipantData`, dll.) tidak berubah.
+pub use registration::{calculate_group_premium, ApplicantType, ParticipantData, RegistrationData};
 
 // ---- Dashboard ----
 

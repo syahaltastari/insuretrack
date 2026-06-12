@@ -33,12 +33,13 @@ use crate::{
     auth::{password::hash_password, password::verify_password, Role, RequireCustomer},
     domain::{claim::can_transition as claim_can_transition, identifier::{next_id, EntityType}},
     dto::{
-        find_plan, product_name_from_code, ActivateRequest, LoginRequest, LoginResponse,
-        PasswordResetConsumeRequest, PasswordResetRequest,
+        calculate_group_premium, find_plan, product_name_from_code, ActivateRequest,
+        ApplicantType, LoginRequest, LoginResponse, PasswordResetConsumeRequest,
+        PasswordResetRequest, RegistrationData,
     },
     error::{AppError, AppResult},
     repo::{Page, PageQuery},
-    routes::public::{calculate_premium, validate_registration, RegistrationData},
+    routes::public::{calculate_premium, validate_registration},
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
@@ -583,7 +584,64 @@ async fn change_password(
 
 // ---- /policies ----
 
-#[derive(Serialize, sqlx::FromRow)]
+/// Subset of registration_participants yang di-include di response
+/// `GET /customer/policies` agar customer bisa lihat "polis ini untuk
+/// peserta siapa" di daftar N polis hasil 1 group registration.
+#[derive(Serialize, sqlx::FromRow, Clone)]
+struct ParticipantSummary {
+    id: Uuid,
+    nik: String,
+    full_name: String,
+    birth_date: chrono::NaiveDate,
+}
+
+/// Internal: flat row dari SQL query, kemudian di-bundle ke PolicyRow.
+#[derive(sqlx::FromRow)]
+struct PolicyRowRaw {
+    id: Uuid,
+    policy_no: String,
+    product: String,
+    sum_assured: Decimal,
+    premium: Decimal,
+    effective_date: chrono::NaiveDate,
+    expiry_date: chrono::NaiveDate,
+    status: String,
+    pdf_path: Option<String>,
+    participant_id_flat: Option<Uuid>,
+    participant_nik: Option<String>,
+    participant_full_name: Option<String>,
+    participant_birth_date: Option<chrono::NaiveDate>,
+}
+
+impl From<PolicyRowRaw> for PolicyRow {
+    fn from(r: PolicyRowRaw) -> Self {
+        let participant = r
+            .participant_id_flat
+            .zip(r.participant_nik)
+            .zip(r.participant_full_name)
+            .zip(r.participant_birth_date)
+            .map(|(((id, nik), full_name), birth_date)| ParticipantSummary {
+                id,
+                nik,
+                full_name,
+                birth_date,
+            });
+        Self {
+            id: r.id,
+            policy_no: r.policy_no,
+            product: r.product,
+            sum_assured: r.sum_assured,
+            premium: r.premium,
+            effective_date: r.effective_date,
+            expiry_date: r.expiry_date,
+            status: r.status,
+            pdf_path: r.pdf_path,
+            participant,
+        }
+    }
+}
+
+#[derive(Serialize)]
 struct PolicyRow {
     id: Uuid,
     policy_no: String,
@@ -594,6 +652,9 @@ struct PolicyRow {
     expiry_date: chrono::NaiveDate,
     status: String,
     pdf_path: Option<String>,
+    /// Untuk policy dari Instansi: info peserta yang dicakup.
+    /// NULL untuk INDIVIDU flow.
+    participant: Option<ParticipantSummary>,
 }
 
 async fn list_policies(
@@ -622,12 +683,19 @@ async fn list_policies(
     .fetch_one(&state.pool)
     .await?;
 
-    let data: Vec<PolicyRow> = sqlx::query_as(
+    // LEFT JOIN ke registration_participants — NULL participant_id (Individu)
+    // tetap dapat row, participant_* fields jadi NULL.
+    let raw: Vec<PolicyRowRaw> = sqlx::query_as(
         r#"
         SELECT p.id, p.policy_no, p.product, p.sum_assured, p.premium,
-               p.effective_date, p.expiry_date, p.status, p.pdf_path
+               p.effective_date, p.expiry_date, p.status, p.pdf_path,
+               pp.id AS participant_id_flat,
+               pp.nik AS participant_nik,
+               pp.full_name AS participant_full_name,
+               pp.birth_date AS participant_birth_date
           FROM policies p
           JOIN registrations r ON r.id = p.registration_id
+          LEFT JOIN registration_participants pp ON pp.id = p.participant_id
          WHERE r.customer_id = $1
            AND ($2 = '' OR p.status = $2)
          ORDER BY p.created_at DESC
@@ -640,6 +708,7 @@ async fn list_policies(
     .bind(offset)
     .fetch_all(&state.pool)
     .await?;
+    let data: Vec<PolicyRow> = raw.into_iter().map(Into::into).collect();
 
     Ok(Json(Page {
         data,
@@ -655,12 +724,17 @@ async fn get_policy(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<PolicyRow>> {
     let customer_id = customer_id_from(&claims)?;
-    let row: Option<PolicyRow> = sqlx::query_as(
+    let row: Option<PolicyRowRaw> = sqlx::query_as(
         r#"
         SELECT p.id, p.policy_no, p.product, p.sum_assured, p.premium,
-               p.effective_date, p.expiry_date, p.status, p.pdf_path
+               p.effective_date, p.expiry_date, p.status, p.pdf_path,
+               pp.id AS participant_id_flat,
+               pp.nik AS participant_nik,
+               pp.full_name AS participant_full_name,
+               pp.birth_date AS participant_birth_date
           FROM policies p
           JOIN registrations r ON r.id = p.registration_id
+          LEFT JOIN registration_participants pp ON pp.id = p.participant_id
          WHERE r.customer_id = $1 AND p.id = $2
         "#,
     )
@@ -669,7 +743,9 @@ async fn get_policy(
     .fetch_optional(&state.pool)
     .await?;
 
-    row.map(Json).ok_or(AppError::NotFound("policy".into()))
+    row.map(Into::into)
+        .map(Json)
+        .ok_or(AppError::NotFound("policy".into()))
 }
 
 async fn download_policy_pdf(
@@ -1768,26 +1844,94 @@ async fn submit_insurance_application(
     .await?;
 
     let registration_no = next_id(&mut tx, EntityType::Registration).await?;
-    let premium_amount = calculate_premium(plan, data.coverage_term);
+    let per_participant_premium = calculate_premium(plan, data.coverage_term);
     let due_date = (Utc::now() + chrono::Duration::days(7)).date_naive();
 
-    let reg_id: (Uuid,) = sqlx::query_as(
-        r#"
-        INSERT INTO registrations
-          (registration_no, customer_id, product, sum_assured, coverage_term,
-           status, beneficiary_name)
-        VALUES ($1, $2, $3, $4, $5, 'PENDING', $6)
-        RETURNING id
-        "#,
-    )
-    .bind(&registration_no)
-    .bind(customer_id)
-    .bind(plan.product_code)
-    .bind(plan.sum_assured)
-    .bind(data.coverage_term)
-    .bind(data.beneficiary_name.as_deref().map(str::trim))
-    .fetch_one(&mut *tx)
-    .await?;
+    // Total premium:
+    //   INDIVIDU → per_participant_premium (1 peserta)
+    //   INSTANSI → per_participant_premium × N peserta
+    let total_premium = match data.applicant_type {
+        crate::dto::ApplicantType::Individu => per_participant_premium,
+        crate::dto::ApplicantType::Instansi => crate::dto::calculate_group_premium(
+            per_participant_premium,
+            data.participants.len(),
+        ),
+    };
+
+    // Insert registration row. Untuk INSTANSI, sertakan applicant_type +
+    // company_* fields. beneficiary_name hanya untuk INDIVIDU (peserta
+    // Instansi punya beneficiary_name masing-masing di tabel participants).
+    let reg_id: (Uuid,) = match data.applicant_type {
+        crate::dto::ApplicantType::Individu => sqlx::query_as(
+            r#"
+            INSERT INTO registrations
+              (registration_no, customer_id, product, sum_assured, coverage_term,
+               status, applicant_type, beneficiary_name)
+            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INDIVIDU', $6)
+            RETURNING id
+            "#,
+        )
+        .bind(&registration_no)
+        .bind(customer_id)
+        .bind(plan.product_code)
+        .bind(plan.sum_assured)
+        .bind(data.coverage_term)
+        .bind(data.beneficiary_name.as_deref().map(str::trim))
+        .fetch_one(&mut *tx)
+        .await?,
+        crate::dto::ApplicantType::Instansi => sqlx::query_as(
+            r#"
+            INSERT INTO registrations
+              (registration_no, customer_id, product, sum_assured, coverage_term,
+               status, applicant_type, company_name, company_npwp, company_industry)
+            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INSTANSI', $6, $7, $8)
+            RETURNING id
+            "#,
+        )
+        .bind(&registration_no)
+        .bind(customer_id)
+        .bind(plan.product_code)
+        .bind(plan.sum_assured)
+        .bind(data.coverage_term)
+        .bind(data.company_name.as_deref().map(str::trim))
+        .bind(data.company_npwp.as_deref().map(str::trim))
+        .bind(data.company_industry.as_deref().map(str::trim))
+        .fetch_one(&mut *tx)
+        .await?,
+    };
+
+    // Insert participants untuk INSTANSI (batch — all-or-nothing dalam tx).
+    if data.applicant_type == crate::dto::ApplicantType::Instansi {
+        for p in &data.participants {
+            sqlx::query(
+                r#"
+                INSERT INTO registration_participants
+                  (registration_id, nik, full_name, birth_place, birth_date, gender,
+                   address, rt_rw, village, district, city, province, postal_code,
+                   email, mobile_number, beneficiary_name)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                "#,
+            )
+            .bind(reg_id.0)
+            .bind(&p.nik)
+            .bind(p.full_name.trim())
+            .bind(p.birth_place.trim())
+            .bind(p.birth_date)
+            .bind(&p.gender)
+            .bind(p.address.trim())
+            .bind(p.rt_rw.trim())
+            .bind(p.village.trim())
+            .bind(p.district.trim())
+            .bind(p.city.trim())
+            .bind(p.province.trim())
+            .bind(p.postal_code.trim())
+            .bind(p.email.as_deref().map(str::trim))
+            .bind(p.mobile_number.as_deref().map(str::trim))
+            .bind(p.beneficiary_name.as_deref().map(str::trim))
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
 
     let invoice_no = next_id(&mut tx, EntityType::Invoice).await?;
     let invoice_id: (Uuid,) = sqlx::query_as(
@@ -1800,7 +1944,7 @@ async fn submit_insurance_application(
     )
     .bind(&invoice_no)
     .bind(reg_id.0)
-    .bind(premium_amount)
+    .bind(total_premium)
     .bind(due_date)
     .fetch_one(&mut *tx)
     .await?;
@@ -1843,7 +1987,7 @@ async fn submit_insurance_application(
         customer_address: &customer_address,
         product_name,
         sum_assured: plan.sum_assured,
-        premium: premium_amount,
+        premium: total_premium,
         coverage_term_years: data.coverage_term,
         due_date,
         status: "UNPAID",
@@ -1908,7 +2052,7 @@ async fn submit_insurance_application(
                  Bayar via payment gateway di portal untuk mengaktifkan polis.\n\n\
                  Salam,\n\
                  Tim InsureTrack",
-                data.full_name, invoice_no, premium_amount, due_date
+                data.full_name, invoice_no, total_premium, due_date
             ),
             cta_text: None,
             cta_url: None,
@@ -1934,7 +2078,7 @@ async fn submit_insurance_application(
                 "product": plan.product_code,
                 "sum_assured": plan.sum_assured.to_string(),
                 "monthly_premium": plan.monthly_premium.to_string(),
-                "premium": premium_amount.to_string(),
+                "premium": total_premium.to_string(),
                 "via": "customer_portal",
                 "beneficiary_name": data.beneficiary_name.as_deref().map(str::trim),
             })),

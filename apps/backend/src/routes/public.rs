@@ -25,7 +25,10 @@ use uuid::Uuid;
 use crate::{
     auth::{hash_password, Role, TokenService},
     domain::identifier::{next_id, EntityType},
-    dto::{find_plan, product_catalog, product_name_from_code, product_plan_catalog, ProductPlan},
+    dto::{
+        find_plan, product_catalog, product_name_from_code, product_plan_catalog, ApplicantType,
+        ParticipantData, ProductPlan, RegistrationData,
+    },
     error::{AppError, AppResult},
     services::{
         audit::{write as audit_write, AuditEntry},
@@ -73,33 +76,13 @@ struct RegistrationStatus {
 }
 
 // Shared insurance application data (dipakai oleh customer.rs handler).
-// `pub` supaya customer.rs bisa deserialize request yang sama shape-nya.
-#[derive(Debug, Deserialize)]
-pub struct RegistrationData {
-    pub nik: String,
-    pub full_name: String,
-    pub birth_place: String,
-    pub birth_date: chrono::NaiveDate,
-    pub gender: String,
-    pub address: String,
-    pub rt_rw: String,
-    pub village: String,
-    pub district: String,
-    pub city: String,
-    pub province: String,
-    pub postal_code: String,
-    pub email: String,
-    pub mobile_number: String,
-    /// Kode plan yang dipilih customer (mis. "LIFE_BASIC"). Backend lookup
-    /// untuk derive `product` & `sum_assured` saat INSERT ke `registrations`
-    /// — schema DB tidak berubah, hanya request shape.
-    pub plan_code: String,
-    pub coverage_term: i32,
-    /// Nama ahli waris/penerima manfaat. Wajib untuk produk LIFE
-    /// (validate_registration enforce); opsional untuk PA/HEALTH.
-    #[serde(default)]
-    pub beneficiary_name: Option<String>,
-}
+// Definisi actual ada di `dto::registration::RegistrationData` setelah
+// V3 group registration. Import path: `dto::RegistrationData` (via
+// re-export di `dto/mod.rs`).
+// Catatan historis: dulunya struct ini didefinisikan di sini, dipindah
+// ke dto::registration saat group flow diperkenalkan agar tidak ada
+// duplikasi tipe antara handler customer.rs dan validate_registration
+// di public.rs.
 
 async fn get_registration(
     State(state): State<AppState>,
@@ -216,6 +199,7 @@ async fn payment_webhook(
         String,
         chrono::NaiveDate,
         String,
+        String,
     ) = sqlx::query_as(
         r#"
         SELECT r.registration_no,
@@ -227,7 +211,8 @@ async fn payment_webhook(
                c.nik,
                c.address,
                c.birth_date,
-               c.email
+               c.email,
+               r.applicant_type
           FROM registrations r
           JOIN invoices i ON i.registration_id = r.id
           JOIN customers c ON c.id = r.customer_id
@@ -249,32 +234,155 @@ async fn payment_webhook(
         address,
         birth_date,
         email,
+        applicant_type,
+    ): (
+        String,
+        String,
+        Decimal,
+        Decimal,
+        i32,
+        String,
+        String,
+        String,
+        chrono::NaiveDate,
+        String,
+        String,
     ) = reg_row;
 
-    // Issue policy
-    let policy_no = next_id(&mut tx, EntityType::Policy).await?;
-    let policy_id = Uuid::new_v4();
     let effective_date = body.payment_date.unwrap_or_else(|| Utc::now().date_naive());
     let expiry_date = effective_date + Duration::days(365 * coverage_term as i64);
 
-    sqlx::query(
-        r#"
-        INSERT INTO policies
-          (id, policy_no, registration_id, product, sum_assured, premium,
-           effective_date, expiry_date, status)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE')
-        "#,
-    )
-    .bind(policy_id)
-    .bind(&policy_no)
-    .bind(registration_id)
-    .bind(&product)
-    .bind(sum_assured)
-    .bind(premium)
-    .bind(effective_date)
-    .bind(expiry_date)
-    .execute(&mut *tx)
-    .await?;
+    // Per-participant premium (untuk INDIVIDU = total; untuk INSTANSI =
+    // total/N). Invoice menyimpan total; per-policy premium = total/N
+    // supaya e-policy PDF tiap peserta konsisten dengan kalkulator
+    // publik di product-details.ts.
+    let per_participant_premium = if applicant_type == "INSTANSI" {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM registration_participants WHERE registration_id = $1",
+        )
+        .bind(registration_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if count == 0 {
+            return Err(AppError::Internal(anyhow::anyhow!(
+                "INSTANSI registration {} has no participants",
+                registration_id
+            )));
+        }
+        premium / rust_decimal::Decimal::from(count)
+    } else {
+        premium
+    };
+
+    // Issue policy/policies. INDIVIDU → 1 policy. INSTANSI → N policies
+    // (1 per participant, masing-masing dengan policy_no sendiri & link
+    // ke participant_id).
+    let mut issued_policies: Vec<(Uuid, String, Uuid, String, String, chrono::NaiveDate, String)> =
+        Vec::new(); // (policy_id, policy_no, participant_id, participant_nik, participant_name, participant_birth_date, participant_address)
+
+    if applicant_type == "INSTANSI" {
+        // Fetch all participants
+        #[derive(sqlx::FromRow)]
+        struct Participant {
+            id: Uuid,
+            nik: String,
+            full_name: String,
+            birth_date: chrono::NaiveDate,
+            address: String,
+            rt_rw: String,
+            village: String,
+            district: String,
+            city: String,
+            province: String,
+            postal_code: String,
+        }
+        let participants: Vec<Participant> = sqlx::query_as(
+            r#"
+            SELECT id, nik, full_name, birth_date, address, rt_rw, village,
+                   district, city, province, postal_code
+              FROM registration_participants
+             WHERE registration_id = $1
+             ORDER BY created_at ASC
+            "#,
+        )
+        .bind(registration_id)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        for p in participants {
+            let policy_no = next_id(&mut tx, EntityType::Policy).await?;
+            let policy_id = Uuid::new_v4();
+            sqlx::query(
+                r#"
+                INSERT INTO policies
+                  (id, policy_no, registration_id, product, sum_assured, premium,
+                   effective_date, expiry_date, status, participant_id)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE',$9)
+                "#,
+            )
+            .bind(policy_id)
+            .bind(&policy_no)
+            .bind(registration_id)
+            .bind(&product)
+            .bind(sum_assured)
+            .bind(per_participant_premium)
+            .bind(effective_date)
+            .bind(expiry_date)
+            .bind(p.id)
+            .execute(&mut *tx)
+            .await?;
+            let full_address = format!(
+                "{}\nRT/RW {}\n{}, {}\n{}, {} {}",
+                p.address.trim(),
+                p.rt_rw.trim(),
+                p.village.trim(),
+                p.district.trim(),
+                p.city.trim(),
+                p.province.trim(),
+                p.postal_code.trim(),
+            );
+            issued_policies.push((
+                policy_id,
+                policy_no,
+                p.id,
+                p.nik,
+                p.full_name,
+                p.birth_date,
+                full_address,
+            ));
+        }
+    } else {
+        // INDIVIDU: existing 1-policy flow
+        let policy_no = next_id(&mut tx, EntityType::Policy).await?;
+        let policy_id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO policies
+              (id, policy_no, registration_id, product, sum_assured, premium,
+               effective_date, expiry_date, status)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE')
+            "#,
+        )
+        .bind(policy_id)
+        .bind(&policy_no)
+        .bind(registration_id)
+        .bind(&product)
+        .bind(sum_assured)
+        .bind(premium)
+        .bind(effective_date)
+        .bind(expiry_date)
+        .execute(&mut *tx)
+        .await?;
+        issued_policies.push((
+            policy_id,
+            policy_no,
+            Uuid::nil(),
+            nik.clone(),
+            full_name.clone(),
+            birth_date,
+            address.clone(),
+        ));
+    }
 
     // Update registration to ISSUED
     sqlx::query("UPDATE registrations SET status = 'ISSUED' WHERE id = $1")
@@ -284,35 +392,50 @@ async fn payment_webhook(
 
     tx.commit().await?;
 
-    // Render PDF + save
+    // Render PDFs + save (di luar tx — mirror pattern invoice PDF).
     let product_name = product_name_from_code(&product);
-    let pdf_bytes = render_pdf(&PolicyPdfInput {
-        policy_no: &policy_no,
-        registration_no: &registration_no,
-        effective_date,
-        expiry_date,
-        customer_nik: &nik,
-        customer_name: &full_name,
-        customer_birth_date: birth_date,
-        customer_address: &address,
-        product_name,
-        sum_assured,
-        premium,
-    })?;
-    let pdf_ref = state
-        .storage
-        .save_policy_pdf(policy_id, &pdf_bytes)
-        .await?;
-    let pdf_path = pdf_ref.key;
+    for (policy_id, policy_no, _participant_id, p_nik, p_name, p_birth_date, p_address) in
+        &issued_policies
+    {
+        let pdf_bytes = render_pdf(&PolicyPdfInput {
+            policy_no,
+            registration_no: &registration_no,
+            effective_date,
+            expiry_date,
+            customer_nik: p_nik,
+            customer_name: p_name,
+            customer_birth_date: *p_birth_date,
+            customer_address: p_address,
+            product_name: &product_name,
+            sum_assured,
+            premium: if applicant_type == "INSTANSI" {
+                per_participant_premium
+            } else {
+                premium
+            },
+        })?;
+        let pdf_ref = state.storage.save_policy_pdf(*policy_id, &pdf_bytes).await?;
+        let pdf_path = pdf_ref.key;
 
-    // Save pdf_path to policy row (separate update; idempotent).
-    sqlx::query("UPDATE policies SET pdf_path = $1 WHERE id = $2")
-        .bind(&pdf_path)
-        .bind(policy_id)
-        .execute(&state.pool)
-        .await?;
+        sqlx::query("UPDATE policies SET pdf_path = $1 WHERE id = $2")
+            .bind(&pdf_path)
+            .bind(policy_id)
+            .execute(&state.pool)
+            .await?;
+    }
 
-    // Queue emails
+    // Email konfirmasi ke representative. Untuk INSTANSI, 1 email summary
+    // (tidak attach N PDF — N bisa besar). Untuk INDIVIDU, 1 email +
+    // 1 email e-policy dengan PDF.
+    let total_policies = issued_policies.len();
+    let payment_subject = if applicant_type == "INSTANSI" {
+        format!(
+            "Pembayaran Diterima — {} Polis Sedang Diterbitkan",
+            total_policies
+        )
+    } else {
+        "Pembayaran Diterima — Polis Segera Terbit".to_string()
+    };
     send_email(
         &state.pool,
         &*state.storage,
@@ -320,78 +443,143 @@ async fn payment_webhook(
         Email {
             email_type: EmailType::PaymentSuccess,
             recipient: &email,
-            subject: "Pembayaran Diterima — Polis Segera Terbit",
+            subject: &payment_subject,
             body: &format!(
                 "Halo,\n\n\
-                 Pembayaran untuk invoice {} telah kami terima. Polis {} sedang \
-                 dalam proses penerbitan — e-policy PDF akan kami kirim di \
-                 email terpisah dalam hitungan menit.\n\n\
+                 Pembayaran untuk invoice {} telah kami terima. {} sedang \
+                 dalam proses penerbitan — bisa di-download dari portal customer \
+                 dalam hitungan menit.\n\n\
                  Terima kasih sudah mempercayakan perlindungan Anda ke InsureTrack.\n\n\
                  Salam,\n\
                  Tim InsureTrack",
-                body.invoice_no, policy_no
+                body.invoice_no,
+                if applicant_type == "INSTANSI" {
+                    format!("{} polis untuk peserta grup Anda", total_policies)
+                } else {
+                    format!("Polis {}", issued_policies[0].1)
+                }
             ),
             cta_text: None,
             cta_url: None,
             related_entity_type: Some("policy"),
-            related_entity_id: Some(policy_id),
+            related_entity_id: Some(issued_policies[0].0),
             attachment_path: None,
         },
     )
     .await?;
 
-    send_email(
-        &state.pool,
-        &*state.storage,
-        &state.resend,
-        Email {
-            email_type: EmailType::EPolicyDelivery,
-            recipient: &email,
-            subject: &format!("E-Policy {} — Polis Anda Telah Terbit", policy_no),
-            body: &format!(
-                "Halo,\n\n\
-                 Selamat! Polis {} Anda telah resmi terbit. E-policy PDF \
-                 terlampir di email ini — bisa langsung di-download, di-print, \
-                 atau disimpan di perangkat Anda.\n\n\
-                 Login ke portal kapan saja untuk melihat semua polis, ajukan \
-                 klaim, atau cek status pengajuan Anda.\n\n\
-                 Salam,\n\
-                 Tim InsureTrack",
-                policy_no
-            ),
-            cta_text: None,
-            cta_url: None,
-            related_entity_type: Some("policy"),
-            related_entity_id: Some(policy_id),
-            attachment_path: Some(pdf_path.clone()),
-        },
-    )
-    .await?;
+    // Email e-policy delivery. Untuk INSTANSI, kirim 1 email summary
+    // (PDF bisa di-download dari portal per polis). Untuk INDIVIDU,
+    // kirim e-policy PDF sebagai attachment.
+    if applicant_type == "INSTANSI" {
+        let group_subject = format!(
+            "E-Policy Group Terbit — {} polis untuk {}",
+            total_policies,
+            registration_no
+        );
+        send_email(
+            &state.pool,
+            &*state.storage,
+            &state.resend,
+            Email {
+                email_type: EmailType::EPolicyDelivery,
+                recipient: &email,
+                subject: &group_subject,
+                body: &format!(
+                    "Halo,\n\n\
+                     Selamat! {} polis untuk grup Anda telah resmi terbit. \
+                     Login ke portal customer untuk mendownload e-policy PDF \
+                     per peserta (tersedia di menu Policies).\n\n\
+                     Salam,\n\
+                     Tim InsureTrack",
+                    total_policies
+                ),
+                cta_text: Some("Lihat di Portal →"),
+                cta_url: Some(&format!(
+                    "{}/portal/policies",
+                    state.config.app_base_url.trim_end_matches('/')
+                )),
+                related_entity_type: Some("registration"),
+                related_entity_id: Some(registration_id),
+                attachment_path: None,
+            },
+        )
+        .await?;
+    } else {
+        // INDIVIDU: 1 email dengan PDF attached
+        let (policy_id, policy_no, _, _, _, _, _) = &issued_policies[0];
+        // Re-fetch pdf_path for this single policy
+        let pdf_path: String = sqlx::query_scalar(
+            "SELECT pdf_path FROM policies WHERE id = $1",
+        )
+        .bind(policy_id)
+        .fetch_one(&state.pool)
+        .await?;
+        send_email(
+            &state.pool,
+            &*state.storage,
+            &state.resend,
+            Email {
+                email_type: EmailType::EPolicyDelivery,
+                recipient: &email,
+                subject: &format!("E-Policy {} — Polis Anda Telah Terbit", policy_no),
+                body: &format!(
+                    "Halo,\n\n\
+                     Selamat! Polis {} Anda telah resmi terbit. E-policy PDF \
+                     terlampir di email ini — bisa langsung di-download, di-print, \
+                     atau disimpan di perangkat Anda.\n\n\
+                     Login ke portal kapan saja untuk melihat semua polis, ajukan \
+                     klaim, atau cek status pengajuan Anda.\n\n\
+                     Salam,\n\
+                     Tim InsureTrack",
+                    policy_no
+                ),
+                cta_text: None,
+                cta_url: None,
+                related_entity_type: Some("policy"),
+                related_entity_id: Some(*policy_id),
+                attachment_path: Some(pdf_path),
+            },
+        )
+        .await?;
+    }
 
     // Activation email sudah dikirim saat customer registrasi akun
     // (POST /api/public/customers), bukan di sini. Jadi tidak kirim
     // ulang saat payment webhook fire. Lihat register_customer untuk
     // activation flow.
 
-    audit_write(
-        &state.pool,
-        AuditEntry {
-            actor: "system",
-            action: "policy_issued",
-            entity_type: "policy",
-            entity_id: Some(policy_id),
-            metadata: Some(json!({
-                "policy_no": policy_no,
-                "registration_id": registration_id,
-            })),
-            ip_address: None,
-        },
-    )
-    .await?;
+    // Audit: 1 entry per policy issued. Untuk INSTANSI dengan N policies,
+    // tulis N entries (each with participant_id) supaya per-participant
+    // activity traceable.
+    for (policy_id, policy_no, participant_id, _, _, _, _) in &issued_policies {
+        audit_write(
+            &state.pool,
+            AuditEntry {
+                actor: "system",
+                action: "policy_issued",
+                entity_type: "policy",
+                entity_id: Some(*policy_id),
+                metadata: Some(json!({
+                    "policy_no": policy_no,
+                    "registration_id": registration_id,
+                    "applicant_type": applicant_type,
+                    "participant_id": if participant_id.is_nil() {
+                        None
+                    } else {
+                        Some(participant_id.to_string())
+                    },
+                })),
+                ip_address: None,
+            },
+        )
+        .await?;
+    }
 
+    let first_policy_no = issued_policies[0].1.clone();
     Ok(Json(WebhookResponse {
         ok: true,
-        policy_no: Some(policy_no),
+        policy_no: Some(first_policy_no),
         replayed: false,
     }))
 }
@@ -399,6 +587,23 @@ async fn payment_webhook(
 // ---- helpers ----
 
 pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
+    // Plan_code adalah source of truth untuk product + sum_assured.
+    // Lookup sekali di sini — handler `submit_insurance_application` di
+    // customer.rs reuse hasil lookup yang sama.
+    let plan = find_plan(&d.plan_code).ok_or_else(|| {
+        AppError::Validation(format!("invalid plan_code: {}", d.plan_code))
+    })?;
+
+    match d.applicant_type {
+        ApplicantType::Individu => validate_individu(d, plan)?,
+        ApplicantType::Instansi => validate_instansi(d, plan)?,
+    }
+    Ok(())
+}
+
+/// Validasi bagian single-participant (Individu flow). Field di root
+/// struct dipakai sebagai data peserta.
+fn validate_individu(d: &RegistrationData, plan: &ProductPlan) -> Result<(), AppError> {
     if !is_16_digits(&d.nik) {
         return Err(AppError::Validation("nik must be exactly 16 digits".into()));
     }
@@ -420,12 +625,6 @@ pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
             "mobile_number must be 10-15 digits, digits only".into(),
         ));
     }
-    // Plan_code adalah source of truth untuk product + sum_assured.
-    // Lookup sekali di sini — handler `submit_insurance_application` di
-    // customer.rs reuse hasil lookup yang sama.
-    let plan = find_plan(&d.plan_code).ok_or_else(|| {
-        AppError::Validation(format!("invalid plan_code: {}", d.plan_code))
-    })?;
     if d.coverage_term < 1 {
         return Err(AppError::Validation("coverage_term must be >= 1".into()));
     }
@@ -433,6 +632,121 @@ pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
     // Fleksibel" di product-details.ts). PA & HEALTH tidak butuh.
     if plan.product_code == "LIFE" {
         match d.beneficiary_name.as_deref().map(str::trim) {
+            Some(n) if (1..=120).contains(&n.len()) => {}
+            _ => {
+                return Err(AppError::Validation(
+                    "Nama ahli waris wajib diisi untuk Asuransi Jiwa".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validasi Instansi (group) flow. Field root (nik/full_name/email/etc.)
+/// tetap dipakai sebagai **data representative** (yang login & submit).
+/// Data peserta ada di `d.participants`. Plan/term shared by all peserta.
+fn validate_instansi(d: &RegistrationData, plan: &ProductPlan) -> Result<(), AppError> {
+    // Institution info wajib
+    match d.company_name.as_deref().map(str::trim) {
+        Some(n) if (1..=200).contains(&n.len()) => {}
+        _ => {
+            return Err(AppError::Validation(
+                "company_name wajib diisi untuk pendaftaran Instansi".into(),
+            ));
+        }
+    }
+    // Representative data (yang login & submit) tetap divalidasi — pastikan
+    // NIK/email/mobile valid meskipun tidak masuk tabel customers update
+    // untuk Instansi flow.
+    if !is_16_digits(&d.nik) {
+        return Err(AppError::Validation(
+            "NIK representative harus 16 digit".into(),
+        ));
+    }
+    if d.full_name.trim().is_empty() {
+        return Err(AppError::Validation(
+            "Nama representative wajib diisi".into(),
+        ));
+    }
+    if !is_email_valid(&d.email) {
+        return Err(AppError::Validation(
+            "Email representative tidak valid".into(),
+        ));
+    }
+    let digit_count = d.mobile_number.chars().filter(|c| c.is_ascii_digit()).count();
+    if !(10..=15).contains(&digit_count) || d.mobile_number.chars().any(|c| !c.is_ascii_digit()) {
+        return Err(AppError::Validation(
+            "No HP representative harus 10-15 digit".into(),
+        ));
+    }
+    if d.coverage_term < 1 {
+        return Err(AppError::Validation("coverage_term must be >= 1".into()));
+    }
+    // Minimal 1 peserta
+    if d.participants.is_empty() {
+        return Err(AppError::Validation(
+            "Minimal 1 peserta untuk pendaftaran Instansi".into(),
+        ));
+    }
+    // Max 500 peserta — safety limit. Group insurance biasanya max ratusan
+    // (HR enrolling karyawan). Kalau butuh lebih, naikkan limit & review
+    // performance INSERT batch.
+    if d.participants.len() > 500 {
+        return Err(AppError::Validation(
+            "Maksimal 500 peserta per registrasi".into(),
+        ));
+    }
+    // Validate setiap peserta
+    for (i, p) in d.participants.iter().enumerate() {
+        validate_participant(p, plan.product_code).map_err(|e| {
+            AppError::Validation(format!("Peserta #{}: {}", i + 1, e))
+        })?;
+    }
+    Ok(())
+}
+
+/// Validasi 1 peserta. Field identik dengan validate_individu kecuali
+/// tidak ada email/mobile/beneficiary_name requirement (kecuali untuk LIFE).
+fn validate_participant(p: &ParticipantData, product_code: &str) -> Result<(), AppError> {
+    if !is_16_digits(&p.nik) {
+        return Err(AppError::Validation(format!("NIK harus 16 digit ({})", p.nik)));
+    }
+    if p.full_name.trim().is_empty() {
+        return Err(AppError::Validation("Nama lengkap wajib diisi".into()));
+    }
+    if p.birth_place.trim().is_empty() {
+        return Err(AppError::Validation("Tempat lahir wajib diisi".into()));
+    }
+    if p.birth_date > Utc::now().date_naive() {
+        return Err(AppError::Validation(
+            "Tanggal lahir tidak boleh di masa depan".into(),
+        ));
+    }
+    if !matches!(p.gender.as_str(), "MALE" | "FEMALE") {
+        return Err(AppError::Validation("Gender harus MALE atau FEMALE".into()));
+    }
+    if p.address.trim().is_empty() {
+        return Err(AppError::Validation("Alamat wajib diisi".into()));
+    }
+    if !p.rt_rw.contains('/') {
+        return Err(AppError::Validation("RT/RW format: 001/002".into()));
+    }
+    if p.village.trim().is_empty()
+        || p.district.trim().is_empty()
+        || p.city.trim().is_empty()
+        || p.province.trim().is_empty()
+    {
+        return Err(AppError::Validation(
+            "Kelurahan/Kecamatan/Kota/Provinsi wajib diisi".into(),
+        ));
+    }
+    if p.postal_code.len() != 5 || !p.postal_code.chars().all(|c| c.is_ascii_digit()) {
+        return Err(AppError::Validation("Kode pos 5 digit".into()));
+    }
+    // Beneficiary per peserta WAJIB untuk LIFE
+    if product_code == "LIFE" {
+        match p.beneficiary_name.as_deref().map(str::trim) {
             Some(n) if (1..=120).contains(&n.len()) => {}
             _ => {
                 return Err(AppError::Validation(
