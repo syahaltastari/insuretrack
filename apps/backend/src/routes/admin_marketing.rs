@@ -517,27 +517,18 @@ async fn update_testimonial(
     State(state): State<AppState>,
     RequireAdmin(admin_claims): RequireAdmin,
     Path(id): Path<Uuid>,
-    multipart: Multipart,
+    // PATCH JSON-only per spec. Foto TIDAK bisa di-replace via PATCH —
+    // gunakan endpoint upload terpisah atau re-create via POST + DELETE.
+    Json(form): Json<TestimonialForm>,
 ) -> AppResult<Json<TestimonialRow>> {
-    let (json, file_opt) = parse_multipart_json_and_file(multipart).await?;
-    let form: TestimonialForm = serde_json::from_value(json)
-        .map_err(|e| AppError::Validation(format!("invalid form: {e}")))?;
-
     if !(1..=5).contains(&form.rating) {
         return Err(AppError::Validation("rating must be 1..=5".into()));
     }
-
-    let new_photo_path: Option<String> = if let Some((fn_, ct, bytes)) = file_opt {
-        Some(marketing::save_image(&state.config.upload_dir, "testimonials", id, &fn_, &ct, &bytes).await?)
-    } else {
-        None
-    };
 
     let row: TestimonialRow = sqlx::query_as(
         r#"
         UPDATE testimonials SET
             customer_name = COALESCE($2, customer_name),
-            photo_path = COALESCE($3, photo_path),
             rating = COALESCE($4, rating),
             review = COALESCE($5, review),
             role = COALESCE($6, role),
@@ -554,7 +545,6 @@ async fn update_testimonial(
     )
     .bind(id)
     .bind(if form.customer_name.is_empty() { None } else { Some(form.customer_name.as_str()) })
-    .bind(new_photo_path.as_deref())
     .bind(if (1..=5).contains(&form.rating) { Some(form.rating) } else { None })
     .bind(if form.review.is_empty() { None } else { Some(form.review.as_str()) })
     .bind(form.role.as_deref())

@@ -121,6 +121,7 @@ async fn activate(
     Ok(Json(LoginResponse {
         token,
         role: "customer".to_string(),
+        id: Some(customer.id),
     }))
 }
 
@@ -175,6 +176,7 @@ async fn login(
     Ok(Json(LoginResponse {
         token,
         role: "customer".to_string(),
+        id: Some(customer.id),
     }))
 }
 
@@ -263,6 +265,7 @@ async fn password_reset_consume(
     Ok(Json(LoginResponse {
         token,
         role: "customer".to_string(),
+        id: Some(customer.id),
     }))
 }
 

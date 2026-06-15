@@ -14,6 +14,7 @@ import {
   getCustomerToken,
   type ApplicantType,
   type ProductCatalogData,
+  type ProductCatalogResponse,
   type ProductCode,
   type ProductPlan,
 } from "@insuretrack/api-client";

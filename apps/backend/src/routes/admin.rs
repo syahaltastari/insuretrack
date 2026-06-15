@@ -155,6 +155,7 @@ async fn login(
     Ok(Json(LoginResponse {
         token,
         role: "admin".to_string(),
+        id: Some(admin_id),
     }))
 }
 
@@ -873,12 +874,15 @@ async fn download_policy_pdf(
     _: RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<Response> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT pdf_path FROM policies WHERE id = $1")
+    // Select policy_no juga agar bisa di-set sebagai filename di
+    // Content-Disposition (UX: file di folder Download = POL-...pdf,
+    // bukan UUID acak). Pattern sama dengan download_invoice_pdf.
+    let row: Option<(Option<String>, String)> =
+        sqlx::query_as("SELECT pdf_path, policy_no FROM policies WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
-    let (pdf_path_opt,) = row.ok_or(AppError::NotFound("policy".into()))?;
+    let (pdf_path_opt, policy_no) = row.ok_or(AppError::NotFound("policy".into()))?;
     let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("policy pdf".into()))?;
 
     let bytes = state
@@ -892,9 +896,13 @@ async fn download_policy_pdf(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/pdf"),
     );
+    // Set filename seperti invoice PDF (lihat download_invoice_pdf di bawah).
+    // Tanpa filename, browser save dengan nama UUID random.
+    let disposition = format!("attachment; filename=\"{policy_no}.pdf\"");
     headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_static("attachment"),
+        HeaderValue::from_str(&disposition)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("invalid disposition: {e}")))?,
     );
     Ok((StatusCode::OK, headers, body).into_response())
 }

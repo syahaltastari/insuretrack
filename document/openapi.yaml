@@ -1843,6 +1843,7 @@ components:
         role:
           type: string
           enum: [customer, admin]
+        id: { type: string, format: uuid, nullable: true, description: "customer_id for customer role, admin_id for admin role. Omitted when not set (legacy callers)." }
 
     ActivateRequest:
       type: object

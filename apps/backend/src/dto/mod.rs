@@ -6,6 +6,7 @@
 pub mod registration;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 // ---- Auth ----
 
@@ -19,6 +20,13 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub token: String,
     pub role: String,
+    /// ID of the authenticated entity. `customer_id` for customer role,
+    /// `admin_id` for admin role. Provided to FE to avoid decoding JWT
+    /// or making a roundtrip to /me for common cases (avatar, breadcrumb,
+    /// topbar greeting). Optional so legacy call sites that don't fill
+    /// it can still compile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
