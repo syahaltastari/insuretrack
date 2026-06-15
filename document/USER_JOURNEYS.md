@@ -78,9 +78,19 @@ Monthly-reset sequences allocated inside a DB transaction:
 
 ### Audit events emitted
 
-Every meaningful action writes a row to `audit_logs` (`actor`, `action`, `entity_type`, `entity_id`, `metadata` JSONB, `ip_address`):
+Every meaningful action writes a row to `audit_logs` (`actor`, `action`, `entity_type`, `entity_id`, `metadata` JSONB, `ip_address`). The full set emitted by the implementation:
 
-`admin_login`, `customer_login`, `customer_registered`, `registration_created`, `invoice_generated`, `payment_received`, `policy_issued`, `claim_submitted`, `claim_status_changed`, `claim_payment_proof_uploaded`, `inquiry_submitted`, `inquiry_message_sent`, `inquiry_closed_by_customer`, `inquiry_closed_by_admin`, `customer_profile_updated`, `customer_password_changed`, `customer_password_reset`, `admin_profile_updated`, `admin_password_changed`.
+`admin_login`, `customer_login`, `customer_registered`, `registration_created`, `invoice_generated`, `policy_issued`, `claim_submitted`, `claim_status_changed`, `claim_payment_proof_uploaded`, `inquiry_submitted`, `inquiry_message_sent`, `inquiry_closed_by_customer`, `inquiry_closed_by_admin`, `inquiry_auto_closed`, `customer_profile_updated`, `customer_password_changed`, `customer_password_reset`, `admin_profile_updated`, `admin_password_changed`, `client_created`, `client_updated`, `client_deleted`, `testimonial_created`, `testimonial_updated`, `testimonial_deleted`, `email_queued`, `email_sent`, `email_failed`.
+
+> **Note on `payment_received`:** the older spec listing (`CLAUDE.md` and
+> the FS-15 table in the spec PDF) mentioned a `payment_received` audit
+> event. The implementation does **not** emit that action — the webhook
+> handler logs one `policy_issued` audit row per issued policy instead,
+> which serves as the equivalent payment trail (1 row for INDIVIDU, N
+> rows for INSTANSI). The `policy_issued` events are filterable in
+> `/admin/audit-logs?entity_type=policy`; the webhook response's
+> `replayed: true/false` flag plus the e-policy email send are the
+> other observable signals.
 
 ---
 
@@ -1158,22 +1168,23 @@ docker compose logs backend | grep "listening on"
 | 11 | J8 Pay invoice (webhook) Individu | 1 policy issued, e-policy PDF emailed. |
 | 12 | J8 Pay invoice (webhook) Instansi | N policies issued, N e-policy PDFs emailed. |
 | 13 | J9 View policies | N policy rows for Instansi, each with Peserta column. PDF downloadable. |
-| 14 | J11 Submit claim | Claim row created, status SUBMITTED. |
+| 14 | J11 Submit claim | Claim row created, status SUBMITTED, `claim_type` and `claimed_amount` auto-set from policy. |
 | 15 | J23 Admin review claim (SUBMITTED → UNDER_REVIEW → APPROVED) | Status changes, email to customer. |
-| 16 | J23 Admin mark claim PAID with payment proof | Status PAID, payment_proof_path set, email sent. |
-| 17 | J13 Create inquiry | Inquiry row created, status OPEN, first message in thread. |
-| 18 | J24 Admin reply inquiry | Status ANSWERED, thread has 2 messages, email to customer. |
-| 19 | J14 Customer reply in thread | Status back to OPEN, 3 messages, internal email to admin. |
-| 20 | J14b Customer closes inquiry | Status CLOSED, closed_at set, audit row. |
-| 21 | J4 Forgot password | Reset link works, can set new password. |
-| 22 | J15 Edit profile | Name updated in topbar. |
-| 23 | J16 Change password | Can log in with new password. |
-| 24 | J17 Logout | Token cleared, protected pages redirect. |
-| 25 | J18 Admin login | Admin panel loads. |
-| 26 | J19–J22 Admin views | All data visible, CSV export works, PDFs downloadable. |
-| 27 | J20b Admin registration detail | For INSTANSI, see N participants in detail page. |
-| 28 | J25–J26 Admin marketing | Add a new client, see it on landing. |
-| 29 | J27–J28 Admin logs | Failed emails visible, audit trail complete (all 18 action types). |
+| 16 | J23 Admin override `claim_type` (LIFE: DEATH → MATURITY) | DB `claim_type` updated, audit `claim_type_override` field set. |
+| 17 | J23 Admin mark claim PAID with payment proof | Status PAID, payment_proof_path set, email sent. |
+| 18 | J13 Create inquiry | Inquiry row created, status OPEN, first message in thread. |
+| 19 | J24 Admin reply inquiry | Status ANSWERED, thread has 2 messages, email to customer. |
+| 20 | J14 Customer reply in thread | Status back to OPEN, 3 messages, internal email to admin. |
+| 21 | J14b Customer closes inquiry | Status CLOSED, closed_at set, audit row. |
+| 22 | J4 Forgot password | Reset link works, can set new password. |
+| 23 | J15 Edit profile | Name updated in topbar. |
+| 24 | J16 Change password | Can log in with new password. |
+| 25 | J17 Logout | Token cleared, protected pages redirect. |
+| 26 | J18 Admin login | Admin panel loads. |
+| 27 | J19–J22 Admin views | All data visible, CSV export works, PDFs downloadable. |
+| 28 | J20b Admin registration detail | For INSTANSI, see N participants in detail page. |
+| 29 | J25–J26 Admin marketing | Add a new client, see it on landing. |
+| 30 | J27–J28 Admin logs | Failed emails visible, audit trail complete (29 action types, see Quick Reference). |
 
 ---
 
