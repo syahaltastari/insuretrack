@@ -58,5 +58,26 @@ echo.
 echo Stop: Ctrl+C di masing-masing window. Window ini aman ditutup kapan saja.
 echo Untuk start/stop database: services.msc → postgresql-x64-18.
 echo.
+
+
+REM --- 3. Optional: Seed dummy data -----------------------------------------
+echo [3/3] Seed dummy data? (Reset DB + insert 30 customers, 50 regs, dst.)
+echo   Default [N] — skip.
+echo   Pilih y untuk populate database dengan data demo realistis.
+echo   Pilih n untuk lanjut tanpa seed.
+echo.
+set /p "SEED_CHOICE=Seed dummy data? [y/N]: "
+if /i "!SEED_CHOICE!"=="y" (
+    echo [Seeder] Membuka window baru untuk cargo run --bin seed -- --reset...
+    echo   Backend HARUS distop dulu supaya tidak ada race condition
+    echo   pada id_sequences. Tutup window "InsureTrack - Backend" jika
+    echo   sedang running, lalu tekan Enter di window seeder.
+    start "InsureTrack - Seeder (cargo run --bin seed)" cmd /k "cd /d ""!REPO_ROOT!\apps\backend"" && cargo run --bin seed -- --reset --registrations 50 --upload-dir ./uploads"
+) else (
+    echo [Seeder] Skip.
+)
+echo.
+
+
 pause
 exit /b 0
