@@ -1,14 +1,9 @@
 //! InsureTrack backend entry point (Axum).
-
-mod auth;
-mod config;
-mod domain;
-mod dto;
-mod error;
-mod repo;
-mod routes;
-mod services;
-mod state;
+//!
+//! Module declarations pindah ke `lib.rs` (lihat komentar di sana)
+//! supaya bisa di-share dengan `bin/seed.rs`. main.rs dan lib.rs adalah
+//! 2 crate berbeda (binary vs library) — oleh karena itu kita `use
+//! insuretrack_backend::*` di sini, BUKAN `crate::*`.
 
 use std::{net::SocketAddr, time::Duration};
 
@@ -16,8 +11,9 @@ use sqlx::postgres::PgPoolOptions;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::{
+use insuretrack_backend::{
     config::Config,
+    routes,
     services::{resend::ResendClient, storage},
     state::AppState,
 };

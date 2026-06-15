@@ -4,6 +4,25 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 
+# `cargo run` (tanpa --bin) default ke server, bukan seeder.
+# Seeder dijalankan eksplisit: `cargo run --bin seed -- --reset`.
+default-run = "insuretrack-backend"
+
+[lib]
+# Library crate root di src/lib.rs — dibutuhkan supaya `src/bin/seed.rs`
+# bisa import modules yang sama dengan `src/main.rs` (config, services,
+# domain, dst.). Tanpa lib.rs, modules declared di main.rs hanya visible
+# di main binary, tidak bisa di-share ke bin/seed.
+path = "src/lib.rs"
+
+[[bin]]
+name = "insuretrack-backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "seed"
+path = "src/bin/seed.rs"
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["multipart", "macros"] }
@@ -54,6 +73,9 @@ rand = "0.8"
 
 # PDF generation (e-Policy)
 printpdf = "0.7"
+
+# CLI parsing (seeder binary)
+clap = { version = "4", features = ["derive"] }
 
 # Misc streaming
 tokio-util = { version = "0.7", features = ["io"] }
