@@ -601,37 +601,60 @@ GET /api/customer/invoices/:id/pdf
 
 **Path:** `http://localhost:3000/portal/claims/new` (or via `/portal/claims` → **Ajukan Klaim** button, gated by `activePolicyCount > 0`)
 
+**Design note (industry-aligned):** in real insurance, crucial fields like
+the claim type and the payout amount are *not* chosen by the customer
+— they're determined by the insurer from the policy terms and the
+nature of the incident. The form is designed around that: the user
+provides **what happened and when**, and the system determines the
+rest. The customer only fills 3 fields (plus uploads supporting
+documents).
+
 **Form fields (multipart):**
-- `data` (JSON): `policy_id`, `claim_type`, `incident_date`, `claimed_amount`, `description`.
+- `data` (JSON): `policy_id`, `incident_date`, `description`. **Only 3 fields** — `claim_type` and `claimed_amount` are NOT user input.
 - `documents` (file(s)): evidence (JPG/PNG/PDF, max 5 MB each).
 
-**Claim types** (closed set, 5 values):
+**Read-only info card** (shown above the form, updates when policy changes):
+- **Tipe Klaim:** auto-derived from `policy.product`:
+  - `LIFE` → `DEATH` ("Klaim Meninggal Dunia") — admin can override to `MATURITY` or `SURRENDER`
+  - `HEALTH` → `HOSPITALIZATION` ("Klaim Rawat Inap")
+  - `PERSONAL_ACCIDENT` → `ACCIDENT` ("Klaim Kecelakaan")
+- **Jumlah Klaim (UP):** equals `policy.sum_assured`. Displayed as IDR; flagged as "akan diverifikasi oleh tim kami" because the final payout is determined by the admin at the PAID stage.
 
-| Code | Display | Typical product |
-| --- | --- | --- |
-| `DEATH` | Klaim meninggal | LIFE |
-| `ACCIDENT` | Klaim kecelakaan | PA, HEALTH |
-| `HOSPITALIZATION` | Klaim rawat inap | HEALTH |
-| `MATURITY` | Klaim jatuh tempo | LIFE |
-| `SURRENDER` | Klaim surrender | LIFE |
+**Auto-filled description** (regenerated when policy or date changes, but
+only overwrites an empty textarea — user edits are preserved):
+> `Klaim untuk polis POL-202606-000001 (Asuransi Jiwa) — kejadian pada 2026-06-01.`
 
 **Validation rules (server-side):**
 - The policy must be `ACTIVE` and belong to the customer.
 - `incident_date` must not be in the future.
 - `incident_date` must fall within the policy's effective → expiry range.
-- `claimed_amount` must be > 0 and ≤ sum assured.
+- `description` is 10–2000 chars.
+- `claim_type` is server-derived via `default_claim_type_for_product(product_code)`.
+- `claimed_amount` is server-set to `sum_assured`.
 
 **Steps:**
-1. Open the form. Pick a policy from your active ones.
-2. Fill the rest. Upload at least one document.
-3. Submit. Backend creates a claim with `status = 'SUBMITTED'`, generates `claim_no`, sends **CLAIM_RECEIVED** email, audits `claim_submitted`.
+1. Open the form. Pick a policy from your active ones. The info card updates to show the auto-determined `claim_type` and the policy's UP.
+2. Pick the incident date. The description auto-fills with a template; edit if needed to add specifics.
+3. Upload one or more supporting documents (optional but recommended).
+4. Submit. Backend creates a claim with `status = 'SUBMITTED'`, generates `claim_no`, sets `claim_type` (auto) and `claimed_amount` (auto = sum_assured), sends **CLAIM_RECEIVED** email, audits `claim_submitted` (with `claim_type_auto` and `claimed_amount_auto` in the metadata).
 
 **API:**
 ```
 POST /api/customer/claims
 Authorization: Bearer <jwt>
 Content-Type: multipart/form-data
+
+-- data (JSON string)
+{
+  "policy_id": "...",
+  "incident_date": "2026-06-01",
+  "description": "Klaim untuk polis POL-... (Asuransi Jiwa) — kejadian pada 2026-06-01."
+}
+-- documents (binary, JPG/PNG/PDF, max 5 MB each)
 ```
+
+> Admin can override `claim_type` at any time via
+> `PATCH /api/admin/claims/{id}` — see **J23**.
 
 ---
 
@@ -908,26 +931,32 @@ GET /api/admin/policies/:id/pdf
 
 ---
 
-### J23. Review and Update a Claim (+ Upload Payment Proof)
+### J23. Review and Update a Claim (+ Upload Payment Proof + Override claim_type)
 
 **Path:** `http://localhost:3001/admin/claims` → click a claim card
 
 **Form per claim card:**
 - Status dropdown: `SUBMITTED → UNDER_REVIEW → APPROVED → PAID`, or `→ REJECTED` at any point before `APPROVED`.
 - Decision note (text, max 2000 chars).
+- **Claim type override dropdown** — optional. If the customer-submitted claim's auto-determined `claim_type` is wrong (most common case: a LIFE policy where the claim is actually `MATURITY` or `SURRENDER`, not the default `DEATH`), admin can change it. Leave as default to skip the update.
 - **Payment proof file picker** — visible **only** when transitioning to `PAID`. Upload JPG / PNG / PDF, max 5 MB. Stored at `payment_proofs/{claim_id}/{filename}`.
 
 **Steps:**
-1. Open `/admin/claims`. Click a row to see detail.
-2. Change status, add decision note. Optionally attach payment proof.
+1. Open `/admin/claims`. Click a row to see detail. The system-determined `claim_type` is shown in the claim card (e.g. "DEATH" for a LIFE claim).
+2. Change status, add decision note. Optionally override the claim type. Optionally attach payment proof.
 3. Submit. The backend:
    - Validates the transition per spec §10 state machine.
+   - If `claim_type` is in the request, validates it against the closed set `{DEATH, ACCIDENT, HOSPITALIZATION, MATURITY, SURRENDER}` and updates the column.
    - For the `APPROVED → PAID` transition, requires a `payment_proof_path` (file must be uploaded first via the dedicated endpoint, see below).
    - Updates the claim.
    - Sends **CLAIM_STATUS_UPDATE** email to customer.
-   - Audits `claim_status_changed`. If a proof was uploaded, also `claim_payment_proof_uploaded`.
+   - Audits `claim_status_changed`. The audit metadata includes `claim_type_override` if one was sent. If a proof was uploaded, also `claim_payment_proof_uploaded`.
 
 **State machine (claim):** `SUBMITTED → UNDER_REVIEW → APPROVED → PAID`, or to `REJECTED`. Invalid transitions are rejected with 400.
+
+**Claim type override** (most common use case):
+- LIFE policy that was auto-set to `DEATH` at submission but is actually a `MATURITY` claim (end of term payout) or `SURRENDER` (early termination).
+- Validation: must be one of `DEATH | ACCIDENT | HOSPITALIZATION | MATURITY | SURRENDER`. Invalid values → 400.
 
 **Payment proof upload endpoint (called separately, before PATCH):**
 ```
@@ -945,6 +974,16 @@ PATCH /api/admin/claims/:id
 Content-Type: application/json
 
 { "status": "APPROVED", "decision_note": "Dokumen lengkap, klaim disetujui." }
+```
+
+With claim_type override (e.g. LIFE MATURITY):
+```
+PATCH /api/admin/claims/:id
+{
+  "status": "UNDER_REVIEW",
+  "claim_type": "MATURITY",
+  "decision_note": "Klaim jatuh tempo polis POL-... diverifikasi."
+}
 ```
 
 For `PAID`:

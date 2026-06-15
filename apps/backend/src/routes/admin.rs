@@ -1264,6 +1264,12 @@ struct PatchClaimBody {
     status: String,
     #[serde(default)]
     decision_note: Option<String>,
+    /// Admin override untuk system-determined claim_type. Dipakai
+    /// untuk edge case (mis. polis LIFE dengan klaim MATURITY atau
+    /// SURRENDER, di mana default auto-set DEATH tidak tepat).
+    /// Kalau None, claim_type di-DB tidak diubah.
+    #[serde(default)]
+    claim_type: Option<String>,
 }
 
 async fn patch_claim(
@@ -1273,6 +1279,16 @@ async fn patch_claim(
     Json(req): Json<PatchClaimBody>,
 ) -> AppResult<Json<AdminClaimRow>> {
     use crate::domain::claim::can_transition as claim_can_transition;
+
+    // Validate claim_type override kalau diberikan. Empty string ditolak
+    // (kalau mau "tidak diubah", kirim `null` atau omit field-nya).
+    if let Some(ref ct) = req.claim_type {
+        if !crate::domain::claim::is_valid_claim_type(ct) {
+            return Err(AppError::Validation(format!(
+                "invalid claim_type '{ct}'; must be one of DEATH|ACCIDENT|HOSPITALIZATION|MATURITY|SURRENDER"
+            )));
+        }
+    }
 
     let current: Option<(String,)> = sqlx::query_as("SELECT status FROM claims WHERE id = $1")
         .bind(id)
@@ -1286,14 +1302,28 @@ async fn patch_claim(
         )));
     }
 
-    sqlx::query(
-        "UPDATE claims SET status = $1, decision_note = $2, updated_at = now() WHERE id = $3",
-    )
-    .bind(&req.status)
-    .bind(req.decision_note.as_deref())
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
+    // Bangun SQL dinamis: claim_type di-update hanya kalau admin override.
+    // Status & decision_note selalu di-update.
+    if let Some(ref ct) = req.claim_type {
+        sqlx::query(
+            "UPDATE claims SET status = $1, decision_note = $2, claim_type = $3, updated_at = now() WHERE id = $4",
+        )
+        .bind(&req.status)
+        .bind(req.decision_note.as_deref())
+        .bind(ct)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    } else {
+        sqlx::query(
+            "UPDATE claims SET status = $1, decision_note = $2, updated_at = now() WHERE id = $3",
+        )
+        .bind(&req.status)
+        .bind(req.decision_note.as_deref())
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    }
 
     let row: AdminClaimRow = sqlx::query_as(
         r#"
@@ -1354,6 +1384,9 @@ async fn patch_claim(
                 "from": current_status,
                 "to": req.status,
                 "decision_note": req.decision_note,
+                // `claim_type_override` di-include hanya kalau admin
+                // benar-benar override (None → field absent).
+                "claim_type_override": req.claim_type,
             })),
             ip_address: None,
         },

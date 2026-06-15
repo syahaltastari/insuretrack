@@ -815,10 +815,13 @@ struct ClaimRow {
 #[derive(serde::Deserialize)]
 struct CreateClaimJson {
     policy_id: Uuid,
-    claim_type: String,
     incident_date: chrono::NaiveDate,
-    claimed_amount: Decimal,
     description: String,
+    // `claim_type` & `claimed_amount` di-set server-side dari policy:
+    //   claim_type      = default_claim_type_for_product(policy.product)
+    //   claimed_amount  = policy.sum_assured
+    // User tidak input — lihat create_claim handler di bawah. Admin
+    // bisa override claim_type via PATCH /admin/claims/:id.
 }
 
 #[derive(Serialize)]
@@ -944,20 +947,23 @@ async fn create_claim(
     let data: CreateClaimJson = serde_json::from_str(&data_str)
         .map_err(|e| AppError::Validation(format!("invalid data JSON: {e}")))?;
 
-    // Validate: policy belongs to customer, ACTIVE, incident_date in coverage period, claimed_amount <= sum_assured
-    let policy: Option<(Uuid, String, Decimal, chrono::NaiveDate, chrono::NaiveDate)> = sqlx::query_as(
-        r#"
-        SELECT p.id, p.status, p.sum_assured, p.effective_date, p.expiry_date
-          FROM policies p
-          JOIN registrations r ON r.id = p.registration_id
-         WHERE p.id = $1 AND r.customer_id = $2
-        "#,
-    )
-    .bind(data.policy_id)
-    .bind(customer_id)
-    .fetch_optional(&state.pool)
-    .await?;
-    let (pid, pstatus, sum_assured, eff, exp) =
+    // Validate: policy belongs to customer, ACTIVE, incident_date in coverage period.
+    // `claim_type` & `claimed_amount` di-derive dari policy di bawah
+    // (lihat komentar di CreateClaimJson).
+    let policy: Option<(Uuid, String, String, Decimal, chrono::NaiveDate, chrono::NaiveDate)> =
+        sqlx::query_as(
+            r#"
+            SELECT p.id, p.status, p.product, p.sum_assured, p.effective_date, p.expiry_date
+              FROM policies p
+              JOIN registrations r ON r.id = p.registration_id
+             WHERE p.id = $1 AND r.customer_id = $2
+            "#,
+        )
+        .bind(data.policy_id)
+        .bind(customer_id)
+        .fetch_optional(&state.pool)
+        .await?;
+    let (pid, pstatus, product, sum_assured, eff, exp) =
         policy.ok_or(AppError::NotFound("policy not found or not owned".into()))?;
     if pstatus != "ACTIVE" {
         return Err(AppError::Validation(format!(
@@ -975,15 +981,14 @@ async fn create_claim(
             "incident_date outside policy coverage period".into(),
         ));
     }
-    if data.claimed_amount <= Decimal::ZERO {
-        return Err(AppError::Validation("claimed_amount must be > 0".into()));
-    }
-    if data.claimed_amount > sum_assured {
-        return Err(AppError::Validation(format!(
-            "claimed_amount exceeds sum assured ({sum_assured})"
-        )));
-    }
     let _ = pid;
+
+    // Auto-determine claim_type dari product. Admin bisa override via
+    // PATCH /admin/claims/:id (lihat domain::claim::default_claim_type_for_product).
+    let claim_type = crate::domain::claim::default_claim_type_for_product(&product);
+    // Auto-set claimed_amount ke UP polis. Final amount ditentukan
+    // admin di PATCH /admin/claims/:id (transisi APPROVED → PAID).
+    let claimed_amount = sum_assured;
 
     // Save documents first so we can reference claim_id.
     let mut tx = state.pool.begin().await?;
@@ -1002,9 +1007,9 @@ async fn create_claim(
     .bind(&claim_no)
     .bind(data.policy_id)
     .bind(customer_id)
-    .bind(&data.claim_type)
+    .bind(claim_type)
     .bind(data.incident_date)
-    .bind(data.claimed_amount)
+    .bind(claimed_amount)
     .bind(&data.description)
     .execute(&mut *tx)
     .await?;
@@ -1069,7 +1074,10 @@ async fn create_claim(
             metadata: Some(serde_json::json!({
                 "claim_no": claim_no,
                 "policy_id": data.policy_id,
-                "claimed_amount": data.claimed_amount,
+                "claim_type_auto": claim_type,
+                "claim_type_source": "derived_from_product",
+                "claimed_amount_auto": claimed_amount.to_string(),
+                "claimed_amount_source": "policy.sum_assured",
             })),
             ip_address: None,
         },

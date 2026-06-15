@@ -1210,8 +1210,9 @@ paths:
       tags: [Admin Backoffice]
       summary: Update claim status (review workflow)
       description: |
-        Updates `status` and `decision_note`. The transition must be
-        valid per the claim state machine:
+        Updates `status` and (optionally) `decision_note` and
+        `claim_type`. The status transition must be valid per the
+        claim state machine:
 
         - `SUBMITTED → UNDER_REVIEW`
         - `UNDER_REVIEW → APPROVED`
@@ -1222,6 +1223,11 @@ paths:
         email to the customer. Transitioning to `PAID` requires a prior
         `POST /admin/claims/{id}/payment-proof` upload; this endpoint
         only flips the status (it does not re-upload the proof).
+
+        `claim_type` is an admin override for the system-determined
+        type (see ClaimRow). Use it to correct the auto-set type
+        when needed (e.g. LIFE policy where the claim is actually
+        MATURITY or SURRENDER, not DEATH). Omit to leave unchanged.
       operationId: adminPatchClaim
       parameters:
         - $ref: "#/components/parameters/IdParam"
@@ -2146,6 +2152,12 @@ components:
 
     # ----- Claims -----
     ClaimRow:
+      description: |
+        Claim row. `claim_type` and `claimed_amount` are
+        **system-determined at submission time** (derived from
+        `policy.product` and `policy.sum_assured` respectively) — the
+        customer does not pick them. Admin can override `claim_type`
+        via PATCH /admin/claims/{id} (see PatchClaimRequest).
       type: object
       required: [id, claim_no, policy_id, claim_type, incident_date, claimed_amount, description, status, submitted_at, updated_at]
       properties:
@@ -2155,13 +2167,20 @@ components:
         policy_no: { type: string, example: "POL-202606-000001" }
         claim_type:
           type: string
-          example: "DEATH_BENEFIT"
+          enum: [DEATH, ACCIDENT, HOSPITALIZATION, MATURITY, SURRENDER]
           description: |
-            Free-form string per spec — product-specific (LIFE:
-            DEATH_BENEFIT, HEALTH: MEDICAL_REIMBURSEMENT,
-            PERSONAL_ACCIDENT: ACCIDENTAL_INJURY, etc.).
+            System-determined from `policy.product` on submission
+            (LIFE→DEATH, HEALTH→HOSPITALIZATION, PA→ACCIDENT).
+            Admin can override via PATCH for edge cases
+            (LIFE MATURITY/SURRENDER).
         incident_date: { type: string, format: date }
-        claimed_amount: { type: number, format: double }
+        claimed_amount:
+          type: number
+          format: double
+          description: |
+            Auto-set to `policy.sum_assured` on submission. Represents
+            the maximum payable amount. Final payout (at PAID stage)
+            is determined by the admin and may be less.
         description: { type: string }
         status:
           type: string
@@ -2176,13 +2195,39 @@ components:
       properties:
         data:
           type: string
-          description: JSON string with the claim payload.
+          description: |
+            JSON string with the customer-controlled claim payload.
+            Schema (see ClaimSubmission below):
+            `{ "policy_id": "...", "incident_date": "YYYY-MM-DD", "description": "..." }`.
+            **`claim_type` and `claimed_amount` are NOT user input** —
+            they are derived server-side from the policy
+            (see ClaimRow description for the auto-determination rules).
         documents:
           type: array
           items:
             type: string
             format: binary
           description: One or more files (JPG/PNG/PDF, max 5 MB each).
+
+    ClaimSubmission:
+      description: |
+        Customer-submitted claim payload. Sent as a JSON string in
+        the `data` field of the multipart form. `claim_type` and
+        `claimed_amount` are intentionally absent — both are
+        system-derived from the policy (see ClaimRow for the
+        auto-determination rules).
+      type: object
+      required: [policy_id, incident_date, description]
+      properties:
+        policy_id: { type: string, format: uuid }
+        incident_date:
+          type: string
+          format: date
+          description: Must be ≤ today and fall within the policy's effective → expiry range.
+        description:
+          type: string
+          minLength: 10
+          maxLength: 2000
 
     CreateClaimResponse:
       type: object
@@ -2376,6 +2421,16 @@ components:
         decision_note:
           type: string
           nullable: true
+        claim_type:
+          type: string
+          enum: [DEATH, ACCIDENT, HOSPITALIZATION, MATURITY, SURRENDER]
+          nullable: true
+          description: |
+            Admin override for the system-determined claim_type.
+            When present, updates the claim row's `claim_type`.
+            Use this for edge cases (LIFE policy with MATURITY
+            or SURRENDER claim where the system default of DEATH
+            is wrong). When null/omitted, `claim_type` is unchanged.
 
     # `RespondInquiryRequest` is OBSOLETE — removed in migration 0011.
     # Use `POST /admin/inquiries/{id}/messages` (reply) and
