@@ -2,7 +2,7 @@
 //!
 //! Response shape:
 //! ```json
-//! { "error": { "code": "INVALID_INPUT", "message": "...", "details": {...} } }
+//! { "error": { "code": "VALIDATION", "message": "...", "details": {...} } }
 //! ```
 
 use axum::{
@@ -53,7 +53,7 @@ pub enum AppError {
 impl AppError {
     fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {
-            AppError::Validation(_) => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR"),
+            AppError::Validation(_) => (StatusCode::BAD_REQUEST, "VALIDATION"),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED"),
             AppError::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
             AppError::EmailNotActivated => (StatusCode::FORBIDDEN, "EMAIL_NOT_ACTIVATED"),

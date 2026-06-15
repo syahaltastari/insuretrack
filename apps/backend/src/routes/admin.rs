@@ -1027,7 +1027,10 @@ async fn list_audit_logs(
     let offset = q.offset();
     let limit = q.limit();
     let search = q.q.clone().unwrap_or_default();
-    let status = q.status.clone().unwrap_or_default();
+    // Filter `entity_type` column (audit_logs tidak punya kolom `status`).
+    // Bind ke `q.entity_type` bukan `q.status` agar tidak tertukar dengan
+    // endpoint list lain yang memfilter kolom `status`.
+    let entity_type = q.entity_type.clone().unwrap_or_default();
     let like = format!("%{search}%");
 
     if fmt.is_csv() {
@@ -1041,7 +1044,7 @@ async fn list_audit_logs(
             "#,
         )
         .bind(&like)
-        .bind(&status)
+        .bind(&entity_type)
         .fetch_all(&state.pool)
         .await?;
         let body: Vec<Vec<String>> = rows
@@ -1086,7 +1089,7 @@ async fn list_audit_logs(
         "#,
     )
     .bind(&search)
-    .bind(&status)
+    .bind(&entity_type)
     .fetch_one(&state.pool)
     .await?;
 
@@ -1101,7 +1104,7 @@ async fn list_audit_logs(
         "#,
     )
     .bind(&like)
-    .bind(&status)
+    .bind(&entity_type)
     .bind(limit)
     .bind(offset)
     .fetch_all(&state.pool)

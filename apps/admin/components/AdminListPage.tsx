@@ -22,6 +22,11 @@ export function AdminListPage<T extends { id: string }>({
   columns,
   searchPlaceholder = "Cari (nama, no, email, NIK)...",
   statusOptions,
+  /** Query param name to send the status filter under. Default "status"
+   *  (matches registrations, invoices, claims, etc.). Set to "entity_type"
+   *  for endpoints that filter the `entity_type` column instead
+   *  (currently only `/admin/audit-logs`). */
+  statusFilterParam = "status",
   detailBasePath,
   pdfDownloadPath,
   actions,
@@ -35,6 +40,7 @@ export function AdminListPage<T extends { id: string }>({
   columns: Column<T>[];
   searchPlaceholder?: string;
   statusOptions?: string[];
+  statusFilterParam?: "status" | "entity_type";
   detailBasePath?: string;
   pdfDownloadPath?: (row: T) => string | null;
   /** Per-row action buttons (Edit, Hapus, etc.) rendered in a trailing "Aksi" column. */
@@ -65,7 +71,7 @@ export function AdminListPage<T extends { id: string }>({
     try {
       const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
       if (q) params.set("q", q);
-      if (status) params.set("status", status);
+      if (status) params.set(statusFilterParam, status);
       const r = await fetch(`${API_BASE}${endpoint}?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -152,7 +158,7 @@ export function AdminListPage<T extends { id: string }>({
             href={(() => {
               const params = new URLSearchParams({ format: "csv" });
               if (q) params.set("q", q);
-              if (status) params.set("status", status);
+              if (status) params.set(statusFilterParam, status);
               return `${API_BASE}${endpoint}?${params}`;
             })()}
             target="_blank"

@@ -58,6 +58,11 @@ export default function Page() {
       title="Audit Trail"
       endpoint="/admin/audit-logs"
       searchPlaceholder="Cari (actor, action, entity_type)..."
+      // audit_logs tidak punya kolom `status` — kolomnya `entity_type`.
+      // Tanpa override, FE akan mengirim `?status=…` yang di-bind ke entity_type
+      // secara silent. Set `statusFilterParam="entity_type"` agar param name
+      // match dengan query param di backend.
+      statusFilterParam="entity_type"
       columns={[
         {
           key: "created_at",

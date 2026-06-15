@@ -30,7 +30,10 @@ info:
     - **Admin auth:** `Authorization: Bearer <jwt>` from `POST /admin/login`.
     - **Webhook auth:** `X-Webhook-Secret: <shared secret>` header.
     - All timestamps are RFC 3339 / ISO 8601 in UTC.
-    - All money amounts are decimal strings (avoid float precision loss).
+    - All money amounts are JSON numbers (precision-safe up to 9×10^15;
+      for IDR plans up to Rp 1T this is lossless). The Rust backend uses
+      `rust_decimal::Decimal` which serializes as JSON number by default
+      (not string). `Intl.NumberFormat` on the FE consumes them directly.
     - Pagination: `?page=1&page_size=20`. Response shape: `{ "data": [...], "page": 1, "page_size": 20, "total": 42 }`.
 
     ## Status state machines (spec §10)
@@ -105,37 +108,66 @@ paths:
   /public/products:
     get:
       tags: [Public]
-      summary: List insurance products
+      summary: List insurance products & plans
       description: |
-        Returns the catalog of insurance products. The set is fixed at
-        3 (Life, Personal Accident, Health); no DB lookup — values come
-        from a Rust enum (see `apps/backend/src/dto/product_catalog`).
+        Returns the catalog of insurance products AND their pricing plans.
+        The product set is fixed at 3 (Life, Personal Accident, Health);
+        no DB lookup — values come from a Rust enum (see
+        `apps/backend/src/dto/product_catalog`).
+
+        `plans[]` is the pricing tier matrix consumed by the
+        `/portal/insurance/new` PlanPicker — each row has a composite
+        `code` (e.g. `LIFE_BASIC`) that the FE submits in the
+        registration request. Both products and plans are static.
       operationId: listProducts
       security: []
       responses:
         "200":
-          description: Catalog of products.
+          description: Catalog of products + plans.
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   data:
-                    type: array
-                    items: { $ref: "#/components/schemas/Product" }
+                    type: object
+                    required: [products, plans]
+                    properties:
+                      products:
+                        type: array
+                        items: { $ref: "#/components/schemas/Product" }
+                      plans:
+                        type: array
+                        items: { $ref: "#/components/schemas/ProductPlan" }
               examples:
                 success:
                   value:
                     data:
-                      - code: "LIFE"
-                        name: "Life Insurance"
-                        description: "Proteksi jiwa dengan manfaat duka hingga 100x premi."
-                      - code: "PERSONAL_ACCIDENT"
-                        name: "Personal Accident Insurance"
-                        description: "Santunan akibat kecelakaan: cacat tetap, biaya medis, kematian."
-                      - code: "HEALTH"
-                        name: "Health Insurance"
-                        description: "Reimbursement biaya rawat inap dan tindakan medis."
+                      products:
+                        - code: "LIFE"
+                          name: "Life Insurance"
+                          description: "Proteksi jiwa dengan manfaat duka hingga 100x premi."
+                        - code: "PERSONAL_ACCIDENT"
+                          name: "Personal Accident Insurance"
+                          description: "Santunan akibat kecelakaan: cacat tetap, biaya medis, kematian."
+                        - code: "HEALTH"
+                          name: "Health Insurance"
+                          description: "Rawat inap & medis dari jaringan provider rekanan."
+                      plans:
+                        - code: "LIFE_BASIC"
+                          product_code: "LIFE"
+                          tier: "BASIC"
+                          name: "Basic"
+                          sum_assured: 100000000
+                          monthly_premium: 75000
+                          description: "UP Rp 100 juta, premi Rp 75rb/bulan."
+                        - code: "LIFE_STANDARD"
+                          product_code: "LIFE"
+                          tier: "STANDARD"
+                          name: "Standard"
+                          sum_assured: 250000000
+                          monthly_premium: 150000
+                          description: "UP Rp 250 juta, premi Rp 150rb/bulan."
 
   /public/customers:
     post:
@@ -743,7 +775,7 @@ paths:
   /customer/inquiries/{id}:
     get:
       tags: [Customer Inquiries]
-      summary: Get a single inquiry
+      summary: Get a single inquiry (with full thread)
       operationId: getMyInquiry
       parameters:
         - $ref: "#/components/parameters/IdParam"
@@ -752,9 +784,66 @@ paths:
           description: OK
           content:
             application/json:
+              schema: { $ref: "#/components/schemas/InquiryDetailRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /customer/inquiries/{id}/messages:
+    post:
+      tags: [Customer Inquiries]
+      summary: Reply to an inquiry thread (add a customer message)
+      description: |
+        Inserts a new message with `sender_type=CUSTOMER`, sets the
+        inquiry's `last_message_at` and `last_sender_type=CUSTOMER`, and
+        flips status back to `OPEN` (regardless of previous status). Sends
+        a notification email to admin staff. Auto-close is reset.
+      operationId: customerInquiryMessage
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMessageRequest" }
+      responses:
+        "200":
+          description: Updated inquiry with the new message appended.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InquiryDetailRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: "Inquiry is already `CLOSED` (terminal state)."
+          $ref: "#/components/responses/ValidationError"
+
+  /customer/inquiries/{id}/close:
+    post:
+      tags: [Customer Inquiries]
+      summary: Close an inquiry (manual, by customer)
+      description: |
+        Sets `status=CLOSED` and `closed_at=now()`. Only allowed when
+        the inquiry is not already closed. Audit event:
+        `inquiry_closed_by_customer`.
+      operationId: customerCloseInquiry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CloseInquiryRequest" }
+      responses:
+        "200":
+          description: Inquiry closed.
+          content:
+            application/json:
               schema: { $ref: "#/components/schemas/InquiryRow" }
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          description: "Inquiry already closed or invalid transition."
+          $ref: "#/components/responses/ValidationError"
 
   # ============================================================
   # ADMIN AUTH
@@ -1130,7 +1219,9 @@ paths:
         - `SUBMITTED | UNDER_REVIEW → REJECTED`
 
         Invalid transitions return 400. Sends a `CLAIM_STATUS_UPDATE`
-        email to the customer.
+        email to the customer. Transitioning to `PAID` requires a prior
+        `POST /admin/claims/{id}/payment-proof` upload; this endpoint
+        only flips the status (it does not re-upload the proof).
       operationId: adminPatchClaim
       parameters:
         - $ref: "#/components/parameters/IdParam"
@@ -1149,6 +1240,43 @@ paths:
           description: Illegal state transition.
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /admin/claims/{id}/payment-proof:
+    post:
+      tags: [Admin Backoffice]
+      summary: Upload payment proof for a claim (used when marking as PAID)
+      description: |
+        Multipart upload. `proof` is the proof file (JPG / PNG / PDF,
+        max 5 MB). Stored at `payment_proofs/{claim_id}/{filename}`
+        in the storage abstraction (local FS or R2). The returned
+        `payment_proof_path` must be sent in a subsequent
+        `PATCH /admin/claims/{id}` call (the PATCH does not upload
+        the file itself; it just records the storage key).
+
+        Audit event: `claim_payment_proof_uploaded`.
+      operationId: adminUploadClaimPaymentProof
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [proof]
+              properties:
+                proof: { type: string, format: binary, description: "JPG/PNG/PDF, max 5 MB" }
+      responses:
+        "200":
+          description: Proof uploaded; returns the updated claim row including `payment_proof_path`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminClaimRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Invalid file (wrong MIME or > 5 MB).
+          $ref: "#/components/responses/ValidationError"
 
   /admin/inquiries:
     get:
@@ -1174,32 +1302,97 @@ paths:
                         type: array
                         items: { $ref: "#/components/schemas/AdminInquiryRow" }
 
-  /admin/inquiries/{id}/respond:
+  /admin/inquiries/{id}:
+    get:
+      tags: [Admin Backoffice]
+      summary: Get a single inquiry (with full thread)
+      operationId: adminGetInquiry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/AdminInquiryRow"
+                  - type: object
+                    required: [messages]
+                    properties:
+                      messages:
+                        type: array
+                        items: { $ref: "#/components/schemas/MessageRow" }
+                      last_message_at: { type: string, format: date-time, nullable: true }
+                      last_sender_type: { type: string, enum: [CUSTOMER, ADMIN], nullable: true }
+                      closed_at: { type: string, format: date-time, nullable: true }
+                      last_message_preview: { type: string, nullable: true }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/inquiries/{id}/messages:
     post:
       tags: [Admin Backoffice]
-      summary: Respond to an inquiry
+      summary: Reply to an inquiry thread (add an admin message)
       description: |
-        Sets `response` text. If `close: true`, sets `status` to
-        `CLOSED`; otherwise `ANSWERED`. Sends an `INQUIRY_RESPONSE`
-        email to the customer.
-      operationId: adminRespondInquiry
+        Inserts a new message with `sender_type=ADMIN`, sets the
+        inquiry's `last_message_at` and `last_sender_type=ADMIN`, and
+        flips status to `ANSWERED`. Sends an `INQUIRY_RESPONSE` email
+        to the customer.
+      operationId: adminInquiryMessage
       parameters:
         - $ref: "#/components/parameters/IdParam"
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/RespondInquiryRequest" }
+            schema: { $ref: "#/components/schemas/CreateMessageRequest" }
+      responses:
+        "200":
+          description: Updated inquiry with the new message appended.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/AdminInquiryRow"
+                  - type: object
+                    required: [messages]
+                    properties:
+                      messages:
+                        type: array
+                        items: { $ref: "#/components/schemas/MessageRow" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: "Inquiry already closed."
+          $ref: "#/components/responses/ValidationError"
+
+  /admin/inquiries/{id}/close:
+    post:
+      tags: [Admin Backoffice]
+      summary: Close an inquiry (manual, by admin)
+      description: |
+        Sets `status=CLOSED` and `closed_at=now()`. Audit event:
+        `inquiry_closed_by_admin`.
+      operationId: adminCloseInquiry
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CloseInquiryRequest" }
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminInquiryRow" }
-        "400":
-          description: Illegal state transition.
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          description: "Inquiry already closed."
+          $ref: "#/components/responses/ValidationError"
 
   # ============================================================
   # ADMIN MARKETING
@@ -1586,6 +1779,18 @@ components:
         description:
           type: string
 
+    ProductPlan:
+      type: object
+      required: [code, product_code, tier, name, sum_assured, monthly_premium, description]
+      properties:
+        code: { type: string, example: "LIFE_BASIC", description: "Composite id `<PRODUCT_CODE>_<TIER>`. Submitted verbatim in registration requests." }
+        product_code: { type: string, enum: [LIFE, PERSONAL_ACCIDENT, HEALTH] }
+        tier: { type: string, enum: [BASIC, STANDARD, PREMIUM] }
+        name: { type: string, example: "Basic" }
+        sum_assured: { type: number, format: double, description: "Uang pertanggungan (IDR)." }
+        monthly_premium: { type: number, format: double, description: "Premi bulanan (IDR); total premium = monthly_premium × 12 × coverage_term." }
+        description: { type: string }
+
     PublicClient:
       type: object
       properties:
@@ -1738,16 +1943,34 @@ components:
     # ----- Customer profile / dashboard -----
     MeSummary:
       type: object
-      required: [customer_id, email, full_name, mobile_number, active_policy_count, total_sum_assured, open_claim_count, open_inquiry_count]
+      required: [customer_id, email, full_name, mobile_number, active_policy_count, open_claim_count, open_inquiry_count]
       properties:
         customer_id: { type: string, format: uuid }
         email: { type: string, format: email }
         full_name: { type: string }
         mobile_number: { type: string }
+        # `portal_status` is PENDING until activation, then ACTIVE. Nullable
+        # for safety (should never be NULL after a real customer row exists).
+        portal_status: { type: string, enum: [PENDING, ACTIVE], nullable: true }
         active_policy_count: { type: integer, example: 1 }
-        total_sum_assured: { type: string, description: "Decimal string, e.g. '100000000'", example: "100000000" }
+        # Decimal — wire as JSON number (see header conventions).
+        total_sum_assured: { type: number, format: double, nullable: true, description: "Sum of all active policies' sum_assured; 0 if none." }
         open_claim_count: { type: integer, example: 0 }
         open_inquiry_count: { type: integer, example: 0 }
+        # Insurance application fields — populated when the customer has
+        # submitted at least one application. NULL for accounts that have
+        # only created a portal account (no insurance yet).
+        nik: { type: string, nullable: true, description: "16-digit national ID. Null until first insurance submission; locked afterwards." }
+        birth_place: { type: string, nullable: true }
+        birth_date: { type: string, format: date, nullable: true }
+        gender: { type: string, enum: [MALE, FEMALE], nullable: true }
+        address: { type: string, nullable: true }
+        rt_rw: { type: string, nullable: true, description: 'Format: "001/002"' }
+        village: { type: string, nullable: true }
+        district: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        province: { type: string, nullable: true }
+        postal_code: { type: string, nullable: true, description: "5 digits" }
 
     AdminProfile:
       type: object
@@ -1808,8 +2031,8 @@ components:
         id: { type: string, format: uuid }
         policy_no: { type: string, example: "POL-202606-000001" }
         product: { type: string, enum: [LIFE, PERSONAL_ACCIDENT, HEALTH] }
-        sum_assured: { type: string }
-        premium: { type: string }
+        sum_assured: { type: number, format: double }
+        premium: { type: number, format: double }
         effective_date: { type: string, format: date }
         expiry_date: { type: string, format: date }
         status:
@@ -1911,7 +2134,7 @@ components:
         id: { type: string, format: uuid }
         invoice_no: { type: string, example: "INV-202606-000001" }
         registration_no: { type: string }
-        premium_amount: { type: string }
+        premium_amount: { type: number, format: double }
         due_date: { type: string, format: date }
         status:
           type: string
@@ -1937,7 +2160,7 @@ components:
             DEATH_BENEFIT, HEALTH: MEDICAL_REIMBURSEMENT,
             PERSONAL_ACCIDENT: ACCIDENTAL_INJURY, etc.).
         incident_date: { type: string, format: date }
-        claimed_amount: { type: string }
+        claimed_amount: { type: number, format: double }
         description: { type: string }
         status:
           type: string
@@ -1984,6 +2207,48 @@ components:
         response: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
         responded_at: { type: string, format: date-time, nullable: true }
+        # Thread model (since migration 0011). Status is driven by
+        # `last_sender_type`: the latest message determines the parent
+        # inquiry's status. See InquiryDetailRow for the full thread.
+        last_message_at: { type: string, format: date-time, nullable: true }
+        last_sender_type: { type: string, enum: [CUSTOMER, ADMIN], nullable: true }
+        closed_at: { type: string, format: date-time, nullable: true }
+        last_message_preview: { type: string, nullable: true, description: "Snippet of the latest message in the thread; for list views." }
+
+    MessageRow:
+      type: object
+      required: [id, sender_type, sender_name, message, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        sender_type: { type: string, enum: [CUSTOMER, ADMIN] }
+        sender_id: { type: string, format: uuid, nullable: true, description: "customer_id or admin_users.id. NULL for legacy messages where the sender row was deleted." }
+        sender_name: { type: string, description: "Denormalized at insert time so the FE doesn't need a JOIN to render the thread." }
+        message: { type: string }
+        created_at: { type: string, format: date-time }
+
+    InquiryDetailRow:
+      description: |
+        Full inquiry row + thread. Returned by `GET /customer/inquiries/{id}`,
+        `GET /admin/inquiries/{id}`, and after each `POST .../messages` call.
+      allOf:
+        - $ref: "#/components/schemas/InquiryRow"
+        - type: object
+          required: [messages]
+          properties:
+            messages:
+              type: array
+              items: { $ref: "#/components/schemas/MessageRow" }
+
+    CreateMessageRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 5000 }
+
+    CloseInquiryRequest:
+      type: object
+      properties:
+        note: { type: string, maxLength: 1000, nullable: true, description: "Optional note recorded in the audit log alongside the close." }
 
     CreateInquiryRequest:
       type: object
@@ -1999,8 +2264,9 @@ components:
 
     CreateInquiryResponse:
       type: object
-      required: [inquiry_no, status]
+      required: [id, inquiry_no, status]
       properties:
+        id: { type: string, format: uuid }
         inquiry_no: { type: string }
         status: { type: string, example: "OPEN" }
 
@@ -2049,13 +2315,13 @@ components:
         customer_email: { type: string, format: email }
         customer_nik: { type: string }
         product: { type: string }
-        sum_assured: { type: string }
+        sum_assured: { type: number, format: double }
         coverage_term: { type: integer }
         status: { type: string, enum: [PENDING, PAID, ISSUED, CANCELLED] }
         created_at: { type: string, format: date-time }
         invoice_no: { type: string, nullable: true }
         invoice_status: { type: string, nullable: true }
-        premium_amount: { type: string, nullable: true }
+        premium_amount: { type: number, format: double, nullable: true }
         due_date: { type: string, format: date, nullable: true }
         policy_no: { type: string, nullable: true }
         policy_status: { type: string, nullable: true }
@@ -2090,9 +2356,14 @@ components:
         subject: { type: string }
         message: { type: string }
         status: { type: string, enum: [OPEN, ANSWERED, CLOSED] }
-        response: { type: string, nullable: true }
+        response: { type: string, nullable: true, description: "Legacy admin's first response (kept for backward-compat); new admin messages go to `inquiry_messages`." }
         created_at: { type: string, format: date-time }
         responded_at: { type: string, format: date-time, nullable: true }
+        # Thread model (since migration 0011) — same semantics as InquiryRow.
+        last_message_at: { type: string, format: date-time, nullable: true }
+        last_sender_type: { type: string, enum: [CUSTOMER, ADMIN], nullable: true }
+        closed_at: { type: string, format: date-time, nullable: true }
+        last_message_preview: { type: string, nullable: true }
 
     PatchClaimRequest:
       type: object
@@ -2105,15 +2376,9 @@ components:
           type: string
           nullable: true
 
-    RespondInquiryRequest:
-      type: object
-      required: [response]
-      properties:
-        response: { type: string, minLength: 1 }
-        close:
-          type: boolean
-          default: false
-          description: If true, status becomes CLOSED; otherwise ANSWERED.
+    # `RespondInquiryRequest` is OBSOLETE — removed in migration 0011.
+    # Use `POST /admin/inquiries/{id}/messages` (reply) and
+    # `POST /admin/inquiries/{id}/close` (close) instead.
 
     # ----- Marketing -----
     Client:
@@ -2237,7 +2502,7 @@ components:
         total_paid_invoices: { type: integer }
         total_unpaid_invoices: { type: integer }
         total_policies: { type: integer }
-        total_premium_collected: { type: string, description: "Decimal string" }
+        total_premium_collected: { type: number, format: double, description: "Sum of paid invoices' premium_amount." }
 
     DashboardCharts:
       type: object
@@ -2255,4 +2520,4 @@ components:
             type: object
             properties:
               month: { type: string, example: "2026-06" }
-              amount: { type: string }
+              amount: { type: number, format: double }
