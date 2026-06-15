@@ -13,8 +13,12 @@ use std::env;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeedMode {
     /// Realistic data, rendered PDFs, moderate volume.
+    /// Default ~50 registrations / 30 customers, 2-3s wall time.
     Demo,
     /// High volume, no PDFs, minimal variety.
+    /// Default 1000 registrations / 600 customers, ~20s wall time
+    /// (verified on Windows native Postgres 18 + WSL cargo build).
+    /// Skips PDF rendering entirely to keep load-test cheap.
     Load,
 }
 
