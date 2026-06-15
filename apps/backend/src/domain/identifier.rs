@@ -44,6 +44,17 @@ pub async fn next_id(
     entity: EntityType,
 ) -> Result<String, AppError> {
     let year_month = Utc::now().format("%Y%m").to_string();
+    next_id_with_year_month(tx, entity, &year_month).await
+}
+
+/// Allocate next id for a specific `year_month` (format "YYYYMM").
+/// Dipakai seeder untuk backdate identifier ke bulan lalu; production
+/// paths tetap pakai `next_id` (bulan ini).
+pub async fn next_id_with_year_month(
+    tx: &mut Transaction<'_, Postgres>,
+    entity: EntityType,
+    year_month: &str,
+) -> Result<String, AppError> {
     let prefix = entity.prefix();
 
     // Upsert row for this month+entity with last_value=0 if absent, then
@@ -58,7 +69,7 @@ pub async fn next_id(
         "#,
     )
     .bind(prefix)
-    .bind(&year_month)
+    .bind(year_month)
     .fetch_one(&mut **tx)
     .await?;
 
