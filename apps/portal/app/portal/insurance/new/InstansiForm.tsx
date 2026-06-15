@@ -27,7 +27,7 @@ import {
   getCustomerToken,
   type ApplicantType,
   type ParticipantData,
-  type ProductCatalog,
+  type ProductCatalogData,
   type ProductCode,
   type ProductPlan,
 } from "@insuretrack/api-client";
@@ -64,7 +64,7 @@ const instansiSchema = z.object({
 type InstansiValues = z.infer<typeof instansiSchema>;
 
 interface InstansiFormProps {
-  catalog: ProductCatalog | null;
+  catalog: ProductCatalogData | null;
   catalogError: string | null;
   selectedProduct: ProductCode;
   onSelectProduct: (p: ProductCode) => void;

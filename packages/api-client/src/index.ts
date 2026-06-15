@@ -11,7 +11,8 @@ export {
 export { cn, formatIdr, formatIdrShort } from "./utils";
 export type {
   Product,
-  ProductCatalog,
+  ProductCatalogData,
+  ProductCatalogResponse,
   ProductCode,
   ProductPlan,
   TierCode,

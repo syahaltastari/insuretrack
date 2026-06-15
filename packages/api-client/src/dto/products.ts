@@ -25,7 +25,12 @@ export interface ProductPlan {
   description: string;
 }
 
-export interface ProductCatalog {
+export interface ProductCatalogData {
   products: Product[];
   plans: ProductPlan[];
+}
+
+/** Full response wrapper from `GET /api/public/products`. */
+export interface ProductCatalogResponse {
+  data: ProductCatalogData;
 }

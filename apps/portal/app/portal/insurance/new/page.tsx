@@ -13,7 +13,7 @@ import {
   ApiError,
   getCustomerToken,
   type ApplicantType,
-  type ProductCatalog,
+  type ProductCatalogData,
   type ProductCode,
   type ProductPlan,
 } from "@insuretrack/api-client";
@@ -123,7 +123,7 @@ function InsuranceNewPageInner() {
     invoice_no: string;
   } | null>(null);
   const [portalStatus, setPortalStatus] = useState<string | null>(null);
-  const [catalog, setCatalog] = useState<ProductCatalog | null>(null);
+  const [catalog, setCatalog] = useState<ProductCatalogData | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<ProductCode>("LIFE");
   // Tab aktif — diinisialisasi ke "personal". Controlled mode Radix Tabs.
@@ -155,7 +155,7 @@ function InsuranceNewPageInner() {
     fetch(`${API_BASE}/public/products`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const json = (await r.json()) as { data: ProductCatalog };
+        const json = (await r.json()) as ProductCatalogResponse;
         if (!cancelled) setCatalog(json.data);
       })
       .catch((e) => {
