@@ -560,21 +560,39 @@ a:hover {
 
 /* ============================================================
    Inputs
+   Single source of truth untuk SEMUA input (text, email, password,
+   url, tel, number, date, search, select, textarea). Style konsisten
+   lintas aplikasi: pure-white background, oat-border, height 40px
+   (auto untuk textarea), text-sm, line-height 1.4.
    ============================================================ */
 .clay-input,
 .clay-select,
 .clay-textarea {
+  display: inline-block;
+  box-sizing: border-box;
   width: 100%;
-  padding: 10px 14px;
+  height: 40px;
+  padding: 0 12px;
   font-family: var(--font-sans);
-  font-size: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
   color: var(--clay-black);
   background: var(--pure-white);
-  border: 1px solid var(--dark-border);
+  border: 1px solid var(--oat-border);
   border-radius: var(--radius-sharp);
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease,
+    background-color 150ms ease;
   font-feature-settings: "ss03", "ss10", "ss11", "ss12";
+  min-width: 0;
+}
+.clay-input::placeholder {
+  color: var(--warm-silver);
+}
+.clay-input:hover:not(:disabled):not(:focus),
+.clay-select:hover:not(:disabled):not(:focus) {
+  background: var(--warm-cream);
+  border-color: var(--oat-border);
 }
 .clay-input:focus,
 .clay-select:focus,
@@ -582,11 +600,38 @@ a:hover {
   border-color: var(--blueberry-800);
   box-shadow: 0 0 0 3px rgba(20, 110, 245, 0.18);
 }
+.clay-input:disabled,
+.clay-select:disabled,
+.clay-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .clay-textarea {
+  /* Textarea butuh tinggi variabel — height di-override ke auto di sini
+     supaya tidak conflict dengan min-height. Padding vertikal ditambah
+     karena tidak ada arrow/leading-icon. */
+  height: auto;
   min-height: 100px;
+  padding: 10px 12px;
   resize: vertical;
-  font-family: var(--font-sans);
   line-height: 1.5;
+}
+
+/* <select> dengan custom chevron (lihat juga .clay-filter-select di bawah
+   untuk backward compat). Native select arrow dibuang supaya konsisten
+   lintas browser. */
+.clay-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2355534e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  cursor: pointer;
+  text-overflow: ellipsis;
 }
 
 .clay-label {
@@ -616,7 +661,7 @@ a:hover {
   text-align: left;
 }
 .clay-table th {
-  padding: 14px 14px;
+  padding: 14px 16px;
   font-weight: 600;
   font-size: 0.72rem;
   letter-spacing: 0.03em;
@@ -624,6 +669,7 @@ a:hover {
   color: var(--warm-charcoal);
   white-space: nowrap;
   overflow-wrap: normal;
+  text-align: left;
   vertical-align: middle;
 }
 .clay-table th[title] {
@@ -636,14 +682,39 @@ a:hover {
   overflow-wrap: anywhere;
 }
 .clay-table td {
-  padding: 12px 16px;
+  padding: 14px 16px;
   border-top: 1px solid var(--oat-light);
-  vertical-align: top;
+  text-align: left;
+  vertical-align: middle;
 }
 .clay-table-wrap {
   overflow-x: auto;
   max-width: 100%;
   border-radius: var(--radius-card);
+  /* Firefox: thumb + track pairing for the slim modern look below. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--oat-border) transparent;
+}
+/* WebKit/Chromium/Edge: slim pill-shaped thumb with a transparent track.
+   `background-clip: padding-box` + 2px transparent border keeps the
+   actual painted thumb 6px di dalam 10px gutter (Apple-style). */
+.clay-table-wrap::-webkit-scrollbar {
+  height: 10px;
+}
+.clay-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.clay-table-wrap::-webkit-scrollbar-thumb {
+  background-color: var(--oat-border);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 180ms ease;
+}
+.clay-table-wrap::-webkit-scrollbar-thumb:hover {
+  background-color: var(--warm-silver);
+  background-clip: padding-box;
+  border: 2px solid transparent;
 }
 .clay-table-wrap .clay-table {
   min-width: 640px;
@@ -652,6 +723,40 @@ a:hover {
   transition: background-color 180ms ease;
 }
 .clay-table tr:hover td {
+  background: var(--warm-cream);
+}
+
+/* ----- Sticky first & last columns (opt-in via `.sticky-columns`) -----
+   Untuk list admin yang kolomnya banyak (registrations, invoices,
+   policies, claims, dst), kolom pertama (Identifier/Name) dan kolom
+   terakhir (Aksi) tetap visible selama horizontal scroll.
+   Soft shadow di inner edge mengisyaratkan ada konten di luar sana. */
+.clay-table.sticky-columns th:first-child,
+.clay-table.sticky-columns td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.14);
+}
+.clay-table.sticky-columns th:last-child,
+.clay-table.sticky-columns td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  box-shadow: -6px 0 12px -8px rgba(0, 0, 0, 0.14);
+}
+.clay-table.sticky-columns th:first-child,
+.clay-table.sticky-columns th:last-child {
+  background: var(--oat-light);
+  /* Layer di atas body sticky cells supaya tidak ditimpa saat scroll. */
+  z-index: 2;
+}
+.clay-table.sticky-columns td:first-child,
+.clay-table.sticky-columns td:last-child {
+  background: var(--pure-white);
+}
+.clay-table.sticky-columns tr:hover td:first-child,
+.clay-table.sticky-columns tr:hover td:last-child {
   background: var(--warm-cream);
 }
 
@@ -795,6 +900,16 @@ details > summary::marker { display: none; content: ""; }
 .shell-grid:has(.shell-aside.minimized) {
   grid-template-columns: 64px 1fr;
 }
+/* Grid item sebelah kanan (pembungkus topbar + .shell-main). Default
+   min-width: auto (= min-content of children = the widest child here is
+   the table inside, which forces the column to grow past the viewport
+   on narrower screens). min-width: 0 lets the column shrink so the
+   table wrap's `overflow-x: auto` actually constrains the table. */
+.shell-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
 /* Mobile: minimize di-ignore (selalu full-width sidebar / top menu). */
 @media (max-width: 767px) {
   .shell-aside.minimized {
@@ -839,6 +954,10 @@ details > summary::marker { display: none; content: ""; }
 .shell-main {
   padding: 40px 48px;
   background: var(--warm-cream);
+  /* Defense in depth: kalau ada parent flex/grid yang lupa di-fix,
+     .shell-main sendiri tetap shrinkable sehingga .clay-table-wrap
+     di dalamnya selalu ter-constraint ke column width. */
+  min-width: 0;
 }
 @media (max-width: 767px) {
   .shell-main { padding: 24px 16px; }
@@ -1636,4 +1755,103 @@ details > summary::marker { display: none; content: ""; }
 .clay-radio-card:focus-visible {
   outline: 2px solid var(--blueberry-800);
   outline-offset: 2px;
+}
+
+
+/* ============================================================
+   react-day-picker (Calendar) — Clay theme
+   Override default rdp classes to use InsureTrack design tokens.
+   The Calendar wrapper in components/ui/calendar.tsx already sets
+   these classNames; the rules below are a safety net for cases where
+   rdp injects its own classes (e.g. via the imported base stylesheet).
+   ============================================================ */
+
+/* The base stylesheet "react-day-picker/style.css" defines CSS vars on
+   .rdp-root. We override them so the calendar matches our tokens. */
+.rdp-root {
+  --rdp-accent-color: var(--matcha-600);
+  --rdp-accent-background-color: var(--matcha-300);
+  --rdp-day_button-border-radius: var(--radius-sharp);
+  --rdp-day-height: 2.25rem;   /* 36px */
+  --rdp-day-width: 2.25rem;
+  --rdp-week_number-color: var(--warm-silver);
+  --rdp-disabled-color: var(--warm-silver);
+  --rdp-outside-color: var(--warm-silver);
+  --rdp-today-color: var(--matcha-800);
+  --rdp-range_middle-color: var(--clay-black);
+}
+
+/* Re-confirm: rdp day_button selected state uses our matcha.
+   Without this, rdp's default rule overrides our classNames inline. */
+.clay-calendar [aria-selected="true"]:not(.rdp-range_middle) {
+  background-color: var(--matcha-600) !important;
+  color: var(--pure-white) !important;
+}
+
+.clay-calendar .rdp-range_middle {
+  background-color: var(--matcha-300) !important;
+  color: var(--clay-black) !important;
+}
+
+.clay-calendar .rdp-today:not(.rdp-selected) {
+  color: var(--matcha-800) !important;
+  font-weight: 700;
+}
+
+.clay-calendar .rdp-day_button:hover:not([aria-selected="true"]) {
+  background-color: var(--oat-light) !important;
+  color: var(--clay-black) !important;
+}
+
+
+/* ============================================================
+   Filter field — DEPRECATED aliases.
+   Class `.clay-filter-input` dan `.clay-filter-select` dulu adalah
+   variant terpisah, sekarang sudah di-merge ke `.clay-input` /
+   `.clay-select` (spec identik). Aliases di bawah ini hanya untuk
+   backward compat — semua usage baru harus pakai `.clay-input` /
+   `.clay-select` langsung.
+   ============================================================ */
+.clay-filter-input,
+.clay-filter-select {
+  /* inherit semua spec dari .clay-input / .clay-select di atas */
+  display: inline-block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  background: var(--pure-white);
+  border: 1px solid var(--oat-border);
+  border-radius: var(--radius-sharp);
+  outline: none;
+  min-width: 0;
+}
+.clay-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2355534e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+/* ----- <button> trigger variant (DateRangePicker) ----- */
+/* Pakai `.clay-input` di <button> untuk dapat spec yang sama
+   (tinggi 40px, oat-border, pure-white), lalu override alignment
+   supaya icon + label + close-X tersusun horizontal. */
+button.clay-input {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 400;
+  text-decoration: none;
 }

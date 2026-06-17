@@ -11,6 +11,7 @@ type Row = {
   registration_no: string;
   customer_name: string;
   customer_email: string;
+  customer_mobile: string;
   product: string;
   sum_assured: string;
   coverage_term: number;
@@ -26,21 +27,30 @@ export default function Page() {
       detailBasePath="/admin/registrations"
       statusOptions={["PENDING", "PAID", "ISSUED", "CANCELLED"]}
       columns={[
-        { key: "registration_no", label: "No. Registrasi" },
-        { key: "customer_name", label: "Nama" },
-        { key: "customer_email", label: "Email", hideOnMobile: true },
-        { key: "product", label: "Produk", hideOnMobile: true },
+        { key: "registration_no", label: "No. Registrasi", width: "175px" },
+        { key: "customer_name", label: "Nama", width: "160px" },
+        { key: "customer_email", label: "Email", width: "220px", hideOnMobile: true },
+        {
+          key: "customer_mobile",
+          label: "No. HP",
+          width: "140px",
+          hideOnMobile: true,
+          render: (r) => <code style={{ fontSize: "0.8rem" }}>{r.customer_mobile}</code>,
+        },
+        { key: "product", label: "Produk", width: "120px", hideOnMobile: true },
         {
           key: "sum_assured",
           label: "UP",
+          width: "140px",
           hideOnMobile: true,
           render: (r) => new Intl.NumberFormat("id-ID").format(Number(r.sum_assured)),
         },
-        { key: "coverage_term", label: "Tahun", hideOnMobile: true },
-        { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
+        { key: "coverage_term", label: "Tahun", width: "90px", hideOnMobile: true },
+        { key: "status", label: "Status", width: "110px", render: (r) => <StatusBadge status={r.status} /> },
         {
           key: "created_at",
           label: "Tgl",
+          width: "110px",
           hideOnMobile: true,
           render: (r) => new Date(r.created_at).toLocaleDateString("id-ID"),
         },

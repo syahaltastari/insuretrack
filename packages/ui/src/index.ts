@@ -27,6 +27,23 @@ export {
   YAxis,
 } from "./components/Chart";
 
+// Admin filter primitives (added in admin-filter-enhancement phase)
+export {
+  DateRangePicker,
+  type DateRangeValue,
+  type DateRangePickerProps,
+} from "./components/DateRangePicker";
+export {
+  FilterChipBar,
+  type FilterChip,
+  type FilterChipBarProps,
+} from "./components/FilterChipBar";
+export {
+  FilterSelect,
+  type FilterSelectOption,
+  type FilterSelectProps,
+} from "./components/FilterSelect";
+
 // shadcn primitives
 export {
   Button,
@@ -45,6 +62,13 @@ export {
   DialogTitle,
   DialogDescription,
 } from "./components/ui/dialog";
+export {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverAnchor,
+} from "./components/ui/popover";
+export { Calendar, type CalendarProps } from "./components/ui/calendar";
 export {
   AlertDialog,
   AlertDialogPortal,

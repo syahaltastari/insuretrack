@@ -23,13 +23,38 @@ export default function Page() {
       endpoint="/admin/email-logs"
       statusOptions={["SENT", "FAILED", "QUEUED"]}
       columns={[
-        { key: "email_type", label: "Tipe", hideOnMobile: true },
-        { key: "recipient", label: "Penerima" },
-        { key: "subject", label: "Subjek" },
-        { key: "status", label: "Status", render: (r) => <StatusBadge status={r.status} /> },
+        { key: "email_type", label: "Tipe", width: "170px", hideOnMobile: true },
+        { key: "recipient", label: "Penerima", width: "220px" },
+        { key: "subject", label: "Subjek", width: "240px" },
+        { key: "status", label: "Status", width: "110px", render: (r) => <StatusBadge status={r.status} /> },
+        {
+          key: "error_message",
+          label: "Error",
+          width: "280px",
+          hideOnMobile: true,
+          render: (r) =>
+            r.error_message ? (
+              <span
+                title={r.error_message}
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                  color: "var(--pomegranate-400)",
+                  fontSize: "0.8rem",
+                }}
+              >
+                {r.error_message}
+              </span>
+            ) : (
+              <span style={{ color: "var(--warm-silver)" }}>—</span>
+            ),
+        },
         {
           key: "sent_at",
           label: "Tgl Kirim",
+          width: "140px",
           hideOnMobile: true,
           render: (r) => (r.sent_at ? new Date(r.sent_at).toLocaleString("id-ID") : "—"),
         },

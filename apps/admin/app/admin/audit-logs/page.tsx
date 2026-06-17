@@ -67,7 +67,7 @@ export default function Page() {
         {
           key: "created_at",
           label: "Waktu",
-          width: "180px",
+          width: "170px",
           hideOnMobile: true,
           render: (r) => new Date(r.created_at).toLocaleString("id-ID"),
         },
@@ -84,6 +84,18 @@ export default function Page() {
               <code style={{ fontSize: "0.75rem" }}>{r.entity_id.slice(0, 8)}</code>
             ) : (
               "—"
+            ),
+        },
+        {
+          key: "ip_address",
+          label: "IP Address",
+          width: "140px",
+          hideOnMobile: true,
+          render: (r) =>
+            r.ip_address ? (
+              <code style={{ fontSize: "0.75rem" }}>{r.ip_address}</code>
+            ) : (
+              <span style={{ color: "var(--warm-silver)" }}>—</span>
             ),
         },
         {

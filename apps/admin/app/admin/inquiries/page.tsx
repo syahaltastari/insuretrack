@@ -3,12 +3,21 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Confirm, SkeletonCard, StatusBadge } from "@insuretrack/ui";
+import {
+  Confirm,
+  SkeletonCard,
+  StatusBadge,
+  DateRangePicker,
+  type DateRangeValue,
+  FilterChipBar,
+  type FilterChip,
+  FilterSelect,
+} from "@insuretrack/ui";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE, getAdminToken } from "@insuretrack/api-client";
@@ -63,6 +72,21 @@ function snippet(text: string | null | undefined, max = 80): string {
   if (!text) return "";
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > max ? clean.slice(0, max) + "…" : clean;
+}
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatShortDate(iso: string): string {
+  const parts = iso.split("-");
+  if (parts.length !== 3) return iso;
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  const mIdx = parseInt(parts[1], 10) - 1;
+  return `${parseInt(parts[2], 10)} ${months[mIdx] ?? "?"} ${parts[0]}`;
 }
 
 // ---- Schemas -------------------------------------------------------------
@@ -431,6 +455,21 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
   );
 }
 
+// ---- Filter constants ---------------------------------------------------
+
+const INQUIRY_DATE_FIELDS = [
+  { value: "created_at", label: "Tanggal dibuat" },
+  { value: "responded_at", label: "Tanggal dijawab" },
+  { value: "last_message_at", label: "Pesan terakhir" },
+  { value: "closed_at", label: "Tanggal ditutup" },
+];
+
+const INQUIRY_SORT_OPTIONS = [
+  { value: "created_at", label: "Tanggal dibuat" },
+  { value: "last_message_at", label: "Pesan terakhir" },
+  { value: "customer_name", label: "Nama customer" },
+];
+
 // ---- Main page -----------------------------------------------------------
 
 export default function AdminInquiriesPage() {
@@ -443,28 +482,49 @@ export default function AdminInquiriesPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Filter state — URL-driven supaya shareable. `q` di-debounce 300ms
-  // supaya tidak spam fetch tiap keystroke. `status` langsung dari URL
-  // (instant, 4 opsi tetap).
+  // URL-driven filter state — `q` di-debounce 300ms supaya tidak spam
+  // fetch tiap keystroke. `status` dan field lain langsung dari URL
+  // (instant).
   const qFromUrl = searchParams.get("q") ?? "";
   const statusFromUrl = searchParams.get("status") ?? "";
-  const [qInput, setQInput] = useState(qFromUrl);
+  const dateFromUrl = searchParams.get("date_from") ?? "";
+  const dateToUrl = searchParams.get("date_to") ?? "";
+  const dateFieldFromUrl = searchParams.get("date_field") ?? "created_at";
+  const sortByFromUrl = searchParams.get("sort_by") ?? "";
+  const sortDirFromUrl = searchParams.get("sort_dir") ?? "desc";
 
-  /** Update URL searchParams. Pakai replace (bukan push) supaya history
-   *  tidak penuh dengan perubahan filter. */
-  const setFilterParams = (next: { q?: string; status?: string }) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next.q !== undefined) {
-      if (next.q) params.set("q", next.q);
-      else params.delete("q");
-    }
-    if (next.status !== undefined) {
-      if (next.status) params.set("status", next.status);
-      else params.delete("status");
-    }
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
-  };
+  const [qInput, setQInput] = useState(qFromUrl);
+  const [activeDateField, setActiveDateField] = useState(dateFieldFromUrl || "created_at");
+  const [sortBy, setSortBy] = useState(sortByFromUrl);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(
+    sortDirFromUrl === "asc" ? "asc" : "desc"
+  );
+
+  const dateRange = useMemo<DateRangeValue | undefined>(() => {
+    if (!dateFromUrl) return undefined;
+    return {
+      from: new Date(dateFromUrl + "T00:00:00"),
+      to: dateToUrl ? new Date(dateToUrl + "T00:00:00") : undefined,
+    };
+  }, [dateFromUrl, dateToUrl]);
+
+  const dateFieldOptionsMap = useMemo(
+    () => Object.fromEntries(INQUIRY_DATE_FIELDS.map((o) => [o.value, o.label])),
+    []
+  );
+
+  const setFilterParams = useCallback(
+    (next: Record<string, string | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(next)) {
+        if (v && v.length > 0) params.set(k, v);
+        else params.delete(k);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname, router, searchParams]
+  );
 
   // Debounce search input → URL. 300ms adalah sweet-spot: cukup
   // responsive tapi tidak spam fetch pada rapid typing.
@@ -476,21 +536,30 @@ export default function AdminInquiriesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qInput]);
 
-  // Sync local input kalau URL berubah dari luar (back/forward, link)
+  // Sync local state kalau URL berubah dari luar (back/forward, link).
   useEffect(() => {
     setQInput(qFromUrl);
+    setActiveDateField(dateFieldFromUrl || "created_at");
+    setSortBy(sortByFromUrl);
+    setSortDir(sortDirFromUrl === "asc" ? "asc" : "desc");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qFromUrl]);
+  }, [qFromUrl, dateFieldFromUrl, dateFromUrl, dateToUrl, sortByFromUrl, sortDirFromUrl]);
 
   useEffect(() => {
     const token = getAdminToken();
     if (!token) return;
     setLoading(true);
     setError(null);
-    const qs = new URLSearchParams({ page: "1", page_size: "50" });
-    if (qFromUrl) qs.set("q", qFromUrl);
-    if (statusFromUrl) qs.set("status", statusFromUrl);
-    fetch(`${API_BASE}/admin/inquiries?${qs.toString()}`, {
+    const params = new URLSearchParams({ page: "1", page_size: "50" });
+    if (qFromUrl) params.set("q", qFromUrl);
+    if (statusFromUrl) params.set("status", statusFromUrl);
+    if (dateFromUrl) params.set("date_from", dateFromUrl);
+    if (dateToUrl) params.set("date_to", dateToUrl);
+    if (activeDateField) params.set("date_field", activeDateField);
+    if (sortBy) params.set("sort_by", sortBy);
+    if (sortBy) params.set("sort_dir", sortDir);
+
+    fetch(`${API_BASE}/admin/inquiries?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
@@ -500,9 +569,65 @@ export default function AdminInquiriesPage() {
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setLoading(false));
-  }, [refreshKey, qFromUrl, statusFromUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey, qFromUrl, statusFromUrl, dateFromUrl, dateToUrl, activeDateField, sortBy, sortDir]);
 
-  const hasFilter = Boolean(qFromUrl || statusFromUrl);
+  const onDateRangeChange = (range: DateRangeValue | undefined) => {
+    setFilterParams({
+      date_from: range?.from ? toIsoDate(range.from) : undefined,
+      date_to: range?.to ? toIsoDate(range.to) : undefined,
+    });
+  };
+
+  const resetAll = () => {
+    setQInput("");
+    setActiveDateField("created_at");
+    setSortBy("");
+    setSortDir("desc");
+    router.replace(pathname);
+  };
+
+  const onSortByHeader = (col: string) => {
+    let nextDir: "asc" | "desc" = "desc";
+    if (sortBy === col) nextDir = sortDir === "desc" ? "asc" : "desc";
+    setSortBy(col);
+    setSortDir(nextDir);
+    setFilterParams({ sort_by: col, sort_dir: nextDir });
+  };
+
+  // Active filter chips
+  const chips: FilterChip[] = [];
+  if (qFromUrl) {
+    chips.push({
+      key: "q",
+      label: `Cari: "${qFromUrl}"`,
+      onRemove: () => setFilterParams({ q: undefined }),
+    });
+  }
+  if (statusFromUrl) {
+    chips.push({
+      key: "status",
+      label: `Status: ${statusFromUrl}`,
+      onRemove: () => setFilterParams({ status: undefined }),
+    });
+  }
+  if (dateFromUrl || dateToUrl) {
+    const dfLabel = dateFromUrl ? formatShortDate(dateFromUrl) : "…";
+    const dtLabel = dateToUrl ? formatShortDate(dateToUrl) : "…";
+    const dfName = activeDateField ? dateFieldOptionsMap[activeDateField] ?? activeDateField : "";
+    chips.push({
+      key: "date",
+      label: `Tanggal${dfName ? ` (${dfName})` : ""}: ${dfLabel} – ${dtLabel}`,
+      onRemove: () => setFilterParams({ date_from: undefined, date_to: undefined }),
+    });
+  }
+  if (sortBy) {
+    chips.push({
+      key: "sort",
+      label: `Sort: ${sortBy} ${sortDir}`,
+      onRemove: () => setFilterParams({ sort_by: undefined, sort_dir: undefined }),
+    });
+  }
 
   return (
     <>
@@ -515,26 +640,78 @@ export default function AdminInquiriesPage() {
         customer, dan customer bisa reply sampai tiket ditutup.
       </p>
 
-      {/* Filter bar: search input + 4 status pill buttons. URL-driven
-          supaya state bisa di-share / di-bookmark. */}
+      {/* Filter bar — search input + status pill buttons + date range + sort. URL-driven. */}
       <div
         className="clay-card"
         style={{
           padding: 16,
           marginTop: 24,
           marginBottom: 16,
-          display: "grid",
+          display: "flex",
+          flexDirection: "column",
           gap: 12,
         }}
       >
-        <input
-          type="search"
-          className="clay-input"
-          placeholder="Cari inquiry / subject / nama customer…"
-          value={qInput}
-          onChange={(e) => setQInput(e.target.value)}
-          aria-label="Cari inquiry"
-        />
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "flex-end",
+          }}
+        >
+          <label className="inline-flex flex-col gap-1" style={{ flex: 1, minWidth: 220 }}>
+            <span className="text-xs uppercase tracking-wider text-warm-silver font-semibold">
+              Cari
+            </span>
+            <input
+              type="search"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              placeholder="Cari inquiry / subject / nama customer…"
+              className="clay-input"
+              aria-label="Cari inquiry"
+            />
+          </label>
+
+          <DateRangePicker
+            value={dateRange}
+            onChange={onDateRangeChange}
+            ariaLabel="Pilih rentang tanggal filter"
+          />
+
+          <FilterSelect
+            label="Kolom tanggal"
+            value={activeDateField}
+            onChange={(v) => {
+              setActiveDateField(v);
+              setFilterParams({ date_field: v });
+            }}
+            options={INQUIRY_DATE_FIELDS}
+            ariaLabel="Kolom tanggal"
+            width={160}
+          />
+
+          <FilterSelect
+            label="Sort by"
+            value={sortBy}
+            onChange={(v) => {
+              if (!v) {
+                setSortBy("");
+                setFilterParams({ sort_by: undefined, sort_dir: undefined });
+              } else {
+                onSortByHeader(v);
+              }
+            }}
+            options={[
+              { value: "", label: "Default" },
+              ...INQUIRY_SORT_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+            ]}
+            ariaLabel="Urutkan"
+            width={170}
+          />
+        </div>
+
         <div
           role="tablist"
           aria-label="Filter status inquiry"
@@ -557,19 +734,8 @@ export default function AdminInquiriesPage() {
             );
           })}
         </div>
-        {hasFilter && (
-          <button
-            type="button"
-            className="clay-button ghost size-small"
-            onClick={() => {
-              setQInput("");
-              setFilterParams({ q: "", status: "" });
-            }}
-            style={{ justifySelf: "start" }}
-          >
-            Reset filter
-          </button>
-        )}
+
+        <FilterChipBar chips={chips} onResetAll={resetAll} />
       </div>
 
       {error && (
@@ -588,7 +754,7 @@ export default function AdminInquiriesPage() {
         </div>
       )}
 
-      {!loading && data.length === 0 && !hasFilter && (
+      {!loading && data.length === 0 && chips.length === 0 && statusFromUrl === "" && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
           <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
             Belum ada pertanyaan masuk.
@@ -596,7 +762,7 @@ export default function AdminInquiriesPage() {
         </div>
       )}
 
-      {!loading && data.length === 0 && hasFilter && (
+      {!loading && data.length === 0 && (chips.length > 0 || statusFromUrl !== "") && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 32 }}>
           <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0, marginBottom: 12 }}>
             Tidak ada inquiry yang cocok dengan filter.
@@ -604,10 +770,7 @@ export default function AdminInquiriesPage() {
           <button
             type="button"
             className="clay-button solid-ube size-small"
-            onClick={() => {
-              setQInput("");
-              setFilterParams({ q: "", status: "" });
-            }}
+            onClick={resetAll}
           >
             Reset filter
           </button>

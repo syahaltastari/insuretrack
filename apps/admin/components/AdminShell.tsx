@@ -146,7 +146,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
       </aside>
-      <div>
+      <div className="shell-content">
         <header className="admin-topbar">
           <div className="admin-topbar-left">
             <button

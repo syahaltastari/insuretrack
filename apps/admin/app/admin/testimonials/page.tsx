@@ -301,7 +301,7 @@ export default function AdminTestimonialsPage() {
               />
             ),
           },
-          { key: "customer_name", label: "Nama" },
+          { key: "customer_name", label: "Nama", width: "160px" },
           {
             key: "rating",
             label: "Rating",
@@ -311,6 +311,7 @@ export default function AdminTestimonialsPage() {
           {
             key: "review",
             label: "Review",
+            width: "280px",
             render: (t) => (
               <span
                 style={{
@@ -325,6 +326,27 @@ export default function AdminTestimonialsPage() {
             ),
           },
           {
+            key: "role",
+            label: "Jabatan",
+            width: "140px",
+            hideOnMobile: true,
+            render: (t) => t.role ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
+          },
+          {
+            key: "company",
+            label: "Perusahaan",
+            width: "140px",
+            hideOnMobile: true,
+            render: (t) => t.company ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
+          },
+          {
+            key: "policy_type",
+            label: "Produk",
+            width: "130px",
+            hideOnMobile: true,
+            render: (t) => t.policy_type ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
+          },
+          {
             key: "display_date",
             label: "Tanggal",
             width: "110px",
@@ -334,7 +356,7 @@ export default function AdminTestimonialsPage() {
           {
             key: "is_featured",
             label: "Featured",
-            width: "120px",
+            width: "110px",
             hideOnMobile: true,
             render: (t) =>
               t.is_featured ? (
@@ -346,12 +368,19 @@ export default function AdminTestimonialsPage() {
           {
             key: "is_active",
             label: "Status",
-            width: "110px",
+            width: "100px",
             render: (t) => (
               <span className={`clay-badge ${t.is_active ? "matcha" : "muted"}`}>
                 {t.is_active ? "Aktif" : "Nonaktif"}
               </span>
             ),
+          },
+          {
+            key: "updated_at",
+            label: "Tgl Update",
+            width: "110px",
+            hideOnMobile: true,
+            render: (t) => new Date(t.updated_at).toLocaleDateString("id-ID"),
           },
         ]}
         actions={(t) => (
@@ -478,7 +507,6 @@ export default function AdminTestimonialsPage() {
                   setPhotoPreview(f ? URL.createObjectURL(f) : null);
                 }}
                 className="clay-input"
-                style={{ padding: 8 }}
               />
               {photoPreview && (
                 <img

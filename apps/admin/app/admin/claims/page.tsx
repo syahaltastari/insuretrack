@@ -3,11 +3,21 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Icon, SkeletonCard, StatusBadge } from "@insuretrack/ui";
+import {
+  Icon,
+  SkeletonCard,
+  StatusBadge,
+  DateRangePicker,
+  type DateRangeValue,
+  FilterChipBar,
+  type FilterChip,
+  FilterSelect,
+} from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
 import { getAdminToken } from "@insuretrack/api-client";
@@ -444,33 +454,237 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
   );
 }
 
+// ----- Filter bar + URL sync -----
+
+const CLAIM_DATE_FIELDS = [
+  { value: "submitted_at", label: "Tanggal submit" },
+  { value: "incident_date", label: "Tanggal insiden" },
+  { value: "updated_at", label: "Tanggal update" },
+];
+
+const CLAIM_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "PAID"];
+const CLAIM_TYPES = ["DEATH", "ACCIDENT", "HOSPITALIZATION", "MATURITY", "SURRENDER"];
+const CLAIM_PRODUCTS = ["LIFE", "PERSONAL_ACCIDENT", "HEALTH"];
+
+const CLAIM_SORT_OPTIONS = [
+  { value: "submitted_at", label: "Tanggal submit" },
+  { value: "incident_date", label: "Tanggal insiden" },
+  { value: "claimed_amount", label: "Nominal klaim" },
+  { value: "customer_name", label: "Nama customer" },
+];
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatShortDate(iso: string): string {
+  const parts = iso.split("-");
+  if (parts.length !== 3) return iso;
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  const mIdx = parseInt(parts[1], 10) - 1;
+  return `${parseInt(parts[2], 10)} ${months[mIdx] ?? "?"} ${parts[0]}`;
+}
+
 export default function AdminClaimsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [data, setData] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const load = () => {
+  // URL-driven filter state
+  const qFromUrl = searchParams.get("q") ?? "";
+  const statusFromUrl = searchParams.get("status") ?? "";
+  const dateFromUrl = searchParams.get("date_from") ?? "";
+  const dateToUrl = searchParams.get("date_to") ?? "";
+  const dateFieldFromUrl = searchParams.get("date_field") ?? "submitted_at";
+  const productFromUrl = searchParams.get("product") ?? "";
+  const claimTypeFromUrl = searchParams.get("claim_type") ?? "";
+  const sortByFromUrl = searchParams.get("sort_by") ?? "";
+  const sortDirFromUrl = searchParams.get("sort_dir") ?? "desc";
+
+  const [qInput, setQInput] = useState(qFromUrl);
+  const [status, setStatus] = useState(statusFromUrl);
+  const [activeDateField, setActiveDateField] = useState(dateFieldFromUrl || "submitted_at");
+  const [product, setProduct] = useState(productFromUrl);
+  const [claimType, setClaimType] = useState(claimTypeFromUrl);
+  const [sortBy, setSortBy] = useState(sortByFromUrl);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(
+    sortDirFromUrl === "asc" ? "asc" : "desc"
+  );
+
+  const dateRange = useMemo<DateRangeValue | undefined>(() => {
+    if (!dateFromUrl) return undefined;
+    return {
+      from: new Date(dateFromUrl + "T00:00:00"),
+      to: dateToUrl ? new Date(dateToUrl + "T00:00:00") : undefined,
+    };
+  }, [dateFromUrl, dateToUrl]);
+
+  const dateFieldOptionsMap = useMemo(
+    () => Object.fromEntries(CLAIM_DATE_FIELDS.map((o) => [o.value, o.label])),
+    []
+  );
+
+  const setFilterParams = useCallback(
+    (next: Record<string, string | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(next)) {
+        if (v && v.length > 0) params.set(k, v);
+        else params.delete(k);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname, router, searchParams]
+  );
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (qInput !== qFromUrl) setFilterParams({ q: qInput });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qInput]);
+
+  // Sync from URL
+  useEffect(() => {
+    setQInput(qFromUrl);
+    setStatus(statusFromUrl);
+    setActiveDateField(dateFieldFromUrl || "submitted_at");
+    setProduct(productFromUrl);
+    setClaimType(claimTypeFromUrl);
+    setSortBy(sortByFromUrl);
+    setSortDir(sortDirFromUrl === "asc" ? "asc" : "desc");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qFromUrl, statusFromUrl, dateFieldFromUrl, dateFromUrl, dateToUrl, productFromUrl, claimTypeFromUrl, sortByFromUrl, sortDirFromUrl]);
+
+  const load = useCallback(async () => {
     const token = getAdminToken();
     if (!token) return;
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/admin/claims?page=1&page_size=50`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((j) => setData(j.data ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
-      .finally(() => setLoading(false));
-  };
+    try {
+      const params = new URLSearchParams({ page: "1", page_size: "50" });
+      if (qFromUrl) params.set("q", qFromUrl);
+      if (statusFromUrl) params.set("status", statusFromUrl);
+      if (dateFromUrl) params.set("date_from", dateFromUrl);
+      if (dateToUrl) params.set("date_to", dateToUrl);
+      if (activeDateField) params.set("date_field", activeDateField);
+      if (product) params.set("product", product);
+      if (claimType) params.set("claim_type", claimType);
+      if (sortBy) params.set("sort_by", sortBy);
+      if (sortBy) params.set("sort_dir", sortDir);
+
+      const r = await fetch(`${API_BASE}/admin/claims?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      setData(j.data ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Gagal load");
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    refreshKey,
+    qFromUrl,
+    statusFromUrl,
+    dateFromUrl,
+    dateToUrl,
+    activeDateField,
+    product,
+    claimType,
+    sortBy,
+    sortDir,
+  ]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [load]);
+
+  const onDateRangeChange = (range: DateRangeValue | undefined) => {
+    setFilterParams({
+      date_from: range?.from ? toIsoDate(range.from) : undefined,
+      date_to: range?.to ? toIsoDate(range.to) : undefined,
+    });
+  };
+
+  const resetAll = () => {
+    setQInput("");
+    setStatus("");
+    setActiveDateField("submitted_at");
+    setProduct("");
+    setClaimType("");
+    setSortBy("");
+    setSortDir("desc");
+    router.replace(pathname);
+  };
+
+  const onSortByHeader = (col: string) => {
+    let nextDir: "asc" | "desc" = "desc";
+    if (sortBy === col) nextDir = sortDir === "desc" ? "asc" : "desc";
+    setSortBy(col);
+    setSortDir(nextDir);
+    setFilterParams({ sort_by: col, sort_dir: nextDir });
+  };
+
+  // Active filter chips
+  const chips: FilterChip[] = [];
+  if (qFromUrl) {
+    chips.push({
+      key: "q",
+      label: `Cari: "${qFromUrl}"`,
+      onRemove: () => setFilterParams({ q: undefined }),
+    });
+  }
+  if (statusFromUrl) {
+    chips.push({
+      key: "status",
+      label: `Status: ${statusFromUrl}`,
+      onRemove: () => setFilterParams({ status: undefined }),
+    });
+  }
+  if (dateFromUrl || dateToUrl) {
+    const dfLabel = dateFromUrl ? formatShortDate(dateFromUrl) : "…";
+    const dtLabel = dateToUrl ? formatShortDate(dateToUrl) : "…";
+    const dfName = activeDateField ? dateFieldOptionsMap[activeDateField] ?? activeDateField : "";
+    chips.push({
+      key: "date",
+      label: `Tanggal${dfName ? ` (${dfName})` : ""}: ${dfLabel} – ${dtLabel}`,
+      onRemove: () => setFilterParams({ date_from: undefined, date_to: undefined }),
+    });
+  }
+  if (product) {
+    chips.push({
+      key: "product",
+      label: `Produk: ${product}`,
+      onRemove: () => setFilterParams({ product: undefined }),
+    });
+  }
+  if (claimType) {
+    chips.push({
+      key: "claim_type",
+      label: `Tipe klaim: ${claimType}`,
+      onRemove: () => setFilterParams({ claim_type: undefined }),
+    });
+  }
+  if (sortBy) {
+    chips.push({
+      key: "sort",
+      label: `Sort: ${sortBy} ${sortDir}`,
+      onRemove: () => setFilterParams({ sort_by: undefined, sort_dir: undefined }),
+    });
+  }
 
   return (
     <>
@@ -481,6 +695,126 @@ export default function AdminClaimsPage() {
       <p className="page-subtitle">
         Tinjau klaim dan ubah status. Transisi yang valid sesuai state machine (spec §10.4).
       </p>
+
+      {/* Filter bar */}
+      <div
+        className="clay-card"
+        style={{
+          padding: 16,
+          marginTop: 24,
+          marginBottom: 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "flex-end",
+          }}
+        >
+          <label className="inline-flex flex-col gap-1" style={{ flex: 1, minWidth: 200 }}>
+            <span className="text-xs uppercase tracking-wider text-warm-silver font-semibold">
+              Cari
+            </span>
+            <input
+              type="search"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              placeholder="Cari no. klaim / nama customer…"
+              className="clay-input"
+              aria-label="Cari klaim"
+            />
+          </label>
+
+          <DateRangePicker
+            value={dateRange}
+            onChange={onDateRangeChange}
+            ariaLabel="Pilih rentang tanggal filter"
+          />
+
+          <FilterSelect
+            label="Kolom tanggal"
+            value={activeDateField}
+            onChange={(v) => {
+              setActiveDateField(v);
+              setFilterParams({ date_field: v });
+            }}
+            options={CLAIM_DATE_FIELDS}
+            ariaLabel="Kolom tanggal"
+            width={160}
+          />
+
+          <FilterSelect
+            label="Status klaim"
+            value={status}
+            onChange={(v) => {
+              setStatus(v);
+              setFilterParams({ status: v });
+            }}
+            options={[
+              { value: "", label: "Semua" },
+              ...CLAIM_STATUSES.map((s) => ({ value: s, label: s })),
+            ]}
+            ariaLabel="Status klaim"
+            width={150}
+          />
+
+          <FilterSelect
+            label="Tipe klaim"
+            value={claimType}
+            onChange={(v) => {
+              setClaimType(v);
+              setFilterParams({ claim_type: v });
+            }}
+            options={[
+              { value: "", label: "Semua" },
+              ...CLAIM_TYPES.map((c) => ({ value: c, label: c })),
+            ]}
+            ariaLabel="Tipe klaim"
+            width={150}
+          />
+
+          <FilterSelect
+            label="Produk"
+            value={product}
+            onChange={(v) => {
+              setProduct(v);
+              setFilterParams({ product: v });
+            }}
+            options={[
+              { value: "", label: "Semua" },
+              ...CLAIM_PRODUCTS.map((p) => ({ value: p, label: p })),
+            ]}
+            ariaLabel="Produk"
+            width={150}
+          />
+
+          <FilterSelect
+            label="Sort by"
+            value={sortBy}
+            onChange={(v) => {
+              if (!v) {
+                setSortBy("");
+                setFilterParams({ sort_by: undefined, sort_dir: undefined });
+              } else {
+                onSortByHeader(v);
+              }
+            }}
+            options={[
+              { value: "", label: "Default" },
+              ...CLAIM_SORT_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+            ]}
+            ariaLabel="Urutkan"
+            width={170}
+          />
+        </div>
+
+        <FilterChipBar chips={chips} onResetAll={resetAll} />
+      </div>
 
       {error && (
         <div
@@ -498,11 +832,26 @@ export default function AdminClaimsPage() {
         </div>
       )}
 
-      {!loading && data.length === 0 && (
+      {!loading && data.length === 0 && chips.length === 0 && (
         <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
           <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
             Belum ada klaim masuk.
           </p>
+        </div>
+      )}
+
+      {!loading && data.length === 0 && chips.length > 0 && (
+        <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 32 }}>
+          <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0, marginBottom: 12 }}>
+            Tidak ada klaim yang cocok dengan filter.
+          </p>
+          <button
+            type="button"
+            className="clay-button solid-ube size-small"
+            onClick={resetAll}
+          >
+            Reset filter
+          </button>
         </div>
       )}
 

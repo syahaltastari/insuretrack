@@ -256,14 +256,68 @@ export default function AdminClientsPage() {
               />
             ),
           },
-          { key: "name", label: "Nama" },
+          { key: "name", label: "Nama", width: "180px" },
           {
             key: "industry",
             label: "Industri",
+            width: "140px",
             hideOnMobile: true,
             render: (c) => c.industry ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
           },
-          { key: "sort_order", label: "Urutan", width: "80px", hideOnMobile: true },
+          {
+            key: "website",
+            label: "Website",
+            width: "200px",
+            hideOnMobile: true,
+            render: (c) =>
+              c.website ? (
+                <a
+                  href={c.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ fontSize: "0.85rem" }}
+                >
+                  {c.website.replace(/^https?:\/\//, "").slice(0, 28)}
+                  {c.website.length > 32 ? "…" : ""}
+                </a>
+              ) : (
+                <span style={{ color: "var(--warm-silver)" }}>—</span>
+              ),
+          },
+          {
+            key: "contact_person",
+            label: "Kontak",
+            width: "140px",
+            hideOnMobile: true,
+            render: (c) => c.contact_person ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
+          },
+          {
+            key: "contact_email",
+            label: "Email",
+            width: "220px",
+            hideOnMobile: true,
+            render: (c) => c.contact_email ?? <span style={{ color: "var(--warm-silver)" }}>—</span>,
+          },
+          {
+            key: "contact_phone",
+            label: "Telp",
+            width: "140px",
+            hideOnMobile: true,
+            render: (c) =>
+              c.contact_phone ? (
+                <code style={{ fontSize: "0.8rem" }}>{c.contact_phone}</code>
+              ) : (
+                <span style={{ color: "var(--warm-silver)" }}>—</span>
+              ),
+          },
+          {
+            key: "sort_order",
+            label: "Urutan",
+            width: "80px",
+            hideOnMobile: true,
+            render: (c) => <span className="mono">{c.sort_order}</span>,
+          },
           {
             key: "is_active",
             label: "Status",
@@ -273,6 +327,13 @@ export default function AdminClientsPage() {
                 {c.is_active ? "Aktif" : "Nonaktif"}
               </span>
             ),
+          },
+          {
+            key: "updated_at",
+            label: "Tgl Update",
+            width: "110px",
+            hideOnMobile: true,
+            render: (c) => new Date(c.updated_at).toLocaleDateString("id-ID"),
           },
         ]}
         actions={(c) => (
@@ -404,7 +465,6 @@ export default function AdminClientsPage() {
                   setLogoPreview(f ? URL.createObjectURL(f) : null);
                 }}
                 className="clay-input"
-                style={{ padding: 8 }}
               />
               {logoPreview && (
                 <img

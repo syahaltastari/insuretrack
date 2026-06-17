@@ -18,7 +18,7 @@ use crate::{
     auth::{password::verify_password, Role, RequireAdmin},
     dto::{DashboardStats, LoginRequest, LoginResponse},
     error::{AppError, AppResult},
-    repo::{Page, PageQuery},
+    repo::{filters as filters_helper, Page, PageQuery},
     services::{
         audit::{write as audit_write, AuditEntry},
         dashboard,
@@ -359,6 +359,7 @@ struct RegistrationRow {
     customer_id: Uuid,
     customer_name: String,
     customer_email: String,
+    customer_mobile: String,
     product: String,
     sum_assured: Decimal,
     coverage_term: i32,
@@ -385,6 +386,7 @@ async fn list_registrations(
             r#"
             SELECT r.id, r.registration_no, r.customer_id,
                    c.full_name AS customer_name, c.email AS customer_email,
+                   c.mobile_number AS customer_mobile,
                    r.product, r.sum_assured, r.coverage_term, r.status, r.created_at
               FROM registrations r
               JOIN customers c ON c.id = r.customer_id
@@ -407,6 +409,7 @@ async fn list_registrations(
                     r.registration_no.clone(),
                     r.customer_name.clone(),
                     r.customer_email.clone(),
+                    r.customer_mobile.clone(),
                     r.product.clone(),
                     r.sum_assured.to_string(),
                     r.coverage_term.to_string(),
@@ -420,6 +423,7 @@ async fn list_registrations(
                 "registration_no",
                 "customer_name",
                 "customer_email",
+                "customer_mobile",
                 "product",
                 "sum_assured",
                 "coverage_term",
@@ -453,6 +457,7 @@ async fn list_registrations(
         r#"
         SELECT r.id, r.registration_no, r.customer_id,
                c.full_name AS customer_name, c.email AS customer_email,
+               c.mobile_number AS customer_mobile,
                r.product, r.sum_assured, r.coverage_term, r.status, r.created_at
           FROM registrations r
           JOIN customers c ON c.id = r.customer_id
@@ -533,6 +538,8 @@ struct InvoiceRow {
     invoice_no: String,
     registration_no: String,
     customer_name: String,
+    customer_email: String,
+    customer_mobile: String,
     premium_amount: Decimal,
     due_date: chrono::NaiveDate,
     status: String,
@@ -547,6 +554,7 @@ async fn list_invoices(
     Query(q): Query<PageQuery>,
     Query(fmt): Query<ListFormatQuery>,
 ) -> AppResult<Response> {
+    // ----- Shared filter inputs -----
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -555,10 +563,62 @@ async fn list_invoices(
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
 
+    // ----- New filter inputs (validated) -----
+    // Date range: parse + reject bad ISO / inverted range.
+    let (date_from, date_to) =
+        filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
+    // Date column: whitelist. Default = `created_at` (most common admin
+    // question: "what invoices came in this period?").
+    const INVOICE_DATE_FIELDS: &[&str] = &["created_at", "due_date", "paid_at"];
+    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), INVOICE_DATE_FIELDS);
+    // Sort column: whitelist. Default = `created_at` DESC.
+    const INVOICE_SORT_COLS: &[&str] = &[
+        "created_at",
+        "due_date",
+        "paid_at",
+        "premium_amount",
+        "customer_name",
+    ];
+    let sort_col = filters_helper::validate_sort(q.sort_by.as_deref(), INVOICE_SORT_COLS);
+    let sort_dir = filters_helper::validate_sort_dir(q.sort_dir.as_deref());
+
+    // Bind indices used in SQL are hard-coded. Layout (CSV path + JSON
+    // path are mirrored):
+    //   $1 = search ILIKE pattern  $2 = status
+    //   $3 = date_from (nullable)  $4 = date_to (nullable)
+    //   $5 = limit                 $6 = offset
+    // date_from / date_to are bound directly as Option<NaiveDate>; the
+    // SQL uses `$3::date IS NULL OR <col> >= $3::date` so a None value
+    // short-circuits the comparison and the placeholder count stays
+    // stable across requests with and without a date filter (prevents
+    // sqlx prepared-statement cache collision that produced
+    // "bind message supplies 4 parameters, but prepared statement
+    // requires 6" before this fix).
+    //
+    // Table-qualified column for the date filter + sort. Safe:
+    // `date_field` and `sort_col` come from a literal whitelist above.
+    let date_col = format!("i.{date_field}");
+    let sort_col_qualified = match sort_col {
+        "customer_name" => "c.full_name".to_string(),
+        // premium_amount ada di invoices (alias i), created_at/due_date/paid_at juga di i.
+        other => format!("i.{other}"),
+    };
+
     if fmt.is_csv() {
-        let rows: Vec<InvoiceRow> = sqlx::query_as(
+        // CSV export honours the same filters as the JSON path. Date
+        // fragment is rendered as `$3 IS NULL OR <col> >= $3` so the
+        // SQL text + placeholder count is stable whether or not a date
+        // filter was applied — without this, sqlx's prepared-statement
+        // cache reuses a stale statement with 4 placeholders for what is
+        // logically a 6-placeholder query, causing a 500 bind error.
+        let date_predicate = format!(
+            " AND ($3::date IS NULL OR {date_col} >= $3::date) \
+             AND ($4::date IS NULL OR {date_col} <= $4::date)"
+        );
+        let sql = format!(
             r#"
             SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
+                   c.email AS customer_email, c.mobile_number AS customer_mobile,
                    i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
               FROM invoices i
               JOIN registrations r ON r.id = i.registration_id
@@ -568,13 +628,20 @@ async fn list_invoices(
                               OR c.full_name       ILIKE $1
                               OR c.email           ILIKE $1)
                AND ($2 = '' OR i.status = $2)
-             ORDER BY i.created_at DESC
+               {date_predicate}
+             {order}
             "#,
-        )
-        .bind(&like)
-        .bind(&status)
-        .fetch_all(&state.pool)
-        .await?;
+            order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+        );
+        // Always bind 4 placeholders. df/dt are None when no date filter
+        // is applied; the `$3::date IS NULL` short-circuits in SQL.
+        let rows: Vec<InvoiceRow> = sqlx::query_as::<_, InvoiceRow>(&sql)
+            .bind(&like)
+            .bind(&status)
+            .bind(date_from)
+            .bind(date_to)
+            .fetch_all(&state.pool)
+            .await?;
         let body: Vec<Vec<String>> = rows
             .iter()
             .map(|r| {
@@ -582,6 +649,8 @@ async fn list_invoices(
                     r.invoice_no.clone(),
                     r.registration_no.clone(),
                     r.customer_name.clone(),
+                    r.customer_email.clone(),
+                    r.customer_mobile.clone(),
                     r.premium_amount.to_string(),
                     r.due_date.to_string(),
                     r.status.clone(),
@@ -595,6 +664,8 @@ async fn list_invoices(
                 "invoice_no",
                 "registration_no",
                 "customer_name",
+                "customer_email",
+                "customer_mobile",
                 "premium_amount",
                 "due_date",
                 "status",
@@ -606,8 +677,17 @@ async fn list_invoices(
         ));
     }
 
+    // ----- JSON path (paginated) -----
+    // Date predicate uses `$3::date IS NULL OR <col> >= $3::date` so the
+    // SQL text + placeholder count is stable across requests with and
+    // without a date filter. df/dt are bound as NULL when no filter is
+    // applied, short-circuiting the comparison in SQL.
+    let date_predicate = format!(
+        " AND ($3::date IS NULL OR {date_col} >= $3::date) \
+         AND ($4::date IS NULL OR {date_col} <= $4::date)"
+    );
 
-    let total: (i64,) = sqlx::query_as(
+    let count_sql = format!(
         r#"
         SELECT COUNT(*)
           FROM invoices i
@@ -618,16 +698,24 @@ async fn list_invoices(
                           OR c.full_name       ILIKE $1
                           OR c.email           ILIKE $1)
            AND ($2 = '' OR i.status = $2)
-        "#,
-    )
-    .bind(&search)
-    .bind(&status)
-    .fetch_one(&state.pool)
-    .await?;
+           {date_predicate}
+        "#
+    );
+    let total: (i64,) = sqlx::query_as::<_, (i64,)>(&count_sql)
+        .bind(&search)
+        .bind(&status)
+        .bind(date_from)
+        .bind(date_to)
+        .fetch_one(&state.pool)
+        .await?;
 
-    let data: Vec<InvoiceRow> = sqlx::query_as(
+    // Placeholder numbering for the data query: $1=search $2=status
+    // $3=df $4=dt $5=limit $6=offset. Always bind 6 — df/dt may be NULL
+    // when no date filter is applied.
+    let data_sql = format!(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
+               c.email AS customer_email, c.mobile_number AS customer_mobile,
                i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
@@ -637,16 +725,21 @@ async fn list_invoices(
                           OR c.full_name       ILIKE $1
                           OR c.email           ILIKE $1)
            AND ($2 = '' OR i.status = $2)
-         ORDER BY i.created_at DESC
-         LIMIT $3 OFFSET $4
+           {date_predicate}
+         {order}
+         LIMIT $5 OFFSET $6
         "#,
-    )
-    .bind(&like)
-    .bind(&status)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+    );
+    let data: Vec<InvoiceRow> = sqlx::query_as::<_, InvoiceRow>(&data_sql)
+        .bind(&like)
+        .bind(&status)
+        .bind(date_from)
+        .bind(date_to)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     Ok(Json(Page {
         data,
@@ -664,6 +757,7 @@ async fn get_invoice(
     let row: Option<InvoiceRow> = sqlx::query_as(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
+               c.email AS customer_email, c.mobile_number AS customer_mobile,
                i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
@@ -718,6 +812,8 @@ struct PolicyRow {
     policy_no: String,
     registration_no: String,
     customer_name: String,
+    customer_email: String,
+    customer_mobile: String,
     product: String,
     sum_assured: Decimal,
     premium: Decimal,
@@ -734,6 +830,7 @@ async fn list_policies(
     Query(q): Query<PageQuery>,
     Query(fmt): Query<ListFormatQuery>,
 ) -> AppResult<Response> {
+    // ----- Shared filter inputs -----
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -742,10 +839,55 @@ async fn list_policies(
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
 
+    // ----- New filter inputs -----
+    let (date_from, date_to) =
+        filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
+    const POLICY_DATE_FIELDS: &[&str] = &["created_at", "effective_date", "expiry_date"];
+    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), POLICY_DATE_FIELDS);
+    const POLICY_SORT_COLS: &[&str] = &[
+        "created_at",
+        "effective_date",
+        "expiry_date",
+        "sum_assured",
+        "premium",
+        "customer_name",
+        "product",
+    ];
+    let sort_col = filters_helper::validate_sort(q.sort_by.as_deref(), POLICY_SORT_COLS);
+    let sort_dir = filters_helper::validate_sort_dir(q.sort_dir.as_deref());
+    // Product filter: validated against closed set; 400 on bad value.
+    let product = filters_helper::parse_product(q.product.as_deref())?;
+
+    let df = date_from.unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap());
+    let dt = date_to.unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(9999, 12, 31).unwrap());
+    let has_date = date_from.is_some() || date_to.is_some();
+
+    let date_col = format!("p.{date_field}");
+    let sort_col_qualified = match sort_col {
+        "customer_name" => "c.full_name".to_string(),
+        other => format!("p.{other}"),
+    };
+
+    // SQL placeholder layout (mirrored in CSV + JSON path):
+    //   $1=search $2=status $3=df $4=dt $5=product $6=limit $7=offset
+    // We always bind df/dt/product — when has_date/product is false, we
+    // pass sentinel values (1970..9999 range, empty string) that the
+    // boolean `has_*` flags short-circuit in SQL. This keeps placeholder
+    // numbering stable across requests.
     if fmt.is_csv() {
-        let rows: Vec<PolicyRow> = sqlx::query_as(
+        let date_predicate = if has_date {
+            format!(" AND {date_col} >= $3 AND {date_col} <= $4")
+        } else {
+            String::new()
+        };
+        let product_predicate = match product.as_deref() {
+            Some(_) => " AND p.product = $5",
+            None => "",
+        };
+        let sql = format!(
             r#"
             SELECT p.id, p.policy_no, r.registration_no, c.full_name AS customer_name,
+                   c.email AS customer_email, c.mobile_number AS customer_mobile,
                    p.product, p.sum_assured, p.premium,
                    p.effective_date, p.expiry_date, p.status, p.pdf_path, p.created_at
               FROM policies p
@@ -755,13 +897,19 @@ async fn list_policies(
                               OR r.registration_no ILIKE $1
                               OR c.full_name       ILIKE $1)
                AND ($2 = '' OR p.status = $2)
-             ORDER BY p.created_at DESC
+               {date_predicate}
+               {product_predicate}
+             {order}
             "#,
-        )
-        .bind(&like)
-        .bind(&status)
-        .fetch_all(&state.pool)
-        .await?;
+            order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+        );
+        let mut q_builder = sqlx::query_as::<_, PolicyRow>(&sql)
+            .bind(&like)
+            .bind(&status)
+            .bind(df)
+            .bind(dt)
+            .bind(product.as_deref().unwrap_or(""));
+        let rows: Vec<PolicyRow> = q_builder.fetch_all(&state.pool).await?;
         let body: Vec<Vec<String>> = rows
             .iter()
             .map(|r| {
@@ -769,6 +917,8 @@ async fn list_policies(
                     r.policy_no.clone(),
                     r.registration_no.clone(),
                     r.customer_name.clone(),
+                    r.customer_email.clone(),
+                    r.customer_mobile.clone(),
                     r.product.clone(),
                     r.sum_assured.to_string(),
                     r.premium.to_string(),
@@ -784,6 +934,8 @@ async fn list_policies(
                 "policy_no",
                 "registration_no",
                 "customer_name",
+                "customer_email",
+                "customer_mobile",
                 "product",
                 "sum_assured",
                 "premium",
@@ -797,8 +949,18 @@ async fn list_policies(
         ));
     }
 
+    // ----- JSON path -----
+    let date_predicate = if has_date {
+        format!(" AND {date_col} >= $3 AND {date_col} <= $4")
+    } else {
+        String::new()
+    };
+    let product_predicate = match product.as_deref() {
+        Some(_) => " AND p.product = $5",
+        None => "",
+    };
 
-    let total: (i64,) = sqlx::query_as(
+    let count_sql = format!(
         r#"
         SELECT COUNT(*)
           FROM policies p
@@ -808,16 +970,22 @@ async fn list_policies(
                           OR r.registration_no ILIKE $1
                           OR c.full_name       ILIKE $1)
            AND ($2 = '' OR p.status = $2)
-        "#,
-    )
-    .bind(&search)
-    .bind(&status)
-    .fetch_one(&state.pool)
-    .await?;
+           {date_predicate}
+           {product_predicate}
+        "#
+    );
+    let count_q = sqlx::query_as::<_, (i64,)>(&count_sql)
+        .bind(&search)
+        .bind(&status)
+        .bind(df)
+        .bind(dt)
+        .bind(product.as_deref().unwrap_or(""));
+    let total: (i64,) = count_q.fetch_one(&state.pool).await?;
 
-    let data: Vec<PolicyRow> = sqlx::query_as(
+    let data_sql = format!(
         r#"
         SELECT p.id, p.policy_no, r.registration_no, c.full_name AS customer_name,
+               c.email AS customer_email, c.mobile_number AS customer_mobile,
                p.product, p.sum_assured, p.premium,
                p.effective_date, p.expiry_date, p.status, p.pdf_path, p.created_at
           FROM policies p
@@ -827,16 +995,22 @@ async fn list_policies(
                           OR r.registration_no ILIKE $1
                           OR c.full_name       ILIKE $1)
            AND ($2 = '' OR p.status = $2)
-         ORDER BY p.created_at DESC
-         LIMIT $3 OFFSET $4
+           {date_predicate}
+           {product_predicate}
+         {order}
+         LIMIT $6 OFFSET $7
         "#,
-    )
-    .bind(&like)
-    .bind(&status)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+    );
+    let data_q = sqlx::query_as::<_, PolicyRow>(&data_sql)
+        .bind(&like)
+        .bind(&status)
+        .bind(df)
+        .bind(dt)
+        .bind(product.as_deref().unwrap_or(""))
+        .bind(limit)
+        .bind(offset);
+    let data: Vec<PolicyRow> = data_q.fetch_all(&state.pool).await?;
 
     Ok(Json(Page {
         data,
@@ -854,6 +1028,7 @@ async fn get_policy(
     let row: Option<PolicyRow> = sqlx::query_as(
         r#"
         SELECT p.id, p.policy_no, r.registration_no, c.full_name AS customer_name,
+               c.email AS customer_email, c.mobile_number AS customer_mobile,
                p.product, p.sum_assured, p.premium,
                p.effective_date, p.expiry_date, p.status, p.pdf_path, p.created_at
           FROM policies p
@@ -1153,6 +1328,7 @@ async fn list_claims_admin(
     Query(q): Query<PageQuery>,
     Query(fmt): Query<ListFormatQuery>,
 ) -> AppResult<Response> {
+    // ----- Shared filter inputs -----
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -1161,8 +1337,51 @@ async fn list_claims_admin(
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
 
+    // ----- New filter inputs -----
+    let (date_from, date_to) =
+        filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
+    const CLAIM_DATE_FIELDS: &[&str] = &["submitted_at", "incident_date", "updated_at"];
+    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), CLAIM_DATE_FIELDS);
+    const CLAIM_SORT_COLS: &[&str] = &[
+        "submitted_at",
+        "incident_date",
+        "updated_at",
+        "claimed_amount",
+        "customer_name",
+    ];
+    let sort_col = filters_helper::validate_sort(q.sort_by.as_deref(), CLAIM_SORT_COLS);
+    let sort_dir = filters_helper::validate_sort_dir(q.sort_dir.as_deref());
+    let product = filters_helper::parse_product(q.product.as_deref())?;
+    let claim_type = filters_helper::parse_claim_type(q.claim_type.as_deref())?;
+
+    let df = date_from.unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap());
+    let dt = date_to.unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(9999, 12, 31).unwrap());
+    let has_date = date_from.is_some() || date_to.is_some();
+
+    let date_col = format!("cl.{date_field}");
+    let sort_col_qualified = match sort_col {
+        "customer_name" => "c.full_name".to_string(),
+        other => format!("cl.{other}"),
+    };
+
+    // Placeholder layout (mirrored in CSV + JSON path):
+    //   $1=search $2=status $3=df $4=dt $5=product $6=claim_type
+    //   $7=limit $8=offset
     if fmt.is_csv() {
-        let rows: Vec<AdminClaimRow> = sqlx::query_as(
+        let date_predicate = if has_date {
+            format!(" AND {date_col} >= $3 AND {date_col} <= $4")
+        } else {
+            String::new()
+        };
+        let product_predicate = match product.as_deref() {
+            Some(_) => " AND p.product = $5",
+            None => "",
+        };
+        let claim_type_predicate = match claim_type.as_deref() {
+            Some(_) => " AND cl.claim_type = $6",
+            None => "",
+        };
+        let sql = format!(
             r#"
             SELECT cl.id, cl.claim_no, p.policy_no, c.full_name AS customer_name,
                    cl.claim_type, cl.incident_date, cl.claimed_amount,
@@ -1172,13 +1391,21 @@ async fn list_claims_admin(
               JOIN customers c ON c.id = cl.customer_id
              WHERE ($1 = '' OR cl.claim_no ILIKE $1 OR c.full_name ILIKE $1)
                AND ($2 = '' OR cl.status = $2)
-             ORDER BY cl.submitted_at DESC
+               {date_predicate}
+               {product_predicate}
+               {claim_type_predicate}
+             {order}
             "#,
-        )
-        .bind(&like)
-        .bind(&status)
-        .fetch_all(&state.pool)
-        .await?;
+            order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+        );
+        let mut q_builder = sqlx::query_as::<_, AdminClaimRow>(&sql)
+            .bind(&like)
+            .bind(&status)
+            .bind(df)
+            .bind(dt)
+            .bind(product.as_deref().unwrap_or(""))
+            .bind(claim_type.as_deref().unwrap_or(""));
+        let rows: Vec<AdminClaimRow> = q_builder.fetch_all(&state.pool).await?;
         let body: Vec<Vec<String>> = rows
             .iter()
             .map(|r| {
@@ -1214,8 +1441,22 @@ async fn list_claims_admin(
         ));
     }
 
+    // ----- JSON path -----
+    let date_predicate = if has_date {
+        format!(" AND {date_col} >= $3 AND {date_col} <= $4")
+    } else {
+        String::new()
+    };
+    let product_predicate = match product.as_deref() {
+        Some(_) => " AND p.product = $5",
+        None => "",
+    };
+    let claim_type_predicate = match claim_type.as_deref() {
+        Some(_) => " AND cl.claim_type = $6",
+        None => "",
+    };
 
-    let total: (i64,) = sqlx::query_as(
+    let count_sql = format!(
         r#"
         SELECT COUNT(*)
           FROM claims cl
@@ -1223,33 +1464,49 @@ async fn list_claims_admin(
           JOIN customers c ON c.id = cl.customer_id
          WHERE ($1 = '' OR cl.claim_no ILIKE $1 OR c.full_name ILIKE $1)
            AND ($2 = '' OR cl.status = $2)
-        "#,
-    )
-    .bind(&search)
-    .bind(&status)
-    .fetch_one(&state.pool)
-    .await?;
+           {date_predicate}
+           {product_predicate}
+           {claim_type_predicate}
+        "#
+    );
+    let count_q = sqlx::query_as::<_, (i64,)>(&count_sql)
+        .bind(&search)
+        .bind(&status)
+        .bind(df)
+        .bind(dt)
+        .bind(product.as_deref().unwrap_or(""))
+        .bind(claim_type.as_deref().unwrap_or(""));
+    let total: (i64,) = count_q.fetch_one(&state.pool).await?;
 
-    let data: Vec<AdminClaimRow> = sqlx::query_as(
+    let data_sql = format!(
         r#"
         SELECT cl.id, cl.claim_no, p.policy_no, c.full_name AS customer_name,
                cl.claim_type, cl.incident_date, cl.claimed_amount,
-               cl.status, cl.decision_note, cl.submitted_at, cl.updated_at
+               cl.status, cl.decision_note, cl.payment_proof_path,
+               cl.submitted_at, cl.updated_at
           FROM claims cl
           JOIN policies p ON p.id = cl.policy_id
           JOIN customers c ON c.id = cl.customer_id
          WHERE ($1 = '' OR cl.claim_no ILIKE $1 OR c.full_name ILIKE $1)
            AND ($2 = '' OR cl.status = $2)
-         ORDER BY cl.submitted_at DESC
-         LIMIT $3 OFFSET $4
+           {date_predicate}
+           {product_predicate}
+           {claim_type_predicate}
+         {order}
+         LIMIT $7 OFFSET $8
         "#,
-    )
-    .bind(&like)
-    .bind(&status)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+    );
+    let data_q = sqlx::query_as::<_, AdminClaimRow>(&data_sql)
+        .bind(&like)
+        .bind(&status)
+        .bind(df)
+        .bind(dt)
+        .bind(product.as_deref().unwrap_or(""))
+        .bind(claim_type.as_deref().unwrap_or(""))
+        .bind(limit)
+        .bind(offset);
+    let data: Vec<AdminClaimRow> = data_q.fetch_all(&state.pool).await?;
 
     Ok(Json(Page {
         data,
@@ -1329,7 +1586,8 @@ async fn patch_claim(
         r#"
         SELECT cl.id, cl.claim_no, p.policy_no, c.full_name AS customer_name,
                cl.claim_type, cl.incident_date, cl.claimed_amount,
-               cl.status, cl.decision_note, cl.submitted_at, cl.updated_at
+               cl.status, cl.decision_note, cl.payment_proof_path,
+               cl.submitted_at, cl.updated_at
           FROM claims cl
           JOIN policies p ON p.id = cl.policy_id
           JOIN customers c ON c.id = cl.customer_id
@@ -1572,6 +1830,7 @@ async fn list_inquiries_admin(
     Query(q): Query<PageQuery>,
     Query(fmt): Query<ListFormatQuery>,
 ) -> AppResult<Response> {
+    // ----- Shared filter inputs -----
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -1580,8 +1839,45 @@ async fn list_inquiries_admin(
     let status = q.status.clone().unwrap_or_default();
     let like = format!("%{search}%");
 
+    // ----- New filter inputs -----
+    let (date_from, date_to) =
+        filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
+    const INQUIRY_DATE_FIELDS: &[&str] = &[
+        "created_at",
+        "responded_at",
+        "last_message_at",
+        "closed_at",
+    ];
+    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), INQUIRY_DATE_FIELDS);
+    const INQUIRY_SORT_COLS: &[&str] = &[
+        "created_at",
+        "responded_at",
+        "last_message_at",
+        "closed_at",
+        "customer_name",
+    ];
+    let sort_col = filters_helper::validate_sort(q.sort_by.as_deref(), INQUIRY_SORT_COLS);
+    let sort_dir = filters_helper::validate_sort_dir(q.sort_dir.as_deref());
+
+    // date_from / date_to are bound as Option<NaiveDate>; the SQL uses
+    // `$3::date IS NULL OR <col> >= $3::date` so a None value
+    // short-circuits the comparison and the placeholder count stays
+    // stable across requests with and without a date filter (prevents
+    // sqlx prepared-statement cache collision that produced
+    // "bind message supplies 4 parameters, but prepared statement
+    // requires 6" before this fix).
+    let date_col = format!("i.{date_field}");
+    let sort_col_qualified = match sort_col {
+        "customer_name" => "c.full_name".to_string(),
+        other => format!("i.{other}"),
+    };
+
     if fmt.is_csv() {
-        let rows: Vec<AdminInquiryRow> = sqlx::query_as(
+        let date_predicate = format!(
+            " AND ($3::date IS NULL OR {date_col} >= $3::date) \
+             AND ($4::date IS NULL OR {date_col} <= $4::date)"
+        );
+        let sql = format!(
             r#"
             SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
                    p.policy_no,
@@ -1596,13 +1892,18 @@ async fn list_inquiries_admin(
               LEFT JOIN policies p ON p.id = i.policy_id
              WHERE ($1 = '' OR i.inquiry_no ILIKE $1 OR i.subject ILIKE $1 OR c.full_name ILIKE $1)
                AND ($2 = '' OR i.status = $2)
-             ORDER BY i.created_at DESC
+               {date_predicate}
+             {order}
             "#,
-        )
-        .bind(&like)
-        .bind(&status)
-        .fetch_all(&state.pool)
-        .await?;
+            order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+        );
+        let rows: Vec<AdminInquiryRow> = sqlx::query_as::<_, AdminInquiryRow>(&sql)
+            .bind(&like)
+            .bind(&status)
+            .bind(date_from)
+            .bind(date_to)
+            .fetch_all(&state.pool)
+            .await?;
         let body: Vec<Vec<String>> = rows
             .iter()
             .map(|r| {
@@ -1646,22 +1947,31 @@ async fn list_inquiries_admin(
         ));
     }
 
+    // ----- JSON path -----
+    let date_predicate = format!(
+        " AND ($3::date IS NULL OR {date_col} >= $3::date) \
+         AND ($4::date IS NULL OR {date_col} <= $4::date)"
+    );
 
-    let total: (i64,) = sqlx::query_as(
+    let count_sql = format!(
         r#"
         SELECT COUNT(*)
           FROM inquiries i
           JOIN customers c ON c.id = i.customer_id
          WHERE ($1 = '' OR i.inquiry_no ILIKE $1 OR i.subject ILIKE $1 OR c.full_name ILIKE $1)
            AND ($2 = '' OR i.status = $2)
-        "#,
-    )
-    .bind(&search)
-    .bind(&status)
-    .fetch_one(&state.pool)
-    .await?;
+           {date_predicate}
+        "#
+    );
+    let total: (i64,) = sqlx::query_as::<_, (i64,)>(&count_sql)
+        .bind(&search)
+        .bind(&status)
+        .bind(date_from)
+        .bind(date_to)
+        .fetch_one(&state.pool)
+        .await?;
 
-    let data: Vec<AdminInquiryRow> = sqlx::query_as(
+    let data_sql = format!(
         r#"
         SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,
                p.policy_no,
@@ -1676,16 +1986,21 @@ async fn list_inquiries_admin(
           LEFT JOIN policies p ON p.id = i.policy_id
          WHERE ($1 = '' OR i.inquiry_no ILIKE $1 OR i.subject ILIKE $1 OR c.full_name ILIKE $1)
            AND ($2 = '' OR i.status = $2)
-         ORDER BY i.created_at DESC
-         LIMIT $3 OFFSET $4
+           {date_predicate}
+         {order}
+         LIMIT $5 OFFSET $6
         "#,
-    )
-    .bind(&like)
-    .bind(&status)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
+    );
+    let data: Vec<AdminInquiryRow> = sqlx::query_as::<_, AdminInquiryRow>(&data_sql)
+        .bind(&like)
+        .bind(&status)
+        .bind(date_from)
+        .bind(date_to)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     // Lazy auto-close: sama dengan customer side — stale ANSWERED → CLOSED
     // + email `InquiryAutoClosed` ke customer. Update row di-place supaya
