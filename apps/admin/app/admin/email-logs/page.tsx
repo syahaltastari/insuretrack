@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { AdminListPage } from "@/components/AdminListPage";
 import { StatusBadge } from "@insuretrack/ui";
+import { formatDateTime } from "@/lib/format";
 
 type Row = {
   id: string;
@@ -36,6 +37,9 @@ export default function Page() {
             r.error_message ? (
               <span
                 title={r.error_message}
+                // `whiteSpace: "normal"` override default cell `nowrap`
+                // (lihat `.clay-table td`) supaya error message boleh
+                // wrap. `-webkit-line-clamp: 2` batasi max 2 baris.
                 style={{
                   display: "-webkit-box",
                   WebkitLineClamp: 2,
@@ -43,6 +47,7 @@ export default function Page() {
                   overflow: "hidden",
                   color: "var(--pomegranate-400)",
                   fontSize: "0.8rem",
+                  whiteSpace: "normal",
                 }}
               >
                 {r.error_message}
@@ -54,9 +59,9 @@ export default function Page() {
         {
           key: "sent_at",
           label: "Tgl Kirim",
-          width: "140px",
+          width: "200px",
           hideOnMobile: true,
-          render: (r) => (r.sent_at ? new Date(r.sent_at).toLocaleString("id-ID") : "—"),
+          render: (r) => (r.sent_at ? formatDateTime(r.sent_at) : "—"),
         },
       ]}
     />

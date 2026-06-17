@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import { AdminListPage } from "@/components/AdminListPage";
+import { formatDateTime } from "@/lib/format";
 
 type Row = {
   id: string;
@@ -69,7 +70,7 @@ export default function Page() {
           label: "Waktu",
           width: "170px",
           hideOnMobile: true,
-          render: (r) => new Date(r.created_at).toLocaleString("id-ID"),
+          render: (r) => formatDateTime(r.created_at),
         },
         { key: "actor", label: "Actor", width: "140px" },
         { key: "action", label: "Action", width: "180px" },

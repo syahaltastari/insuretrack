@@ -112,11 +112,15 @@ export function useAdminTable<T extends { id: string }>(
         },
         header: c.label,
         // Cell function: kalau `c.render` ada, pakai; kalau tidak,
-        // fallback ke raw value via accessorFn. flexRender handle
-        // keduanya.
+        // fallback ke nilai dari accessorFn via `info.getValue()`.
+        //
+        // PENTING: harus selalu return function — `cell: undefined`
+        // akan override default cell TanStack dan bikin sel render
+        // kosong untuk kolom tanpa `c.render` (e.g. `No. Registrasi`,
+        // `Nama`, `Email` di registrations page).
         cell: c.render
           ? (info) => c.render!(info.row.original)
-          : undefined,
+          : (info) => info.getValue() as ReactNode,
         enableSorting: isSortable,
         meta: {
           width: c.width,

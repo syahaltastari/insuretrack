@@ -10,6 +10,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AdminListPage } from "@/components/AdminListPage";
 import { Button } from "@insuretrack/ui";
+import { formatDate } from "@/lib/format";
 import {
   Dialog,
   DialogContent,
@@ -331,9 +332,9 @@ export default function AdminClientsPage() {
           {
             key: "updated_at",
             label: "Tgl Update",
-            width: "110px",
+            width: "140px",
             hideOnMobile: true,
-            render: (c) => new Date(c.updated_at).toLocaleDateString("id-ID"),
+            render: (c) => formatDate(c.updated_at),
           },
         ]}
         actions={(c) => (

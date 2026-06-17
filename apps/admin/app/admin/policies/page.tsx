@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { AdminListPage } from "@/components/AdminListPage";
 import { StatusBadge } from "@insuretrack/ui";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 type Row = {
   id: string;
@@ -71,28 +72,28 @@ export default function Page() {
         {
           key: "sum_assured",
           label: "UP",
-          width: "140px",
+          width: "200px",
           hideOnMobile: true,
           sortValue: "sum_assured",
-          render: (r) => new Intl.NumberFormat("id-ID").format(Number(r.sum_assured)),
+          render: (r) => formatCurrency(r.sum_assured),
         },
         {
           key: "premium",
           label: "Premi",
-          width: "140px",
+          width: "200px",
           hideOnMobile: true,
           sortValue: "premium",
-          render: (r) => new Intl.NumberFormat("id-ID").format(Number(r.premium)),
+          render: (r) => formatCurrency(r.premium),
         },
-        { key: "effective_date", label: "Efektif", width: "110px", hideOnMobile: true, sortValue: "effective_date" },
-        { key: "expiry_date", label: "Berakhir", width: "110px", hideOnMobile: true, sortValue: "expiry_date" },
+        { key: "effective_date", label: "Efektif", width: "140px", hideOnMobile: true, sortValue: "effective_date", render: (r) => formatDate(r.effective_date) },
+        { key: "expiry_date", label: "Berakhir", width: "140px", hideOnMobile: true, sortValue: "expiry_date", render: (r) => formatDate(r.expiry_date) },
         { key: "status", label: "Status", width: "110px", render: (r) => <StatusBadge status={r.status} /> },
         {
           key: "created_at",
           label: "Tgl Buat",
-          width: "110px",
+          width: "140px",
           hideOnMobile: true,
-          render: (r) => new Date(r.created_at).toLocaleDateString("id-ID"),
+          render: (r) => formatDate(r.created_at),
         },
       ]}
     />

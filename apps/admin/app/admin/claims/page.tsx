@@ -20,6 +20,7 @@ import {
 } from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE } from "@insuretrack/api-client";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { getAdminToken } from "@insuretrack/api-client";
 
 type Claim = {
@@ -211,8 +212,8 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
             {claim.customer_name} · {claim.claim_type}
           </h3>
           <p className="caption" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Polis <span className="mono">{claim.policy_no}</span> · Insiden {claim.incident_date} ·
-            Klaim {new Intl.NumberFormat("id-ID").format(Number(claim.claimed_amount))}
+            Polis <span className="mono">{claim.policy_no}</span> · Insiden {formatDate(claim.incident_date)} ·
+            Klaim {formatCurrency(claim.claimed_amount)}
           </p>
         </div>
         <StatusBadge status={claim.status} />

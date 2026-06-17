@@ -652,7 +652,15 @@ a:hover {
   font-size: 0.9rem;
   background: var(--pure-white);
   border-radius: var(--radius-card);
-  overflow: hidden;
+  /* `overflow: visible` (bukan `hidden`): PENTING untuk sticky thead.
+     Kalau table punya `overflow: hidden`, table jadi scroll context
+     sendiri — `position: sticky` di <th> nempel ke table, bukan ke
+     `.clay-table-wrap` (overflow: auto). Karena table tidak scroll,
+     sticky tidak trigger.
+
+     Corner clipping di-handle oleh `.clay-table-wrap` (overflow: auto
+     + border-radius yang sama). */
+  overflow: visible;
   box-shadow: var(--shadow-clay);
   table-layout: fixed;
 }
@@ -678,18 +686,63 @@ a:hover {
 .clay-table th,
 .clay-table td {
   min-width: 0;
-  word-break: break-word;
-  overflow-wrap: anywhere;
 }
 .clay-table td {
   padding: 14px 16px;
   border-top: 1px solid var(--oat-light);
   text-align: left;
-  vertical-align: middle;
+  vertical-align: top;
+  /* `position: relative` (bukan `static`) untuk:
+     1. Anchor CopyButton (absolute-positioned di kanan cell).
+     2. Anchor hover-expand shadow + z-index 10 (di :hover di bawah).
+
+     TIDAK ada z-index di sini — kalau ada, body cells akan bentrok
+     dengan sticky first/last column (z=2). Lihat blok sticky di
+     bawah untuk hierarchy lengkap. */
+  position: relative;
+  /* Default: cell single-line dengan ellipsis. Rapi secara estetika
+     (semua cell 1 baris), tidak ada baris baru walaupun text panjang.
+
+     On hover, override di bawah supaya cell "expand" jadi multi-line
+     dan menampilkan full text dengan shadow + z-index 10 untuk
+     separation. User tidak perlu click — hover saja → data full visible. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 500px;
+  /* Smooth shadow transition saat hover in/out. */
+  box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  transition: box-shadow 150ms ease;
+}
+
+.clay-table td:hover {
+  /* Hover-expand: cell jadi multi-line untuk tunjukin full content.
+     Override default truncate, pakai `word-break` + `overflow-wrap`
+     supaya long word/URL juga break dengan rapi.
+
+     `z-index: 10` di atas cells/zones lain (body sticky cells z=1,
+     thead cells z=3, corner cells z=4). Cell yang hover jadi "floating"
+     di atas row lain — user lihat full text tanpa distraction dari
+     data row di bawahnya. */
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  z-index: 10;
+  background: var(--pure-white);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 .clay-table-wrap {
-  overflow-x: auto;
+  /* Both directions: max-height forces vertical scroll inside the
+     wrap when table panjang, sehingga horizontal scrollbar selalu
+     visible di bawah wrap (tidak perlu scroll page dulu). */
+  overflow: auto;
   max-width: 100%;
+  /* `min(100vh - 240px, 800px)` clamps the height:
+       - Subtract 240px untuk ruang topbar + filter bar + pagination.
+       - Cap di 800px supaya wrap tidak terlalu tinggi di layar besar.
+     Tabel pendek (< 20 rows) tidak kena cap → no internal scroll. */
+  max-height: min(calc(100vh - 240px), 800px);
   border-radius: var(--radius-card);
   /* Firefox: thumb + track pairing for the slim modern look below. */
   scrollbar-width: thin;
@@ -726,30 +779,112 @@ a:hover {
   background: var(--warm-cream);
 }
 
-/* ----- Sticky first & last columns (opt-in via `.sticky-columns`) -----
-   Untuk list admin yang kolomnya banyak (registrations, invoices,
-   policies, claims, dst), kolom pertama (Identifier/Name) dan kolom
-   terakhir (Aksi) tetap visible selama horizontal scroll.
-   Soft shadow di inner edge mengisyaratkan ada konten di luar sana. */
+/* ----- Cell copy button -----
+   Hover-reveal button di kanan cell. Click → copy raw cell value ke
+   clipboard + visual feedback (icon jadi Check + toast). Mengatasi
+   masalah "data ke-truncate susah di-read" — admin bisa langsung copy
+   full value tanpa harus hover-tooltip atau click ke detail page. */
+.clay-table td {
+  /* Anchor untuk button absolute-positioned di kanan. */
+  position: relative;
+}
+.clay-table-cell-copy {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: var(--pure-white);
+  border: 1px solid var(--oat-border);
+  border-radius: var(--radius-sharp);
+  color: var(--warm-charcoal);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+  z-index: 5;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.clay-table td:hover .clay-table-cell-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+.clay-table-cell-copy:hover {
+  background: var(--oat-light);
+  border-color: var(--dark-border);
+  color: var(--clay-black);
+}
+.clay-table-cell-copy.copied {
+  background: var(--matcha-600);
+  border-color: var(--matcha-800);
+  color: var(--pure-white);
+  pointer-events: auto;
+  opacity: 1;
+}
+
+/* ----- Sticky first & last columns + sticky header (opt-in `.sticky-columns`) -----
+   Untuk list admin yang kolomnya banyak, kolom pertama (Identifier/Name)
+   dan kolom terakhir (Aksi) tetap visible selama horizontal scroll,
+   dan baris header tetap visible selama vertical scroll.
+   Soft shadow di inner edge mengisyaratkan ada konten di luar sana.
+
+   Z-index hierarchy (dari bawah ke atas):
+     - body cells (default): no z-index (auto, in normal flow)
+     - body sticky first/last column: z-index 2 (above body cells)
+     - thead semua cell: z-index 3 (sticky ke top, di atas sticky body)
+     - thead corner cells (kiri/kanan): z-index 4 (sticky ke top + left/right)
+     - CopyButton di cell: z-index 5
+     - hover-expand (cell on hover): z-index 10 (paling atas, "floating")
+
+   PENTING: body cells TIDAK boleh punya z-index. Kalau punya z-index
+   yang sama dengan sticky first/last column (z=1 sebelumnya), z-index
+   yang sama → DOM order menang → second column (muncul setelah di DOM)
+   menimpa sticky first column saat horizontal scroll. Sekarang body
+   cells di z-index auto, sticky column di z=2 → jelas di atas. */
 .clay-table.sticky-columns th:first-child,
 .clay-table.sticky-columns td:first-child {
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: 2;
   box-shadow: 6px 0 12px -8px rgba(0, 0, 0, 0.14);
 }
 .clay-table.sticky-columns th:last-child,
 .clay-table.sticky-columns td:last-child {
   position: sticky;
   right: 0;
-  z-index: 1;
+  z-index: 2;
   box-shadow: -6px 0 12px -8px rgba(0, 0, 0, 0.14);
+}
+/* Sticky header: thead nempel di top saat user scroll vertikal.
+   `top: 0` di dalam wrap (yang overflow: auto). Background eksplisit
+   supaya konten yang lewat di belakangnya tersembunyi. */
+.clay-table.sticky-columns thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--oat-light);
+}
+/* Corner cells (kiri/kanan thead): sticky ke top + left/right, z=4
+   di atas thead-only (z=3) dan body sticky (z=1). */
+.clay-table.sticky-columns thead th:first-child {
+  left: 0;
+  z-index: 4;
+}
+.clay-table.sticky-columns thead th:last-child {
+  right: 0;
+  z-index: 4;
 }
 .clay-table.sticky-columns th:first-child,
 .clay-table.sticky-columns th:last-child {
   background: var(--oat-light);
-  /* Layer di atas body sticky cells supaya tidak ditimpa saat scroll. */
-  z-index: 2;
 }
 .clay-table.sticky-columns td:first-child,
 .clay-table.sticky-columns td:last-child {

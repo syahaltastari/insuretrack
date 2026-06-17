@@ -15,6 +15,11 @@ export function Pagination({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   if (totalPages <= 1) return null;
 
+  // Range untuk info "Menampilkan X-Y dari Z". Di-clamp supaya
+  // `end` tidak melebihi `total` di halaman terakhir.
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+
   return (
     <div
       style={{
@@ -27,7 +32,7 @@ export function Pagination({
       }}
     >
       <span className="caption" style={{ color: "var(--warm-charcoal)", marginRight: "auto" }}>
-        Halaman {page} dari {totalPages} · {total} total
+        Menampilkan {start}-{end} dari {total}
       </span>
       <button className="clay-button ghost size-small" onClick={() => onChange(1)} disabled={page <= 1}>
         « Awal

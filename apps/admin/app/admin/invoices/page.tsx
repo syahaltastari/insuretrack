@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { AdminListPage } from "@/components/AdminListPage";
 import { StatusBadge } from "@insuretrack/ui";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 type Row = {
   id: string;
@@ -66,18 +67,18 @@ export default function Page() {
         {
           key: "premium_amount",
           label: "Premi",
-          width: "150px",
+          width: "200px",
           hideOnMobile: true,
           sortValue: "premium_amount",
-          render: (r) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(r.premium_amount)),
+          render: (r) => formatCurrency(r.premium_amount),
         },
-        { key: "due_date", label: "Jatuh Tempo", width: "120px", hideOnMobile: true, sortValue: "due_date" },
+        { key: "due_date", label: "Jatuh Tempo", width: "140px", hideOnMobile: true, sortValue: "due_date", render: (r) => formatDate(r.due_date) },
         {
           key: "paid_at",
           label: "Tgl Bayar",
-          width: "140px",
+          width: "160px",
           hideOnMobile: true,
-          render: (r) => (r.paid_at ? new Date(r.paid_at).toLocaleDateString("id-ID") : "—"),
+          render: (r) => (r.paid_at ? formatDate(r.paid_at) : "—"),
         },
         { key: "status", label: "Status", width: "110px", render: (r) => <StatusBadge status={r.status} /> },
       ]}

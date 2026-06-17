@@ -1,9 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  cloneElement,
+  isValidElement,
+  ReactElement,
+  ReactNode,
+} from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Inbox, Download, ArrowUp, ArrowDown, ArrowUpDown, X } from "lucide-react";
+import { Inbox, Download, ArrowUp, ArrowDown, ArrowUpDown, X, Check, Copy } from "lucide-react";
 import { flexRender } from "@tanstack/react-table";
 import {
   Pagination,
@@ -122,6 +132,12 @@ export function AdminListPage<T extends { id: string }>({
   const dateFieldFromUrl = searchParams.get("date_field") ?? "";
   const productFromUrl = searchParams.get("product") ?? "";
   const claimTypeFromUrl = searchParams.get("claim_type") ?? "";
+  // `page_size` di-URL-kan supaya shareable. Backend clamp ke 1-100
+  // (lihat `PageQuery::page_size()` di repo/mod.rs). Default 20.
+  const pageSizeFromUrl = searchParams.get("page_size");
+  const pageSize = pageSizeFromUrl
+    ? Math.max(1, Math.min(100, Number(pageSizeFromUrl) || 20))
+    : 20;
   // `sort_by` / `sort_dir` diurus oleh `useAdminTable` hook — baca
   // dari `sorting` state di bawah, bukan dari URL langsung.
 
@@ -153,7 +169,18 @@ export function AdminListPage<T extends { id: string }>({
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pageSize = 20;
+  // `pageSize` di-read dari URL (lihat deklarasi di atas) — bukan
+  // hardcoded. Dipakai untuk fetch params + Pagination component.
+
+  // ----- Table wrap ref (untuk reset vertical scroll saat ganti page) -----
+  // Saat user klik Next/Prev, kita scroll wrap ke top supaya user
+  // lihat awal data page baru (bukan tengah-tengah karena scroll
+  // position terbawa). Horizontal scroll TIDAK ter-reset — kalau
+  // user sedang baca kolom di kanan, posisi horizontal tetap.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    wrapRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [page]);
 
   // ----- TanStack Table (controlled mode) -----
   // `sorting` lives in the hook + URL; tidak ada local sort state di sini.
@@ -239,6 +266,7 @@ export function AdminListPage<T extends { id: string }>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     page,
+    pageSize,
     qFromUrl,
     statusFromUrl,
     dateFromUrl,
@@ -284,6 +312,15 @@ export function AdminListPage<T extends { id: string }>({
   const onClaimTypeChange = (v: string) => {
     setClaimType(v);
     setFilterParams({ claim_type: v });
+    setPage(1);
+  };
+
+  const onPageSizeChange = (v: string) => {
+    // v = "" artinya default (20). setFilterParams reset page ke 1
+    // dan hapus param kalau value kosong.
+    setFilterParams({
+      page_size: v || undefined,
+    });
     setPage(1);
   };
 
@@ -508,8 +545,21 @@ export function AdminListPage<T extends { id: string }>({
             </button>
           )}
 
-          {/* Column visibility — di kanan, sebelum Export CSV */}
+          {/* View controls — di kanan (page size, kolom visibility, export) */}
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <FilterSelect
+              label="Per halaman"
+              value={pageSize === 20 ? "" : String(pageSize)}
+              onChange={onPageSizeChange}
+              options={[
+                { value: "", label: "20" },
+                { value: "10", label: "10" },
+                { value: "50", label: "50" },
+                { value: "100", label: "100" },
+              ]}
+              ariaLabel="Jumlah baris per halaman"
+              width={130}
+            />
             <ColumnVisibilityMenu table={table} />
             {enableExport && (
               <a
@@ -567,7 +617,7 @@ export function AdminListPage<T extends { id: string }>({
 
       {!loading && data.length > 0 && (
         <>
-          <div className="clay-table-wrap">
+          <div className="clay-table-wrap" ref={wrapRef}>
             <table className="clay-table sticky-columns">
               <thead>
                 {headerGroups.map((headerGroup) => (
@@ -650,14 +700,25 @@ export function AdminListPage<T extends { id: string }>({
                         cell.column.columnDef.cell,
                         cell.getContext(),
                       );
+                      // Tooltip native browser: muncul saat hover (~1s
+                      // delay). Pakai raw value (`cell.getValue()`) supaya
+                      // admin lihat full text tanpa click ke detail.
+                      // Skip kalau kosong (no point showing empty tooltip).
+                      //
+                      // PENTING: `title` dipasang di INNER content (`<a>`
+                      // dan value ReactNode) — bukan di `<td>`. Kalau
+                      // dipasang di `<td>`, hover di child element
+                      // (e.g. `<a>`) tidak trigger tooltip `<td>`.
+                      const titleText = String(cell.getValue() ?? "");
+                      const tdClass = meta?.hideOnMobile
+                        ? "hide-mobile"
+                        : undefined;
                       return (
-                        <td
-                          key={cell.id}
-                          className={meta?.hideOnMobile ? "hide-mobile" : undefined}
-                        >
+                        <td key={cell.id} className={tdClass}>
                           {detailBasePath ? (
                             <a
                               href={`${detailBasePath}/${row.original.id}`}
+                              title={titleText || undefined}
                               style={{
                                 color: "var(--clay-black)",
                                 fontWeight: 500,
@@ -665,9 +726,21 @@ export function AdminListPage<T extends { id: string }>({
                             >
                               {value}
                             </a>
+                          ) : isValidElement(value) ? (
+                            // Inner element (e.g. `<code>`, `<span>`)
+                            // — clone dengan title ditambahkan.
+                            cloneElement(
+                              value as ReactElement<{ title?: string }>,
+                              { title: titleText || undefined },
+                            )
                           ) : (
-                            value
+                            // Plain text/ReactNode tanpa wrapper.
+                            // title tidak bisa di-attach ke text node
+                            // langsung — wrap dalam `<span>` dengan title.
+                            <span title={titleText || undefined}>{value}</span>
                           )}
+                          {/* Copy-to-clipboard button — muncul on cell hover */}
+                          {titleText && <CopyButton value={titleText} />}
                         </td>
                       );
                     })}
@@ -726,6 +799,69 @@ export function AdminListPage<T extends { id: string }>({
         </>
       )}
     </>
+  );
+}
+
+// ----- CopyButton (cell copy-to-clipboard) -----
+//
+// Hover-reveal button di kanan cell. Click → copy raw value (pakai
+// `cell.getValue()`) ke clipboard. Visual feedback: icon jadi Check
+// + toast "Disalin ke clipboard" selama 1.5s.
+//
+// Fallback ke `document.execCommand("copy")` kalau navigator.clipboard
+// tidak tersedia (e.g. non-HTTPS context, browser lama).
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    // Prevent click bubbling ke parent element (mis. `<a>` di
+    // first cell yang navigate ke detail page).
+    e.preventDefault();
+    e.stopPropagation();
+    if (!value) return;
+
+    const flashCopied = () => {
+      setCopied(true);
+      toast.success("Disalin ke clipboard");
+      window.setTimeout(() => setCopied(false), 1500);
+    };
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        flashCopied();
+        return;
+      }
+      // Fallback path — older browsers / non-secure context.
+      const ta = document.createElement("textarea");
+      ta.value = value;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        flashCopied();
+      } finally {
+        document.body.removeChild(ta);
+      }
+    } catch (err) {
+      toast.error("Gagal menyalin ke clipboard");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={`clay-table-cell-copy${copied ? " copied" : ""}`}
+      onClick={handleCopy}
+      title="Salin ke clipboard"
+      aria-label="Salin ke clipboard"
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+    </button>
   );
 }
 

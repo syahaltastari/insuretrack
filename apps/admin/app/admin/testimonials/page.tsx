@@ -10,6 +10,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { AdminListPage } from "@/components/AdminListPage";
 import { Button } from "@insuretrack/ui";
+import { formatDate } from "@/lib/format";
 import {
   Dialog,
   DialogContent,
@@ -314,11 +315,15 @@ export default function AdminTestimonialsPage() {
             width: "280px",
             render: (t) => (
               <span
+                // `whiteSpace: "normal"` override default cell `nowrap`
+                // (lihat `.clay-table td`) supaya review boleh wrap.
+                // `-webkit-line-clamp: 2` batasi max 2 baris.
                 style={{
                   display: "-webkit-box",
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: "vertical",
                   overflow: "hidden",
+                  whiteSpace: "normal",
                 }}
               >
                 {t.review}
@@ -349,9 +354,9 @@ export default function AdminTestimonialsPage() {
           {
             key: "display_date",
             label: "Tanggal",
-            width: "110px",
+            width: "140px",
             hideOnMobile: true,
-            render: (t) => new Date(t.display_date).toLocaleDateString("id-ID"),
+            render: (t) => formatDate(t.display_date),
           },
           {
             key: "is_featured",
@@ -378,9 +383,9 @@ export default function AdminTestimonialsPage() {
           {
             key: "updated_at",
             label: "Tgl Update",
-            width: "110px",
+            width: "140px",
             hideOnMobile: true,
-            render: (t) => new Date(t.updated_at).toLocaleDateString("id-ID"),
+            render: (t) => formatDate(t.updated_at),
           },
         ]}
         actions={(t) => (
