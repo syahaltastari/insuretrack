@@ -69,6 +69,149 @@ docker compose build --no-cache <service>
 
 ---
 
+### CPU VPS 100% — Dokploy panel timeout, build gagal
+
+**Gejala:** 
+- `ssh` masih bisa masuk, tapi Dokploy panel di `:3000` timeout / tidak respond
+- Deploy stuck atau gagal dengan error aneh (timeout, OOM, disk penuh)
+- `top` di VPS menunjukkan `cargo`, `rustc`, atau `pnpm` di 100%+ CPU
+
+**Root cause:** VPS kecil (B1ms: 1 vCPU, 2 GB RAM) menjalankan 3 build paralel (backend Rust + 2× Next.js). Total demand ~3.5 GB RAM + 4 CPU cores, padahal VPS cuma 1 CPU + 2 GB. Sistem swap ke disk → semua serba lambat.
+
+**Immediate recovery:**
+
+```bash
+# SSH masih bisa walau panel timeout
+ssh ubuntu@<IP-VPS>
+
+# Kill proses build yang nyangkut
+pkill -9 cargo rustc pnpm node 2>/dev/null
+
+# Restart Dokploy panel kalau perlu
+docker restart dokploy
+
+# Tunggu 30 detik, panel Dokploy bisa diakses lagi
+```
+
+**Quick fix (limit CPU di compose) — supaya build tidak monopoli:**
+
+Edit `docker-compose.yml`, tambahkan `deploy.resources` per service:
+
+```yaml
+services:
+  backend:
+    build: ./apps/backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.7'      # max 70% dari 1 CPU
+          memory: 1500M    # max 1.5 GB
+  portal:
+    build:
+      context: .
+      dockerfile: apps/portal/Dockerfile
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 500M
+  admin:
+    # sama seperti portal
+```
+
+**Limit Rust compile jobs** — tambahkan di `apps/backend/Dockerfile` builder stage:
+
+```dockerfile
+FROM rust:1.92-slim-bookworm AS builder
+ENV CARGO_BUILD_JOBS=1    # sequential compile — hemat 50% CPU
+```
+
+**Long-term solutions:**
+
+| Opsi | Effort | Impact |
+|---|---|---|
+| **Upgrade VPS** ke 2 vCPU / 4 GB (CX22 / Standard) | 5 menit | Build lancar, panel responsif saat deploy |
+| **Build di GitHub Actions** + push image ke GHCR | 2 jam setup | Zero CPU di VPS, deploy = pull image (~30 detik) |
+| **Build di lokal** + push manual ke Docker Hub | 30 menit setup | Zero CPU di VPS, tapi manual tiap push |
+
+**Rekomendasi:** kalau deploy > 1× per minggu → **GitHub Actions + GHCR**. Kalau jarang → upgrade VPS 4 GB.
+
+**Auto-kill high-memory processes (safety net):**
+
+Buat `/etc/cron.daily/oom-killer.sh`:
+
+```bash
+#!/bin/bash
+MEM=$(free | grep Mem | awk '{print int($3/$2 * 100)}')
+if [ "$MEM" -gt 90 ]; then
+    echo "[$(date)] Memory ${MEM}% — killing top memory hogs"
+    ps aux --sort=-%mem | head -10 | awk '{print $2}' | xargs -I {} kill -9 {} 2>/dev/null
+fi
+```
+
+```bash
+chmod +x /etc/cron.daily/oom-killer.sh
+```
+
+---
+
+### Build backend gagal: "No space left on device"
+
+**Gejala:** Build stuck di tengah compile sqlx-core atau crate Rust besar lain, error:
+```
+error: failed to write to `/app/target/release/deps/<hash>/full.rmeta`:
+       No space left on device (os error 28)
+error: could not compile `sqlx-core` (lib) due to 1 previous error
+```
+Portal + admin sudah build sukses (akan di-cancel di akhir). Backend stuck di Rust compile.
+
+**Root cause:** `cargo build --release` butuh **~3-4 GB** untuk cache dependencies. VPS kecil (B1ms = 30GB disk) cepat penuh apalagi kalau Docker build cache numpuk dari deploy sebelumnya.
+
+**Diagnosa:**
+```bash
+ssh ubuntu@<IP-VPS>
+
+# Cek disk usage
+df -h /
+docker system df
+
+# Biasanya Docker build cache yang numpuk
+docker builder prune -af --filter "until=72h"   # hapus cache > 72 jam
+```
+
+**Fix (urutan dari yang paling aman):**
+
+```bash
+# Step 1: Bersihkan Docker build cache (aman, akan rebuild)
+docker builder prune -af
+
+# Step 2: Bersihkan image lama yang tidak dipakai (safe)
+docker image prune -af
+
+# Step 3: Bersihkan container stopped
+docker container prune -f
+
+# Step 4: Cek disk sekarang
+df -h /
+# Minimal butuh 10 GB free di /var/lib/docker
+
+# Step 5: Redeploy dari Dokploy panel
+```
+
+**Kalau masih gagal setelah cleanup:**
+
+| VPS Spec | Recommendation |
+|---|---|
+| < 40 GB disk | Upgrade ke plan 50 GB+ (Hetzner CX22 / DO Basic sudah cukup) |
+| 2 GB RAM | Build Rust + Node paralel bisa OOM. Upgrade ke 4 GB RAM |
+| Pakai cache Docker lama | `docker builder prune -af` harusnya cukup |
+
+**Optimasi Dockerfile backend (optional, long-term):**
+
+Backend Dockerfile di `apps/backend/Dockerfile` saat ini compile ulang semua dependencies setiap build. Bisa dioptimasi dengan multi-stage + cache mount — tapi effort besar. Untuk sekarang, deploy sukses dengan disk yang cukup sudah cukup.
+
+---
+
 ### Container restart loop
 
 **Gejala:** `docker ps` menampilkan container dengan status `Restarting (1) X seconds ago`.
@@ -181,26 +324,23 @@ nslookup portal.203-0-113-42.sslip.io 8.8.8.8
 
 ---
 
-### Browser `NET::ERR_CERT_AUTHORITY_INVALID`
+### Browser `NET::ERR_CERT_AUTHORITY_INVALID` atau HTTPS gagal di sslip.io
 
-**Gejala:** Browser tampilkan "Your connection is not private" dengan error `NET::ERR_CERT_AUTHORITY_INVALID`.
+**Gejala:** Anda centang **Generate SSL** di Dokploy → cert generation gagal atau browser tetap complain HTTPS.
 
-**Diagnosa:** Anda akses pakai `https://...` tapi:
-- SSL belum di-generate di Dokploy, ATAU
-- sslip.io subdomain salah format, ATAU
-- SSL cert generation gagal
+**Root cause:** sslip.io **TIDAK mendukung HTTPS**. Dokploy sendiri yang kasih warning ini:
+
+> *"sslip.io is a public HTTP service and does not support SSL/HTTPS. HTTPS and certificate options will not have any effect."*
+
+Let's Encrypt butuh DNS validation — subdomain sslip.io bukan milik Anda, tidak bisa prove ownership.
 
 **Fix:**
-```bash
-# Opsi A: Pakai http:// bukan https:// (kalau SSL belum ready)
-# Opsi B: Cek SSL status di Dokploy
-ssh -L 3000:localhost:3000 ubuntu@<IP-VPS>  # SSH tunnel
-# Browser → http://localhost:3000 → service → tab Domains
-# Lihat SSL status per domain — kalau "Generating" tunggu 1-2 menit
-# Kalau "Failed" → klik "Generate" lagi
-```
+1. Buka Dokploy → service `insuretrack-stack` → tab **Domains**
+2. **Uncheck** Generate SSL untuk semua domain (`api`, `portal`, `admin`)
+3. Akses pakai `http://` (bukan `https://`)
+4. Browser akan show "Not Secure" — itu expected untuk mode sslip.io
 
-> sslip.io + Let's Encrypt butuh waktu 1-3 menit untuk issue cert. Kalau masih gagal setelah 5 menit, kemungkinan firewall outbound port 80 block ke Let's Encrypt.
+**Untuk HTTPS nanti:** beli domain sendiri (mis. `insuretrack.id`), setup A record ke IP VPS, baru centang Generate SSL — Let's Encrypt akan bisa prove ownership via DNS challenge.
 
 ---
 
@@ -430,7 +570,7 @@ docker exec insuretrack_db psql -U postgres -d insuretrack_demo \
 
 **Gejala:** Browser DevTools console menampilkan:
 ```
-Access to fetch at 'https://api.xxx.sslip.io' from origin 'https://portal.xxx.sslip.io'
+Access to fetch at 'http://api.xxx.sslip.io' from origin 'http://portal.xxx.sslip.io'
 has been blocked by CORS policy
 ```
 
@@ -439,23 +579,20 @@ has been blocked by CORS policy
 **Fix:**
 ```bash
 # Cek backend log — biasanya tidak ada error CORS.
-# Lebih sering masalahnya: HTTPS mismatch (mixed content).
+# Lebih sering masalahnya: protocol atau hostname mismatch.
 
 # Opsi 1: Pastikan semua surface pakai protocol sama
-# Portal: https://portal.xxx.sslip.io
-# API: https://api.xxx.sslip.io
-# Mixed (portal HTTPS, API HTTP) = browser block
-
-# Opsi 2: Kalau pakai HTTP-only, set CORS headers manual
-# (kontak dev untuk custom layer)
+# Portal: http://portal.xxx.sslip.io
+# API: http://api.xxx.sslip.io
+# Mixed (salah satu HTTPS, satu HTTP) = browser block
 ```
 
-**Untuk mode demo dengan sslip.io + HTTPS**, CORS harusnya otomatis OK karena:
+**Untuk mode demo dengan sslip.io (HTTP-only)**, CORS harusnya otomatis OK karena:
 1. Backend `CorsLayer::permissive()` allow semua origin
 2. Semua hostname di bawah `.sslip.io` (same parent domain)
-3. Browser izinkan cross-origin fetch kalau HTTPS-HTTPS
+3. Browser izinkan cross-origin fetch HTTP-HTTP tanpa issue
 
-Kalau masih error, kemungkinan besar adalah mixed-content (HTTPS page fetch HTTP endpoint) — fix dengan upgrade semua ke HTTPS.
+Kalau masih error, kemungkinan besar protocol/hostname salah di `NEXT_PUBLIC_API_URL` — cek env var di Dokploy.
 
 ---
 

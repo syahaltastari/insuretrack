@@ -1,0 +1,115 @@
+# =============================================================================
+# InsureTrack — Production Compose (GHCR images)
+#
+# Dipakai oleh Dokploy Compose service di VPS. TIDAK ada `build:` keys —
+# VPS pull pre-built image dari GitHub Container Registry, tidak compile
+# apa-apa. CPU VPS tetap idle saat deploy.
+#
+# Untuk local development pakai `docker-compose.yml` (yang ada `build:` keys).
+#
+# Cara pakai di Dokploy:
+#   1. Project "insuretrack" → environment "development" → service "insuretrack-stack"
+#   2. General → Docker Compose File Location: ganti dari `docker-compose.yml`
+#      jadi `docker-compose.ghcr.yml`
+#   3. Save, redeploy
+#
+# Image source: ghcr.io/syahaltastari/insuretrack-{backend,portal,admin}:latest
+# Setiap push ke main → GitHub Actions rebuild image → tag :latest update
+# → Dokploy pull → container restart otomatis (via deploy-demo.yml workflow).
+# =============================================================================
+
+services:
+  # ---- Postgres ------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: insuretrack_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- Backend (pre-built image dari GHCR) --------------------------------
+  backend:
+    image: ghcr.io/syahaltastari/insuretrack-backend:latest
+    container_name: insuretrack_backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - backend_uploads:/var/uploads
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.services.backend.loadbalancer.server.port=8080"
+
+  # ---- Portal (pre-built image dari GHCR) ----------------------------------
+  portal:
+    image: ghcr.io/syahaltastari/insuretrack-portal:latest
+    container_name: insuretrack_portal
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portal.rule=Host(`portal.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.portal.entrypoints=web"
+      - "traefik.http.services.portal.loadbalancer.server.port=3000"
+
+  # ---- Admin (pre-built image dari GHCR) -----------------------------------
+  admin:
+    image: ghcr.io/syahaltastari/insuretrack-admin:latest
+    container_name: insuretrack_admin
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      backend: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3001/', r => process.exit(r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.admin.rule=Host(`admin.${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.admin.entrypoints=web"
+      - "traefik.http.services.admin.loadbalancer.server.port=3001"
+
+volumes:
+  pgdata:
+  backend_uploads:

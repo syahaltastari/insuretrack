@@ -2,7 +2,9 @@
 
 **Target:** Setup deploy demo ke VPS via Dokploy, sekali klik push → auto-deploy.
 **Asumsi:** VPS Ubuntu 22.04+ dengan Docker sudah jalan, IP publik statis, tidak ada domain (pakai sslip.io atau raw IP).
-**Mode:** **Demo** — single env, HTTP-only optional, tidak ada backup/rate-limit/monitoring.
+**Mode:** **Demo** — single env, HTTP-only, tidak ada backup/rate-limit/monitoring.
+
+> **Arsitektur penting:** Image Docker di-build di **GitHub Actions** (gratis), lalu di-push ke **GHCR** (GitHub Container Registry). VPS Dokploy **tidak build apa-apa** — cuma `docker pull` image jadi → restart container. **CPU VPS tetap idle** saat deploy, panel Dokploy selalu responsif. Lihat [§ 1 Arsitektur](#1-overview-arsitektur) untuk detail.
 
 > Untuk production-ready setup (HTTPS, backup, monitoring, multi-env) → baca [`RUNBOOK_VPS_DEV.md`](./RUNBOOK_VPS_DEV.md) dan [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
@@ -27,31 +29,44 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Developer (lokal)                                          │
-│  pnpm dev / cargo run                                       │
-└─────────────────────────────────────────────────────────────┘
-                       │ git push origin main
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  GitHub                                                     │
-│  • Run CI (cargo test, vitest, playwright)                  │
-│  • If main branch → trigger Deploy workflow                │
-└─────────────────────────────────────────────────────────────┘
-                       │ HTTPS API call
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Dokploy (VPS, panel di :3000)                              │
-│  • Pull latest commit                                       │
-│  • docker compose build + up                                │
-│  • Traefik route by Host header                             │
+│  edit code → git push origin main                           │
 └─────────────────────────────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  4 service di compose stack:                                │
-│  - db          (postgres:15-alpine)                         │
-│  - backend     (Rust + Axum, :8080)                         │
-│  - portal      (Next.js, :3000)                             │
-│  - admin       (Next.js, :3001)                             │
+│  GitHub Actions (gratis, CPU eksternal)                     │
+│                                                              │
+│  ① CI workflow (.github/workflows/ci.yml)                   │
+│     • cargo test + vitest + playwright                       │
+│     • Kalau gagal → STOP, image tidak di-push                │
+│                                                              │
+│  ② Build workflow (.github/workflows/build.yml)             │
+│     • Build 3 image paralel (backend Rust + 2× Next.js)     │
+│     • Push ke GHCR (ghcr.io/.../insuretrack-{backend,...})  │
+│                                                              │
+│  ③ Deploy workflow (.github/workflows/deploy-demo.yml)      │
+│     • Call Dokploy API → trigger redeploy                   │
+│     • Health check post-deploy                               │
+└─────────────────────────────────────────────────────────────┘
+                       │ docker pull (zero CPU di VPS)
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  GHCR (GitHub Container Registry) — image registry          │
+│  • ghcr.io/syahaltastari/insuretrack-backend:latest         │
+│  • ghcr.io/syahaltastari/insuretrack-portal:latest          │
+│  • ghcr.io/syahaltastari/insuretrack-admin:latest           │
+└─────────────────────────────────────────────────────────────┘
+                       │ HTTPS pull
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  VPS Dokploy (panel di :3000) — CUMA pull + jalan          │
+│                                                              │
+│  Dokploy Service: insuretrack-stack (Compose)               │
+│  Pakai docker-compose.ghcr.yml (semua `image:` dari GHCR)   │
+│  ├── db          (postgres:15-alpine, dari Docker Hub)       │
+│  ├── backend     (Rust + Axum, :8080) ← pull dari GHCR      │
+│  ├── portal      (Next.js, :3000) ← pull dari GHCR           │
+│  └── admin       (Next.js, :3001) ← pull dari GHCR           │
 └─────────────────────────────────────────────────────────────┘
                        │
                        ▼ Traefik routes by Host
@@ -62,7 +77,9 @@
 
 **Catatan:**
 - `203-0-113-42` = IP VPS Anda, format sslip.io pakai dash (`-`) bukan dot (`.`)
-- Tidak ada HTTPS di mode demo. Browser akses `http://` (bukan `https://`). Untuk HTTPS di demo, aktifkan **Generate SSL** di Dokploy domain settings (Let's Encrypt gratis untuk sslip.io).
+- **VPS tidak compile apa-apa** — CPU selalu idle, panel Dokploy selalu responsif, deploy tidak bikin timeout
+- Build jalan di GitHub-hosted runner (4 vCPU, 16 GB RAM) — gratis untuk public repo
+- Tidak ada HTTPS di mode demo (sslip.io public HTTP-only). HTTPS butuh real domain.
 - Single environment = demo. Tidak ada staging/prod separation.
 
 ---
@@ -71,7 +88,7 @@
 
 ### 2.1 VPS
 - Ubuntu 22.04 LTS atau 24.04 LTS
-- Minimal: 1 vCPU, 2 GB RAM, 20 GB SSD
+- **Minimal: 1 vCPU, 2 GB RAM, 20 GB SSD** — cukup karena VPS **tidak build image**, hanya pull dari GHCR
 - IP publik statis (catat!)
 - Port terbuka: 22 (SSH), 80 (HTTP), 443 (HTTPS), 3000 (Dokploy panel — tutup setelah setup)
 - Akses root atau sudo
@@ -91,26 +108,106 @@
 
 ### 3.1 Verifikasi stack jalan di lokal dulu
 
+Pilih path sesuai setup lokal Anda:
+
+#### Path A — Native (untuk Anda, tanpa Docker)
+
+Setup lokal pakai Postgres 18 native + `dev.bat`. Lihat memory `hybrid-local-dev` untuk konteks.
+
 ```bash
-# Di lokal
+# Di lokal (Windows / Git Bash)
 cd /path/to/insuretrack
-cp .env.example .env  # default value sudah cukup untuk lokal
+
+# 1. Setup DB native (sekali — Postgres 18 harus sudah installed)
+scripts\setup-db-native.bat   # Windows
+# Atau manual:
+PGPASSWORD=feralyth21 "/c/Program Files/PostgreSQL/18/bin/psql.exe" \
+  -h localhost -U postgres -c "CREATE DATABASE insuretrack_demo;"
+
+# 2. Verify backend .env pointing ke native DB
+cat apps/backend/.env | grep DATABASE_URL
+# Harus: postgres://postgres:feralyth21@localhost:5432/insuretrack_demo
+
+# 3. Start stack (2 window)
+dev.bat
+#   → Window 1: cargo run (backend di :8080)
+#   → Window 2: pnpm dev (portal :3000 + admin :3001)
+```
+
+#### Path B — Docker Compose (kalau Docker tersedia)
+
+```bash
+cd /path/to/insuretrack
+cp .env.example .env  # default value cukup untuk lokal
 docker compose up -d --build
 
-# Verifikasi
+# Stop: docker compose down
+```
+
+### 3.2 Smoke test (kedua path)
+
+```bash
+# Backend health
 curl -s http://localhost:8080/health
 # → {"service":"insuretrack-backend","status":"ok","version":"0.1.0"}
-curl -sI http://localhost:3000/  # → 200 OK
 
-# Stop
-docker compose down
+# Portal homepage
+curl -sI http://localhost:3000/
+# → 200 OK
+
+# Admin login page
+curl -sI http://localhost:3001/admin/login
+# → 200 OK
+
+# DB — verify migrations applied (15 tabel harus ada)
+# Windows PowerShell:
+$env:PGPASSWORD="feralyth21"
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -U postgres -d insuretrack_demo -c "\dt"
+# Git Bash:
+PGPASSWORD=feralyth21 "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -d insuretrack_demo -c "\dt"
+# Tabel yang diharapkan: admin_users, customers, registrations, invoices,
+# policies, claims, claim_documents, inquiries, inquiry_messages,
+# email_logs, audit_logs, id_sequences, clients, testimonials,
+# _sqlx_migrations
 ```
+
+### 3.3 Reset (kalau ada masalah)
+
+#### Path A — Native
+
+```bash
+# Stop: Ctrl+C di kedua window dev.bat
+
+# Reset DB (HAPUS semua data — careful!)
+PGPASSWORD=feralyth21 "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -c "DROP DATABASE insuretrack_demo;"
+PGPASSWORD=feralyth21 "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -c "CREATE DATABASE insuretrack_demo;"
+# Restart dev.bat — backend akan auto-apply migrations dari awal
+```
+
+#### Path B — Docker
+
+```bash
+docker compose down       # stop, keep data
+docker compose down -v    # stop + HAPUS volume (data hilang)
+docker compose up -d --build
+```
+
+### 3.4 Common issues saat lokal
+
+| Error | Fix |
+|---|---|
+| `connection refused` ke `localhost:5432` | Postgres 18 native belum jalan. Windows: Services → postgresql-x64-18 → Start. Atau `pg_ctl start`. |
+| `password authentication failed for user "postgres"` | Password di `.env` beda dengan setup native. Default `dev.bat` pakai `feralyth21`. Sesuaikan `apps/backend/.env`. |
+| Backend compile error | `cd apps/backend && cargo clean && cargo build`. Cek Rust toolchain 1.75+ (`rustup default stable`). |
+| Frontend port 3000/3001 already in use | `netstat -ano \| findstr :3000` → kill process. Atau ganti port di `apps/portal/package.json`. |
+| Migrations tidak applied | Cek log backend: ada `migration applied` line per file. Kalau error SQL, fix di `apps/backend/migrations/`. |
+| Landing page kosong (no products) | `BACKEND_URL` env belum di-set. Tambah ke `apps/backend/.env`: `BACKEND_URL=http://localhost:8080`. Restart backend. |
 
 > Kalau stack tidak jalan di lokal, **fix dulu** sebelum deploy. VPS akan lebih sulit di-debug.
 
-### 3.2 (Optional) Test dengan IP/sslip.io lokal
+### 3.5 (Optional) Test dengan IP/sslip.io lokal
 
-Kalau Anda mau test dari device lain sebelum ke VPS:
+Kalau Anda mau test dari device lain sebelum ke VPS (butuh Docker):
 
 ```bash
 # Cari IP publik Anda
@@ -198,15 +295,23 @@ ssh -L 3000:localhost:3000 ubuntu@<IP-VPS>
 
 Di Dokploy panel (`http://<IP-VPS>:3000` via SSH tunnel):
 
-1. **Projects → + Create Project** → nama: `insuretrack-demo`
-2. Di dalam project → **+ Create Service** → **Compose**
-3. **Source** tab:
+1. **Projects → + Create Project** → nama: `insuretrack`
+2. Di dalam project `insuretrack` → **+ Create Environment** → nama: `development` → Create
+   > Default `production` environment juga auto-terbentuk — biarin kosong, tidak dipakai untuk demo ini.
+3. Masuk ke environment `development` → **+ Create Service** → **Compose**
+4. **General** tab:
+   - **Name**: `insuretrack-stack` ← nama untuk seluruh stack (db + backend + portal + admin). Nama ini hanya label, tidak masuk URL/secret.
+5. **Source** tab:
    - Provider: **GitHub**
    - Repository: `syahaltastari/insuretrack` (atau fork Anda)
    - Branch: `main`
-   - **Docker Compose File Location**: `docker-compose.yml`
+   - **Docker Compose File Location**: `docker-compose.ghcr.yml`
+     > ⚠️ PENTING — pakai `docker-compose.ghcr.yml` (BUKAN `docker-compose.yml`). File `.ghcr.yml` referensi image pre-built dari GHCR (`image: ghcr.io/...`), tanpa `build:` keys. VPS **tidak compile apa-apa** saat deploy — CPU tetap idle, panel Dokploy tetap responsif.
    - **Base Directory**: `.` (titik — WAJIB, jangan kosong)
-4. Klik **Save** (jangan Deploy dulu — set env dulu!)
+6. Klik **Save** (jangan Deploy dulu — set env dulu!)
+
+> ℹ️ `docker-compose.yml` (tanpa suffix `.ghcr`) tetap ada di repo dan dipakai untuk **local development** — pakai `docker compose up -d --build` di laptop. Compose file itu punya `build:` keys, butuh Docker di lokal.
+> Untuk **VPS Dokploy**, pakai `docker-compose.ghcr.yml` supaya tidak ada compile di server.
 
 ### 4.6 Setup Environment Variables
 
@@ -242,8 +347,25 @@ RESEND_FROM_EMAIL=demo@insuretrack.local
 RESEND_FROM_NAME=InsureTrack Demo
 
 # === Storage ===
-STORAGE_BACKEND=local
-UPLOAD_DIR=/var/uploads
+# Pilih salah satu:
+#
+# (A) Cloudflare R2 (recommended untuk demo) — file persistent di cloud,
+#     tidak hilang kalau VPS restart. Anda sudah punya credentials di
+#     apps/backend/.env — copy dari sana ke Dokploy Secrets.
+STORAGE_BACKEND=r2
+R2_ACCOUNT_ID=<dari .env lokal>
+R2_ACCESS_KEY_ID=<dari .env lokal>
+R2_SECRET_ACCESS_KEY=<dari .env lokal>
+R2_BUCKET=<dari .env lokal>
+R2_ENDPOINT=<dari .env lokal>
+R2_PUBLIC_BASE_URL=<dari .env lokal>
+#
+# (B) Local filesystem — file hilang kalau container di-recreate.
+#     Cocok untuk demo cepat tanpa setup R2.
+# STORAGE_BACKEND=local
+# UPLOAD_DIR=/var/uploads
+
+> ⚠️ **Untuk R2**: copy semua `R2_*` value dari `apps/backend/.env` lokal Anda. R2 credentials adalah secrets — masukkan via tab **Secrets** di Dokploy (encrypted), bukan tab General (visible).
 
 # === Misc ===
 INQUIRY_AUTO_CLOSE_DAYS=0
@@ -269,24 +391,67 @@ Tanpa `BACKEND_URL=http://backend:8080`:
 - Bug SILENT — tidak ada error di log
 - Next.js SSR pakai `NEXT_PUBLIC_API_URL` (public), yang tidak resolve dari dalam container
 
-### 4.7 Setup Domains (HTTP atau HTTPS)
+### 4.7 Setup Domains (HTTP only — sslip.io tidak support HTTPS)
 
-Di service → tab **Domains** → **+ Add Domain** untuk tiap service:
+Di service `insuretrack-stack` → tab **Domains** → **+ Add Domain** untuk tiap container. Ulangi 3 kali:
 
-| Domain | Service Port | HTTPS? |
-|---|---|---|
-| `api.${DOMAIN}.sslip.io` | 8080 | Optional (recommended ON untuk demo profesional) |
-| `portal.${DOMAIN}.sslip.io` | 3000 | Optional |
-| `admin.${DOMAIN}.sslip.io` | 3001 | Optional |
+#### Domain 1 — API (backend)
 
-**Mode Demo HTTPS (recommended):**
-- ✅ Centang **Generate SSL** (Let's Encrypt otomatis untuk sslip.io)
-- Hostname jadi `https://...` (browser trust SSL)
-- Setup 1-2 menit, gratis
+| Field | Value |
+|---|---|
+| Host | `api.203-0-113-42.sslip.io` (ganti IP dengan IP VPS Anda) |
+| Path | `/` |
+| Service Name | **`backend`** ← pilih dari dropdown (dari `docker-compose.yml` container name) |
+| Container Port | `8080` |
+| HTTPS | ❌ Uncheck Generate SSL |
+| Middlewares | (kosongkan) |
 
-**Mode Demo HTTP-only:**
-- ❌ Jangan centang Generate SSL
-- Browser akan mixed-content warning kalau ada fetch HTTPS
+#### Domain 2 — Portal
+
+| Field | Value |
+|---|---|
+| Host | `portal.203-0-113-42.sslip.io` |
+| Path | `/` |
+| Service Name | **`portal`** |
+| Container Port | `3000` |
+| HTTPS | ❌ Uncheck |
+
+#### Domain 3 — Admin
+
+| Field | Value |
+|---|---|
+| Host | `admin.203-0-113-42.sslip.io` |
+| Path | `/` |
+| Service Name | **`admin`** |
+| Container Port | `3001` |
+| HTTPS | ❌ Uncheck |
+
+> ⚠️ **PENTING #1 — Host pakai literal hostname, BUKAN `${DOMAIN}`.**
+> 
+> Dokploy UI's Host field adalah literal string yang dipakai Traefik sebagai routing rule. Berbeda dengan env var `${DOMAIN}` di `docker-compose.yml` yang disubstitute saat container start. Kalau Anda pakai `api.${DOMAIN}.sslip.io` di Host field, Traefik akan coba resolve hostname **literal** `api.${DOMAIN}.sslip.io` — yang tidak resolve.
+> 
+> Env var `${DOMAIN}` tetap dipakai untuk `APP_BASE_URL`, `MEDIA_BASE_URL`, `NEXT_PUBLIC_API_URL` di env vars section — itu cara Docker Compose kerja.
+
+> ⚠️ **PENTING #2 — sslip.io + HTTPS tidak bekerja.**
+> 
+> Dokploy sendiri yang kasih warning ini:
+> 
+> *"sslip.io is a public HTTP service and does not support SSL/HTTPS. HTTPS and certificate options will not have any effect."*
+> 
+> Kalau Anda centang **Generate SSL**, Let's Encrypt coba issue cert → **gagal** (subdomain sslip.io bukan milik Anda, tidak bisa prove ownership). Traefik tetap serve HTTP. Save waktu Anda — langsung **uncheck** saja.
+> 
+> Untuk HTTPS nanti: butuh real domain (mis. `insuretrack.id`) yang Anda punya + bisa setup DNS A record. sslip.io **tidak bisa** untuk HTTPS.
+
+> ⚠️ **PENTING #3 — Service Name harus match dengan container.**
+> 
+> Dropdown "Service Name" di Dokploy menampilkan nama container dari `docker-compose.yml`. Pilih yang sesuai:
+> - `api.*` domain → **`backend`** (Rust + Axum container, port 8080)
+> - `portal.*` domain → **`portal`** (Next.js customer surface, port 3000)
+> - `admin.*` domain → **`admin`** (Next.js backoffice, port 3001)
+>
+> Traefik hanya route request ke container yang Anda pilih. Kalau salah, browser dapat 404 atau connection refused.
+
+Hasil: semua akses pakai `http://` (bukan `https://`). Untuk demo internal, fine. Untuk share ke stakeholder, kasih tahu mereka browser akan show "Not Secure" — itu expected untuk mode ini.
 
 ### 4.8 Deploy pertama
 
@@ -301,7 +466,7 @@ docker logs -f insuretrack_backend
 
 Verifikasi (lihat §6 untuk detail):
 ```bash
-curl -s https://api.203-0-113-42.sslip.io/health
+curl -s http://api.203-0-113-42.sslip.io/health
 # → {"service":"insuretrack-backend","status":"ok","version":"0.1.0"}
 ```
 
@@ -315,11 +480,13 @@ GitHub repo → **Settings → Secrets and variables → Actions → New reposit
 |---|---|---|
 | `DOKPLOY_URL` | `http://203.0.113.42:3000` | URL panel Dokploy (IP VPS + port 3000) |
 | `DOKPLOY_API_KEY` | API key dari §4.3 step 4 | Generate di Dokploy panel |
-| `DOKPLOY_COMPOSE_ID` | Compose ID | Copy dari URL service di Dokploy (mis. `/project/insuretrack-demo/services/c-xyz123` → ID = `c-xyz123`) |
-| `DEPLOY_HEALTH_URL` | `https://portal.203-0-113-42.sslip.io/api/health` | Wait — ini `/api/health` di frontend, atau backend health? **Pakai backend**: `https://api.203-0-113-42.sslip.io/health` |
-| `API_URL` | `https://api.203-0-113-42.sslip.io` | Untuk smoke test |
-| `PORTAL_URL` | `https://portal.203-0-113-42.sslip.io` | Untuk smoke test |
-| `ADMIN_URL` | `https://admin.203-0-113-42.sslip.io` | Untuk smoke test |
+| `DOKPLOY_COMPOSE_ID` | Compose ID | Copy dari URL service di Dokploy (mis. `/project/insuretrack/environment/development/services/c-xyz123` → ID = `c-xyz123`) |
+| `DEPLOY_HEALTH_URL` | `http://api.203-0-113-42.sslip.io/health` | Backend health check (dipakai job `verify` di workflow) |
+| `API_URL` | `http://api.203-0-113-42.sslip.io` | Untuk smoke test |
+| `PORTAL_URL` | `http://portal.203-0-113-42.sslip.io` | Untuk smoke test |
+| `ADMIN_URL` | `http://admin.203-0-113-42.sslip.io` | Untuk smoke test |
+
+> **ℹ️ Tidak perlu secret untuk GHCR login** — pakai `GITHUB_TOKEN` (auto-provided oleh GitHub Actions, no setup). Untuk push ke package public, default permission cukup. Kalau package private → perlu adjust visibility per package di GHCR settings.
 
 > ⚠️ **Catatan keamanan:** `DOKPLOY_API_KEY` powerful — bisa trigger redeploy + modify service. Treat seperti password. Jangan pernah commit ke repo. Hanya di GitHub Secrets (encrypted at rest).
 
@@ -339,24 +506,29 @@ git push origin main
 
 ### 6.2 Monitor progress
 
-1. GitHub repo → tab **Actions** → pilih workflow **Deploy Demo** → lihat progress
-2. Workflow stages: `ci-gate` (tunggu CI pass) → `deploy` (call Dokploy API) → `verify` (health check)
+1. GitHub repo → tab **Actions** → akan ada **3 workflow** berjalan berurutan:
+   - **CI** (cargo test + vitest + playwright) — pertama
+   - **Build & Push Images** — triggered setelah CI sukses, build 3 image + push ke GHCR (~3-8 menit)
+   - **Deploy Demo** — triggered setelah build sukses, call Dokploy API + verify (~30 detik)
+2. Workflow stages di Deploy Demo: `ci-gate` (tunggu build sukses) → `deploy` (call Dokploy API) → `verify` (health check)
 
-Kalau ada error, lihat detail di tab **Actions**.
+Kalau ada error, lihat detail di tab **Actions** → klik workflow yang gagal → klik job yang merah.
+
+> **Catatan penting:** Deploy pertama butuh ~10-15 menit total (cold build semua image). Deploy berikutnya hanya ~2-3 menit karena GitHub Actions cache Docker layers.
 
 ### 6.3 Monitor Dokploy
 
 1. SSH tunnel ke panel: `ssh -L 3000:localhost:3000 ubuntu@<IP-VPS>`
-2. Browser → `http://localhost:3000` → project `insuretrack-demo` → tab **Logs**
+2. Browser → `http://localhost:3000` → project `insuretrack` → environment `development` → service → tab **Logs**
 
 ### 6.4 Smoke test dari browser
 
 | URL yang di-test | Expected |
 |---|---|
-| `https://portal.203-0-113-42.sslip.io/` | Landing page dengan hero + 3 produk |
-| `https://portal.203-0-113-42.sslip.io/register` | Form registrasi (3 plan LIFE/PA/HEALTH) |
-| `https://admin.203-0-113-42.sslip.io/admin/login` | Login form |
-| `https://api.203-0-113-42.sslip.io/api/public/products` | JSON list produk |
+| `http://portal.203-0-113-42.sslip.io/` | Landing page dengan hero + 3 produk |
+| `http://portal.203-0-113-42.sslip.io/register` | Form registrasi (3 plan LIFE/PA/HEALTH) |
+| `http://admin.203-0-113-42.sslip.io/admin/login` | Login form |
+| `http://api.203-0-113-42.sslip.io/api/public/products` | JSON list produk |
 
 ### 6.5 Login admin default
 

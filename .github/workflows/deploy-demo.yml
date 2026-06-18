@@ -1,32 +1,44 @@
 name: Deploy Demo
 
-# Auto-deploy ke Dokploy setelah CI tests pass.
+# Auto-deploy ke Dokploy setelah CI tests pass + image build sukses.
 #
-# Flow:
-#   1. Push ke main → trigger workflow ini
-#   2. Reuse CI test results dari workflow `CI` (tidak duplikasi)
-#   3. Kalau CI pass → trigger Dokploy redeploy via API
-#   4. Verify deployment dengan health check
+# Flow lengkap per push ke main:
+#   1. push ke main → CI workflow jalan (tests)
+#   2. CI selesai → build workflow trigger, build image + push ke GHCR
+#   3. Build selesai → workflow ini trigger (workflow_run)
+#   4. Trigger Dokploy API → Dokploy pull image baru dari GHCR
+#   5. Verify dengan health check
+#
+# VPS TIDAK compile apa-apa — CPU idle saat deploy. Image sudah pre-built
+# di GitHub Actions runner (zero beban di VPS Anda).
 #
 # Setup sekali:
 #   1. Di Dokploy panel → Settings → Profile → API → Generate API Key
-#   2. Copy "Compose ID" dari URL service di Dokploy (mis. /project/insuretrack/services/c-xyz123)
-#   3. GitHub repo → Settings → Secrets and variables → Actions → New:
-#      - DOKPLOY_API_KEY  (value: API key dari step 1)
-#      - DOKPLOY_URL      (value: http://<IP-VPS>:3000 atau domain Dokploy)
-#      - DOKPLOY_COMPOSE_ID (value: compose ID dari step 2)
-#      - DEPLOY_HEALTH_URL (value: https://portal.<DOMAIN>/api/health atau sesuai surface)
+#   2. Copy "Compose ID" dari URL service di Dokploy
+#   3. Pastikan Dokploy Compose service point ke `docker-compose.ghcr.yml`
+#      (bukan `docker-compose.yml` — yang baru pakai `image:` dari GHCR)
+#   4. GitHub repo → Settings → Secrets and variables → Actions → New:
+#      - DOKPLOY_API_KEY      (value: API key dari step 1)
+#      - DOKPLOY_URL          (value: http://<IP-VPS>:3000)
+#      - DOKPLOY_COMPOSE_ID   (value: compose ID dari step 2)
+#      - DEPLOY_HEALTH_URL    (value: http://api.<DOMAIN>.sslip.io/health)
 #
 # Branch behavior:
-#   - push ke main → deploy demo
+#   - push ke main → CI → build → deploy
 #   - PR ke main → tidak deploy (cuma CI test)
-#   - push ke branch lain → tidak deploy
+#   - workflow_dispatch → manual trigger (rollback / redeploy)
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Build & Push Images"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     # Manual trigger dari GitHub Actions UI — untuk rollback / redeploy manual
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: true
 
 concurrency:
   group: deploy-demo
@@ -41,42 +53,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Wait for CI workflow to complete
+      - name: Wait for build workflow to complete
         uses: actions/github-script@v7
         with:
           script: |
+            // Manual dispatch → skip wait (user already verified CI manually)
+            if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch') {
+              core.notice('Manual dispatch — skipping build wait');
+              return;
+            }
+
+            // Tunggu build workflow yang di-trigger workflow_run
+            // (event ini set setelah build workflow SELESAI)
+            if (context.payload.workflow_run) {
+              const run = context.payload.workflow_run;
+              core.info(`Build workflow ${run.conclusion}: ${run.html_url}`);
+              if (run.conclusion !== 'success') {
+                throw new Error(`Build workflow gagal: ${run.conclusion}`);
+              }
+              core.info('Build passed ✓');
+              return;
+            }
+
+            // Fallback: poll (kalau trigger via workflow_run tidak firkan payload)
             const { data } = await github.rest.actions.listWorkflowRuns({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'ci.yml',
-              status: 'in_progress',
+              workflow_id: 'build.yml',
+              status: 'completed',
               branch: context.ref,
               per_page: 1,
             });
             if (!data.workflow_runs.length) {
-              core.notice('No in-progress CI run — assuming prior run already passed');
+              core.setFailed('Build workflow belum jalan — push ke GHCR belum dilakukan');
               return;
             }
-            const runId = data.workflow_runs[0].id;
-            core.info(`Waiting for CI run ${runId}...`);
-
-            for (let i = 0; i < 30; i++) {
-              await new Promise(r => setTimeout(r, 20_000)); // poll tiap 20 detik
-              const { data: run } = await github.rest.actions.getWorkflowRun({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                run_id: runId,
-              });
-              if (run.status === 'completed') {
-                if (run.conclusion === 'success') {
-                  core.info('CI passed ✓');
-                  return;
-                }
-                throw new Error(`CI failed with conclusion: ${run.conclusion}`);
-              }
-              core.info(`CI status: ${run.status} (attempt ${i + 1}/30)`);
+            const lastRun = data.workflow_runs[0];
+            if (lastRun.conclusion !== 'success') {
+              throw new Error(`Build workflow gagal: ${lastRun.conclusion}`);
             }
-            throw new Error('Timeout menunggu CI workflow selesai');
+            core.info(`Build passed: ${lastRun.html_url}`);
 
   # ---- Job 2: Trigger Dokploy redeploy ----
   deploy:

@@ -1,0 +1,119 @@
+name: Build & Push Images
+
+# Build 3 Docker images paralel + push ke GitHub Container Registry (GHCR).
+#
+# Flow lengkap per push ke main:
+#   1. push ke main
+#   2. CI workflow jalan (cargo test + pnpm test + playwright)
+#   3. Build workflow ini trigger via workflow_run SETELAH CI selesai
+#   4. Build 3 image (backend, portal, admin) paralel
+#   5. Push ke ghcr.io/syahaltastari/insuretrack-{backend,portal,admin}:latest
+#   6. deploy-demo workflow trigger, call Dokploy API
+#   7. Dokploy pull image baru dari GHCR, restart container
+#
+# VPS TIDAK BUILD APAPA — CPU 0% saat deploy. Build compute jalan di
+# GitHub-hosted runner (4 vCPU, 16 GB RAM, gratis untuk public repo).
+#
+# Image tag strategy:
+#   - :latest        ← setiap push ke main (rolling, dipakai Dokploy)
+#   - :git-<sha>     ← immutable, untuk rollback manual via Dokploy UI
+#
+# Setup sekali di GitHub repo:
+#   Settings → Actions → General → Workflow permissions:
+#     ✅ "Read and write permissions"
+#     ✅ "Allow GitHub Actions to create and approve pull requests"
+#   (default di kebanyakan repo udah OK)
+#
+# Image visibility:
+#   - Public repo → image public otomatis (siap dishare)
+#   - Private repo → image private by default (perlu login di Dokploy VPS)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-images
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & push ${{ matrix.service }}
+    # Hanya jalan kalau:
+    # - manual trigger (workflow_dispatch), ATAU
+    # - CI workflow sukses conclusion
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # GITHUB_TOKEN perlu write ke Packages untuk push image ke GHCR
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: backend
+            context: ./apps/backend
+            dockerfile: ./apps/backend/Dockerfile
+          - service: portal
+            context: .
+            dockerfile: ./apps/portal/Dockerfile
+          - service: admin
+            context: .
+            dockerfile: ./apps/admin/Dockerfile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/insuretrack-${{ matrix.service }}
+          tags: |
+            # Tag immutable per commit — untuk rollback
+            type=sha,prefix=git-,format=short
+            # Tag rolling — yang dipakai Dokploy (production)
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=InsureTrack ${{ matrix.service }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Proprietary
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers di GitHub Actions — second build jauh lebih cepat
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # Matikan SLSA provenance (overhead tanpa benefit untuk internal app)
+          provenance: false
+
+      - name: Image digest (untuk reference di deploy)
+        if: matrix.service == 'backend'
+        run: |
+          echo "Backend image digest:"
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/insuretrack-backend:git-${{ github.sha }} --raw | head -1
