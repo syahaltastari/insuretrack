@@ -6,9 +6,7 @@
 pub fn can_transition(from: &str, to: &str) -> bool {
     matches!(
         (from, to),
-        ("UNPAID", "PAID")
-            | ("UNPAID", "EXPIRED")
-            | ("UNPAID", "CANCELLED")
+        ("UNPAID", "PAID") | ("UNPAID", "EXPIRED") | ("UNPAID", "CANCELLED")
     )
 }
 

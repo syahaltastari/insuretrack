@@ -54,11 +54,7 @@ async fn customer_message(
     common::response_json(resp).await
 }
 
-async fn admin_message(
-    app: &common::TestApp,
-    inquiry_id: Uuid,
-    msg: &str,
-) -> (StatusCode, Value) {
+async fn admin_message(app: &common::TestApp, inquiry_id: Uuid, msg: &str) -> (StatusCode, Value) {
     let token = common::admin_token(app, insuretrack_backend::auth::jwt::Role::Admin, true).await;
     let req = Request::builder()
         .method(Method::POST)
@@ -127,7 +123,11 @@ async fn inquiry_thread_full_flow() {
 
     // 6. Try to post message after CLOSED → reject
     let (s, _) = customer_message(&app, customer_id, inquiry_id, "After close").await;
-    assert_eq!(s, StatusCode::BAD_REQUEST, "post setelah CLOSED harus ditolak");
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "post setelah CLOSED harus ditolak"
+    );
 
     // 4 admin messages → 4 InquiryResponse emails.
     let admin_emails = app

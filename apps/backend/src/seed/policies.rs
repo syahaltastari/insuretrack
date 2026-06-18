@@ -77,11 +77,7 @@ pub async fn seed_policies(
             .expect("expiry date overflow");
 
         // Identifier untuk bulan effective.
-        let year_month = format!(
-            "{:04}{:02}",
-            effective.year(),
-            effective.month()
-        );
+        let year_month = format!("{:04}{:02}", effective.year(), effective.month());
         let policy_no = next_id_with_year_month(tx, IdEntity::Policy, &year_month).await?;
 
         let id: Uuid = sqlx::query_scalar(

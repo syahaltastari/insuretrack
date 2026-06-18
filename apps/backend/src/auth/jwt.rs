@@ -73,9 +73,8 @@ impl TokenService {
             iat: now,
         };
         let header = Header::new(Algorithm::HS256);
-        encode(&header, &claims, &self.encoding).map_err(|e| {
-            AppError::Internal(anyhow::anyhow!("jwt encode failed: {e}"))
-        })
+        encode(&header, &claims, &self.encoding)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("jwt encode failed: {e}")))
     }
 
     pub fn verify(&self, token: &str) -> Result<Claims, AppError> {
@@ -101,7 +100,13 @@ mod tests {
     fn round_trip_preserves_claims() {
         let s = svc();
         let token = s
-            .issue("user-1", Role::Customer, Some("activation".into()), false, 3600)
+            .issue(
+                "user-1",
+                Role::Customer,
+                Some("activation".into()),
+                false,
+                3600,
+            )
             .unwrap();
         let claims = s.verify(&token).unwrap();
         assert_eq!(claims.sub, "user-1");
@@ -116,9 +121,7 @@ mod tests {
         let s = svc();
         // jsonwebtoken default leeway = 60s → pakai TTL well past itu
         // supaya test deterministic (tidak flaky di slow CI).
-        let token = s
-            .issue("user-1", Role::Admin, None, false, -3600)
-            .unwrap();
+        let token = s.issue("user-1", Role::Admin, None, false, -3600).unwrap();
         let err = s.verify(&token).unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
     }
@@ -137,9 +140,7 @@ mod tests {
     #[test]
     fn is_super_admin_flag_round_trips() {
         let s = svc();
-        let token = s
-            .issue("admin-1", Role::Admin, None, true, 3600)
-            .unwrap();
+        let token = s.issue("admin-1", Role::Admin, None, true, 3600).unwrap();
         let claims = s.verify(&token).unwrap();
         assert!(claims.is_super_admin);
     }
@@ -150,9 +151,7 @@ mod tests {
         // Saat false, field di-skip dari serialisasi — ini memastikan
         // token customer/admin-biasa tetap ramping dan payload lama
         // (sebelum field ini ada) tetap kompatibel.
-        let token = s
-            .issue("admin-1", Role::Admin, None, false, 3600)
-            .unwrap();
+        let token = s.issue("admin-1", Role::Admin, None, false, 3600).unwrap();
         assert!(!token.contains("is_super_admin"));
     }
 }

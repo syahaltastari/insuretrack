@@ -272,25 +272,13 @@ pub async fn admin_token(app: &TestApp, role: Role, is_super_admin: bool) -> Str
     // untuk inquiry_messages.sender_name (lihat admin_inquiry_message).
     let admin_id = seed_admin(&app.pool, "testadmin").await;
     app.tokens
-        .issue(
-            &admin_id.to_string(),
-            role,
-            None,
-            is_super_admin,
-            3600,
-        )
+        .issue(&admin_id.to_string(), role, None, is_super_admin, 3600)
         .expect("issue admin token")
 }
 
 pub fn customer_token(app: &TestApp, customer_id: Uuid) -> String {
     app.tokens
-        .issue(
-            &customer_id.to_string(),
-            Role::Customer,
-            None,
-            false,
-            3600,
-        )
+        .issue(&customer_id.to_string(), Role::Customer, None, false, 3600)
         .expect("issue customer token")
 }
 
@@ -312,7 +300,11 @@ pub fn activation_token(app: &TestApp, customer_id: Uuid) -> String {
 /// + body bytes. Default response tidak memuat body; pakai `response_bytes()`
 /// untuk extract.
 pub async fn send(app: &TestApp, req: Request<Body>) -> Response<Body> {
-    app.router.clone().oneshot(req).await.expect("router oneshot")
+    app.router
+        .clone()
+        .oneshot(req)
+        .await
+        .expect("router oneshot")
 }
 
 pub async fn response_json(resp: Response<Body>) -> (StatusCode, Value) {
@@ -330,11 +322,7 @@ pub async fn response_json(resp: Response<Body>) -> (StatusCode, Value) {
 
 // ---- Seed helpers ---------------------------------------------------------
 
-pub async fn seed_customer(
-    pool: &PgPool,
-    email: &str,
-    portal_status: &str,
-) -> Uuid {
+pub async fn seed_customer(pool: &PgPool, email: &str, portal_status: &str) -> Uuid {
     // NIK = 16 digit random. UUID v4 hex (32 chars, ~50% digits) mungkin
     // punya <15 digit chars → pad ke 15 pakai '0' fallback.
     let u = Uuid::new_v4();
@@ -351,7 +339,12 @@ pub async fn seed_customer(
         format!("{:0>15}", digits) // left-pad dengan '0'
     };
     let nik = format!("3{body}");
-    assert_eq!(nik.len(), 16, "NIK must be exactly 16 chars, got {}: {nik}", nik.len());
+    assert_eq!(
+        nik.len(),
+        16,
+        "NIK must be exactly 16 chars, got {}: {nik}",
+        nik.len()
+    );
 
     sqlx::query_as::<_, (Uuid,)>(
         r#"

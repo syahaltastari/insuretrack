@@ -91,7 +91,11 @@ pub fn validate_sort<'a>(input: Option<&str>, allowed: &'a [&'a str]) -> &'a str
     match input {
         Some(s) if allowed.iter().any(|a| *a == s) => {
             // Safe: we just confirmed `s` is one of `allowed` entries.
-            allowed.iter().find(|a| **a == s).copied().unwrap_or(allowed[0])
+            allowed
+                .iter()
+                .find(|a| **a == s)
+                .copied()
+                .unwrap_or(allowed[0])
         }
         _ => allowed[0],
     }

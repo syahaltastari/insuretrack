@@ -87,9 +87,6 @@ fn default_applicant_type() -> ApplicantType {
 
 /// Hitung total premi untuk N peserta (semua pakai plan & term yang sama).
 /// Single-participant premium dikalikan N.
-pub fn calculate_group_premium(
-    per_participant: Decimal,
-    participant_count: usize,
-) -> Decimal {
+pub fn calculate_group_premium(per_participant: Decimal, participant_count: usize) -> Decimal {
     (per_participant * Decimal::from(participant_count)).round_dp(2)
 }

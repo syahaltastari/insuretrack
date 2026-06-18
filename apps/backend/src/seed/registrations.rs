@@ -77,19 +77,15 @@ pub async fn seed_registrations(
         let status = match i % 20 {
             0 => "PENDING",
             1 => "CANCELLED",
-            2..=5 => "PAID",          // 4/20 = 20%
-            _ => "ISSUED",            // 15/20 = 75%
+            2..=5 => "PAID", // 4/20 = 20%
+            _ => "ISSUED",   // 15/20 = 75%
         }
         .to_string();
 
         // Allocate identifier untuk bulan ini.
         let year_month = format!("{:04}{:02}", year, month);
-        let registration_no = next_id_with_year_month(
-            tx,
-            IdEntity::Registration,
-            &year_month,
-        )
-        .await?;
+        let registration_no =
+            next_id_with_year_month(tx, IdEntity::Registration, &year_month).await?;
 
         // `created_at` di-set ke tanggal 5-25 di bulan tersebut, jam 10 pagi.
         let day = 5 + (i as u32 % 21);

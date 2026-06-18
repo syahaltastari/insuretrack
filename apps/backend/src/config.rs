@@ -50,8 +50,8 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
-        let app_base_url = env::var("APP_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let app_base_url =
+            env::var("APP_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
         let media_base_url = env::var("MEDIA_BASE_URL").unwrap_or_else(|_| app_base_url.clone());
 
         let storage_backend = env::var("STORAGE_BACKEND")
@@ -62,9 +62,13 @@ impl Config {
         // Collect R2 env vars (validated based on backend choice).
         let r2_account_id = env::var("R2_ACCOUNT_ID").ok().filter(|s| !s.is_empty());
         let r2_access_key_id = env::var("R2_ACCESS_KEY_ID").ok().filter(|s| !s.is_empty());
-        let r2_secret_access_key = env::var("R2_SECRET_ACCESS_KEY").ok().filter(|s| !s.is_empty());
+        let r2_secret_access_key = env::var("R2_SECRET_ACCESS_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
         let r2_bucket = env::var("R2_BUCKET").ok().filter(|s| !s.is_empty());
-        let r2_public_base_url = env::var("R2_PUBLIC_BASE_URL").ok().filter(|s| !s.is_empty());
+        let r2_public_base_url = env::var("R2_PUBLIC_BASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
 
         if storage_backend == "r2" {
             // Hard-fail kalau ada R2 var yang missing.
@@ -95,7 +99,9 @@ impl Config {
         let resend_from_email = env::var("RESEND_FROM_EMAIL")
             .ok()
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| anyhow::anyhow!("RESEND_FROM_EMAIL wajib di-set (lihat .env.example)"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("RESEND_FROM_EMAIL wajib di-set (lihat .env.example)")
+            })?;
         let resend_from_name = env::var("RESEND_FROM_NAME").ok().filter(|s| !s.is_empty());
         let admin_notification_email = env::var("ADMIN_NOTIFICATION_EMAIL")
             .ok()

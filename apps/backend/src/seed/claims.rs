@@ -48,23 +48,35 @@ pub async fn seed_claims(
 
         // Status distribution (deterministic by idx).
         let status = match idx % 20 {
-            0..=1 => "REJECTED",        // 2/20 = 10%
-            2..=3 => "UNDER_REVIEW",    // 2/20 = 10%
-            4..=5 => "SUBMITTED",       // 2/20 = 10%
-            6..=14 => "APPROVED",       // 9/20 = 45%
-            _ => "PAID",                // 5/20 = 25%
+            0..=1 => "REJECTED",     // 2/20 = 10%
+            2..=3 => "UNDER_REVIEW", // 2/20 = 10%
+            4..=5 => "SUBMITTED",    // 2/20 = 10%
+            6..=14 => "APPROVED",    // 9/20 = 45%
+            _ => "PAID",             // 5/20 = 25%
         };
 
         // claim_type: pick sesuai product.
         let claim_type = match policy.product.as_str() {
             "LIFE" => {
-                if idx % 2 == 0 { "DEATH_BENEFIT" } else { "CRITICAL_ILLNESS" }
+                if idx % 2 == 0 {
+                    "DEATH_BENEFIT"
+                } else {
+                    "CRITICAL_ILLNESS"
+                }
             }
             "PERSONAL_ACCIDENT" => {
-                if idx % 2 == 0 { "ACCIDENTAL_INJURY" } else { "ACCIDENTAL_DEATH" }
+                if idx % 2 == 0 {
+                    "ACCIDENTAL_INJURY"
+                } else {
+                    "ACCIDENTAL_DEATH"
+                }
             }
             "HEALTH" => {
-                if idx % 2 == 0 { "HOSPITALIZATION" } else { "MEDICAL_EXPENSE" }
+                if idx % 2 == 0 {
+                    "HOSPITALIZATION"
+                } else {
+                    "MEDICAL_EXPENSE"
+                }
             }
             other => panic!("unknown product: {other}"),
         };
@@ -74,30 +86,39 @@ pub async fn seed_claims(
         let incident_date = policy.effective_date + Duration::days(days_into);
         // Validate: incident_date <= today.
         let today = chrono::Utc::now().date_naive();
-        let incident_date = if incident_date > today { today } else { incident_date };
+        let incident_date = if incident_date > today {
+            today
+        } else {
+            incident_date
+        };
 
         // claimed_amount: 1-50% dari sum_assured.
         let pct = rng.gen_range(1..=50_u64);
         let claimed_amount = policy.sum_assured * Decimal::from(pct) / Decimal::from(100);
 
         // Description: random pick.
-        let description = data::CLAIM_DESCRIPTIONS
-            [rng.gen_range(0..data::CLAIM_DESCRIPTIONS.len())];
+        let description =
+            data::CLAIM_DESCRIPTIONS[rng.gen_range(0..data::CLAIM_DESCRIPTIONS.len())];
 
         // decision_note: untuk APPROVED/REJECTED/PAID.
         let decision_note = match status {
-            "APPROVED" => Some("Klaim disetujui setelah review dokumen medis dan verifikasi polis aktif.".to_string()),
-            "REJECTED" => Some("Klaim ditolak: dokumen pendukung tidak lengkap / di luar coverage polis.".to_string()),
-            "PAID" => Some("Klaim telah dibayar via transfer bank ke rekening tertanggung pada 2026-06-01.".to_string()),
+            "APPROVED" => Some(
+                "Klaim disetujui setelah review dokumen medis dan verifikasi polis aktif."
+                    .to_string(),
+            ),
+            "REJECTED" => Some(
+                "Klaim ditolak: dokumen pendukung tidak lengkap / di luar coverage polis."
+                    .to_string(),
+            ),
+            "PAID" => Some(
+                "Klaim telah dibayar via transfer bank ke rekening tertanggung pada 2026-06-01."
+                    .to_string(),
+            ),
             _ => None,
         };
 
         // Identifier: bulan incident_date.
-        let year_month = format!(
-            "{:04}{:02}",
-            incident_date.year(),
-            incident_date.month()
-        );
+        let year_month = format!("{:04}{:02}", incident_date.year(), incident_date.month());
         let claim_no = next_id_with_year_month(tx, IdEntity::Claim, &year_month).await?;
 
         // submitted_at & updated_at: derived dari status + today.

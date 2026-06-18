@@ -56,11 +56,7 @@ pub trait Storage: Send + Sync {
         bytes: &[u8],
     ) -> Result<StoredRef, AppError>;
 
-    async fn save_policy_pdf(
-        &self,
-        policy_id: Uuid,
-        bytes: &[u8],
-    ) -> Result<StoredRef, AppError>;
+    async fn save_policy_pdf(&self, policy_id: Uuid, bytes: &[u8]) -> Result<StoredRef, AppError>;
 
     /// Bukti pembayaran klaim yang di-upload admin saat transisi
     /// APPROVED → PAID. Key prefix `payment_proofs/{claim_id}/…` (pisah
@@ -74,11 +70,8 @@ pub trait Storage: Send + Sync {
         bytes: &[u8],
     ) -> Result<StoredRef, AppError>;
 
-    async fn save_invoice_pdf(
-        &self,
-        invoice_id: Uuid,
-        bytes: &[u8],
-    ) -> Result<StoredRef, AppError>;
+    async fn save_invoice_pdf(&self, invoice_id: Uuid, bytes: &[u8])
+        -> Result<StoredRef, AppError>;
 
     /// Fetch raw bytes (untuk email attachment, download endpoint, dll).
     async fn read_bytes(&self, key: &str) -> Result<Vec<u8>, AppError>;
@@ -128,7 +121,10 @@ impl Storage for LocalStorage {
         fs::write(&absolute, bytes)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("write upload: {e}")))?;
-        Ok(StoredRef { key, backend: "local" })
+        Ok(StoredRef {
+            key,
+            backend: "local",
+        })
     }
 
     async fn save_claim_doc(
@@ -139,7 +135,9 @@ impl Storage for LocalStorage {
         bytes: &[u8],
     ) -> Result<StoredRef, AppError> {
         if bytes.len() > MAX_KTP_BYTES {
-            return Err(AppError::Validation("claim file too large (max 5 MB)".into()));
+            return Err(AppError::Validation(
+                "claim file too large (max 5 MB)".into(),
+            ));
         }
         if !ALLOWED_KTP_MIMES.contains(&content_type) {
             return Err(AppError::Validation(format!(
@@ -157,14 +155,13 @@ impl Storage for LocalStorage {
         fs::write(&absolute, bytes)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("write upload: {e}")))?;
-        Ok(StoredRef { key, backend: "local" })
+        Ok(StoredRef {
+            key,
+            backend: "local",
+        })
     }
 
-    async fn save_policy_pdf(
-        &self,
-        policy_id: Uuid,
-        bytes: &[u8],
-    ) -> Result<StoredRef, AppError> {
+    async fn save_policy_pdf(&self, policy_id: Uuid, bytes: &[u8]) -> Result<StoredRef, AppError> {
         let key = format!("policies/{policy_id}.pdf");
         let absolute = self.absolute(&key);
         if let Some(parent) = absolute.parent() {
@@ -175,7 +172,10 @@ impl Storage for LocalStorage {
         fs::write(&absolute, bytes)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("write pdf: {e}")))?;
-        Ok(StoredRef { key, backend: "local" })
+        Ok(StoredRef {
+            key,
+            backend: "local",
+        })
     }
 
     async fn save_invoice_pdf(
@@ -193,7 +193,10 @@ impl Storage for LocalStorage {
         fs::write(&absolute, bytes)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("write pdf: {e}")))?;
-        Ok(StoredRef { key, backend: "local" })
+        Ok(StoredRef {
+            key,
+            backend: "local",
+        })
     }
 
     async fn save_payment_proof(
@@ -225,7 +228,10 @@ impl Storage for LocalStorage {
         fs::write(&absolute, bytes)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("write upload: {e}")))?;
-        Ok(StoredRef { key, backend: "local" })
+        Ok(StoredRef {
+            key,
+            backend: "local",
+        })
     }
 
     async fn read_bytes(&self, key: &str) -> Result<Vec<u8>, AppError> {
@@ -264,8 +270,8 @@ impl R2Storage {
         let creds = aws_credential_types::Credentials::new(
             access_key_id,
             secret_access_key,
-            None,    // session token
-            None,    // expiry
+            None, // session token
+            None, // expiry
             "r2-static",
         );
         let shared = aws_credential_types::provider::SharedCredentialsProvider::new(creds);
@@ -277,7 +283,11 @@ impl R2Storage {
             .load()
             .await;
         let client = S3Client::new(&cfg);
-        Self { client, bucket, public_base }
+        Self {
+            client,
+            bucket,
+            public_base,
+        }
     }
 
     async fn put(&self, key: &str, body: Vec<u8>, content_type: &str) -> Result<(), AppError> {
@@ -318,7 +328,9 @@ impl Storage for R2Storage {
         bytes: &[u8],
     ) -> Result<StoredRef, AppError> {
         if bytes.len() > MAX_KTP_BYTES {
-            return Err(AppError::Validation("claim file too large (max 5 MB)".into()));
+            return Err(AppError::Validation(
+                "claim file too large (max 5 MB)".into(),
+            ));
         }
         if !ALLOWED_KTP_MIMES.contains(&content_type) {
             return Err(AppError::Validation(format!(
@@ -331,11 +343,7 @@ impl Storage for R2Storage {
         Ok(StoredRef { key, backend: "r2" })
     }
 
-    async fn save_policy_pdf(
-        &self,
-        policy_id: Uuid,
-        bytes: &[u8],
-    ) -> Result<StoredRef, AppError> {
+    async fn save_policy_pdf(&self, policy_id: Uuid, bytes: &[u8]) -> Result<StoredRef, AppError> {
         let key = format!("policies/{policy_id}.pdf");
         self.put(&key, bytes.to_vec(), "application/pdf").await?;
         Ok(StoredRef { key, backend: "r2" })
@@ -410,26 +418,20 @@ pub async fn build_storage(config: &crate::config::Config) -> anyhow::Result<Arc
     match config.storage_backend.as_str() {
         "local" => Ok(Arc::new(LocalStorage::new(config.upload_dir.clone()))),
         "r2" => {
-            let account = config
-                .r2_account_id
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("R2_ACCOUNT_ID wajib di-set saat STORAGE_BACKEND=r2"))?;
-            let access = config
-                .r2_access_key_id
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("R2_ACCESS_KEY_ID wajib di-set saat STORAGE_BACKEND=r2"))?;
-            let secret = config
-                .r2_secret_access_key
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("R2_SECRET_ACCESS_KEY wajib di-set saat STORAGE_BACKEND=r2"))?;
+            let account = config.r2_account_id.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("R2_ACCOUNT_ID wajib di-set saat STORAGE_BACKEND=r2")
+            })?;
+            let access = config.r2_access_key_id.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("R2_ACCESS_KEY_ID wajib di-set saat STORAGE_BACKEND=r2")
+            })?;
+            let secret = config.r2_secret_access_key.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("R2_SECRET_ACCESS_KEY wajib di-set saat STORAGE_BACKEND=r2")
+            })?;
             let bucket = config
                 .r2_bucket
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("R2_BUCKET wajib di-set saat STORAGE_BACKEND=r2"))?;
-            let public_base = config
-                .r2_public_base_url
-                .clone()
-                .unwrap_or_default();
+            let public_base = config.r2_public_base_url.clone().unwrap_or_default();
             Ok(Arc::new(
                 R2Storage::new(account, access, secret, bucket, public_base).await,
             ))
@@ -475,7 +477,13 @@ fn sanitize_filename(name: &str) -> String {
         .unwrap_or("upload");
     let cleaned: String = stem
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if cleaned.is_empty() {
         "upload".to_string()

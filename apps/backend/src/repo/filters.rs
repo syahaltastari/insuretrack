@@ -101,7 +101,9 @@ pub fn parse_date_range(
     let from = match raw_from {
         None | Some("") => None,
         Some(s) => Some(NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|e| {
-            AppError::Validation(format!("invalid date_from '{s}' (expected YYYY-MM-DD): {e}"))
+            AppError::Validation(format!(
+                "invalid date_from '{s}' (expected YYYY-MM-DD): {e}"
+            ))
         })?),
     };
     let to = match raw_to {
@@ -206,6 +208,9 @@ mod tests {
 
     #[test]
     fn order_clause_combines_column_and_dir() {
-        assert_eq!(order_clause("i.created_at", "asc"), "ORDER BY i.created_at asc");
+        assert_eq!(
+            order_clause("i.created_at", "asc"),
+            "ORDER BY i.created_at asc"
+        );
     }
 }

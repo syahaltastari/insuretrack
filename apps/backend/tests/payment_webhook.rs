@@ -50,11 +50,7 @@ async fn seed_pending_invoice(pool: &sqlx::PgPool) -> (Uuid, Uuid, String) {
     (customer_id, reg_id, inv_no)
 }
 
-async fn call_webhook(
-    app: &common::TestApp,
-    secret: &str,
-    body: Value,
-) -> (StatusCode, Value) {
+async fn call_webhook(app: &common::TestApp, secret: &str, body: Value) -> (StatusCode, Value) {
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/public/payment/webhook")
@@ -81,14 +77,22 @@ async fn webhook_idempotency_five_replays_yield_one_policy() {
     // Panggil 5× — hanya call pertama yang benar-benar transition; sisanya
     // return `replayed: true`.
     for i in 1..=5 {
-        let (status, value) = call_webhook(&app, &app.config.payment_webhook_secret, body.clone()).await;
+        let (status, value) =
+            call_webhook(&app, &app.config.payment_webhook_secret, body.clone()).await;
         assert_eq!(status, StatusCode::OK, "call #{i} status");
 
         if i == 1 {
             assert_eq!(value["replayed"], json!(false));
-            assert!(value["policy_no"].is_string(), "policy_no harus di-return pada call pertama");
+            assert!(
+                value["policy_no"].is_string(),
+                "policy_no harus di-return pada call pertama"
+            );
         } else {
-            assert_eq!(value["replayed"], json!(true), "call #{i} harus di-mark replayed");
+            assert_eq!(
+                value["replayed"],
+                json!(true),
+                "call #{i} harus di-mark replayed"
+            );
             assert!(value["policy_no"].is_null(), "policy_no null pada replay");
         }
     }
@@ -109,7 +113,11 @@ async fn webhook_idempotency_five_replays_yield_one_policy() {
         .email
         .all()
         .into_iter()
-        .filter(|e| e.subject.contains("Payment") || e.subject.contains("Polis") || e.subject.contains("Aktivasi"))
+        .filter(|e| {
+            e.subject.contains("Payment")
+                || e.subject.contains("Polis")
+                || e.subject.contains("Aktivasi")
+        })
         .count();
     assert!(
         payment_emails >= 2 && payment_emails <= 5,
@@ -264,7 +272,10 @@ async fn webhook_issues_exactly_n_policies_for_instansi() {
     .fetch_one(&app.pool)
     .await
     .unwrap();
-    assert_eq!(policies.0, 3, "INSTANSI harus issue 3 policies (1 per participant)");
+    assert_eq!(
+        policies.0, 3,
+        "INSTANSI harus issue 3 policies (1 per participant)"
+    );
 
     // Each policy premium = total / 3.
     let premiums: Vec<rust_decimal::Decimal> = sqlx::query_scalar(

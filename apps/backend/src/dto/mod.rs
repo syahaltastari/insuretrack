@@ -211,7 +211,9 @@ pub fn find_plan(code: &str) -> Option<&'static ProductPlan> {
 }
 
 pub fn product_name_from_code(code: &str) -> &'static str {
-    product_meta(code).map(|p| p.name).unwrap_or("Insurance Product")
+    product_meta(code)
+        .map(|p| p.name)
+        .unwrap_or("Insurance Product")
 }
 
 // ---- Registration (V3: group/Instansi) ----

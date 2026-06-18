@@ -27,8 +27,7 @@ pub fn verify_password(plain: &str, hash: &str) -> Result<bool, AppError> {
 /// Charset untuk generate_random_password — exclude karakter yang mudah
 /// tertukar (0/O, 1/l/I) supaya password lebih mudah diketik ulang atau
 /// disampaikan via voice/chat. 56 chars × 16 posisi = ~85 bit entropy.
-const PASSWORD_CHARSET: &[u8] =
-    b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+const PASSWORD_CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
 /// Generate password acak untuk reset/admin-create flow.
 ///

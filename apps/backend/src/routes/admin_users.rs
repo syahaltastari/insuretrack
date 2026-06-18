@@ -64,7 +64,8 @@ struct AdminUserRow {
     updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-const ADMIN_USER_COLUMNS: &str = "id, username, full_name, email, role, is_super_admin, is_active, \
+const ADMIN_USER_COLUMNS: &str =
+    "id, username, full_name, email, role, is_super_admin, is_active, \
     last_login_at, password_changed_at, created_at, updated_at";
 
 #[derive(Debug, Deserialize)]
@@ -126,16 +127,14 @@ async fn list_users(
     // Safe: sort_col berasal dari USER_SORT_COLUMNS whitelist.
     let order_clause = format!("ORDER BY {sort_col} {sort_dir}, created_at DESC");
 
-    let total: (i64,) = sqlx::query_as(
-        &format!(
-            r#"
+    let total: (i64,) = sqlx::query_as(&format!(
+        r#"
             SELECT COUNT(*) FROM admin_users
              WHERE ($1 = '' OR LOWER(username) LIKE LOWER($1)
                           OR LOWER(COALESCE(full_name, '')) LIKE LOWER($1))
                AND ($2 = '' OR is_active = ($2 = 'true'))
             "#
-        ),
-    )
+    ))
     .bind(&search)
     .bind(&is_active_filter)
     .fetch_one(&state.pool)
@@ -199,7 +198,9 @@ async fn create_user(
         return Err(AppError::Validation("full_name wajib diisi".into()));
     }
     if full_name.len() > 120 {
-        return Err(AppError::Validation("full_name maksimal 120 karakter".into()));
+        return Err(AppError::Validation(
+            "full_name maksimal 120 karakter".into(),
+        ));
     }
     if req.password.len() < MIN_PASSWORD_LEN {
         return Err(AppError::Validation(format!(
@@ -299,7 +300,9 @@ async fn update_user(
         .filter(|s| !s.is_empty());
     if let Some(f) = full_name {
         if f.len() > 120 {
-            return Err(AppError::Validation("full_name maksimal 120 karakter".into()));
+            return Err(AppError::Validation(
+                "full_name maksimal 120 karakter".into(),
+            ));
         }
     }
     let email: Option<&str> = req
@@ -371,10 +374,11 @@ async fn activate_user(
     Path(id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
     let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
-    let res = sqlx::query("UPDATE admin_users SET is_active = TRUE, updated_at = now() WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    let res =
+        sqlx::query("UPDATE admin_users SET is_active = TRUE, updated_at = now() WHERE id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound("admin user".into()));
     }
@@ -404,10 +408,11 @@ async fn deactivate_user(
     // Self-protection: admin tidak bisa nonaktifkan diri sendiri.
     ensure_not_self(actor_id, id, "deactivate")?;
 
-    let res = sqlx::query("UPDATE admin_users SET is_active = FALSE, updated_at = now() WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    let res =
+        sqlx::query("UPDATE admin_users SET is_active = FALSE, updated_at = now() WHERE id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound("admin user".into()));
     }

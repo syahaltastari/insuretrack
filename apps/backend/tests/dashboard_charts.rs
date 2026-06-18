@@ -84,10 +84,7 @@ async fn charts_auto_picks_week_for_60_day_range() {
         );
     }
     // Total registrations dalam buckets = 12 (semua seed masuk).
-    let total: i64 = buckets
-        .iter()
-        .map(|b| b["count"].as_i64().unwrap())
-        .sum();
+    let total: i64 = buckets.iter().map(|b| b["count"].as_i64().unwrap()).sum();
     assert_eq!(total, 12, "total count = jumlah seeded");
 }
 
@@ -101,7 +98,8 @@ async fn charts_explicit_granularity_overrides_auto() {
     let from = (Utc::now() - chrono::Duration::days(10))
         .format("%Y-%m-%d")
         .to_string();
-    let (status, value) = get_charts(&app, &format!("from={from}&to={today}&granularity=day")).await;
+    let (status, value) =
+        get_charts(&app, &format!("from={from}&to={today}&granularity=day")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(value["granularity"], "day", "explicit granularity di-honor");
 }
@@ -121,10 +119,7 @@ async fn charts_handles_empty_data() {
 
     // Empty registrations array (atau buckets dengan count=0).
     let buckets = value["registrations_per_period"].as_array().unwrap();
-    let total: i64 = buckets
-        .iter()
-        .map(|b| b["count"].as_i64().unwrap())
-        .sum();
+    let total: i64 = buckets.iter().map(|b| b["count"].as_i64().unwrap()).sum();
     assert_eq!(total, 0, "no seed → total count = 0");
 
     // Breakdown harus ada (mungkin 0 entries karena no data).

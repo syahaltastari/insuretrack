@@ -47,16 +47,14 @@ pub async fn seed_inquiries(
         };
 
         // policy_id: link ke 1 policy customer ini (jika ada).
-        let customer_policy: Option<&SeededPolicy> = policies
-            .iter()
-            .find(|p| p.customer_id == customer.id);
+        let customer_policy: Option<&SeededPolicy> =
+            policies.iter().find(|p| p.customer_id == customer.id);
 
         // Subject + body: random pick.
         let subject = data::INQUIRY_SUBJECTS[rng.gen_range(0..data::INQUIRY_SUBJECTS.len())];
         let message = data::INQUIRY_BODIES[rng.gen_range(0..data::INQUIRY_BODIES.len())];
         let (response, responded_at) = if status == "ANSWERED" || status == "CLOSED" {
-            let resp = data::INQUIRY_RESPONSES
-                [rng.gen_range(0..data::INQUIRY_RESPONSES.len())]
+            let resp = data::INQUIRY_RESPONSES[rng.gen_range(0..data::INQUIRY_RESPONSES.len())]
                 .to_string();
             let resp_at = Utc::now() - Duration::days(rng.gen_range(0..14));
             (Some(resp), Some(resp_at))

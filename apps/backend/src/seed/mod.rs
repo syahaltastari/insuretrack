@@ -67,7 +67,8 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
 
     let mut tx = pool.begin().await?;
     let seeded_customers = customers::seed_customers(&mut tx, &cfg).await?;
-    let seeded_registrations = registrations::seed_registrations(&mut tx, &cfg, &seeded_customers).await?;
+    let seeded_registrations =
+        registrations::seed_registrations(&mut tx, &cfg, &seeded_customers).await?;
     let seeded_invoices = invoices::seed_invoices(&mut tx, &cfg, &seeded_registrations).await?;
 
     // Extract premium amounts per registration untuk policies.
@@ -83,9 +84,11 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
         })
         .collect();
 
-    let seeded_policies = policies::seed_policies(&mut tx, &cfg, &seeded_registrations, &premiums).await?;
+    let seeded_policies =
+        policies::seed_policies(&mut tx, &cfg, &seeded_registrations, &premiums).await?;
     let seeded_claims = claims::seed_claims(&mut tx, &cfg, &seeded_policies).await?;
-    let seeded_inquiries = inquiries::seed_inquiries(&mut tx, &cfg, &seeded_customers, &seeded_policies).await?;
+    let seeded_inquiries =
+        inquiries::seed_inquiries(&mut tx, &cfg, &seeded_customers, &seeded_policies).await?;
     let seeded_emails = email_logs::seed_email_logs(&mut tx, &cfg, &seeded_customers).await?;
     let seeded_audits = audit_logs::seed_audit_logs(
         &mut tx,
@@ -114,8 +117,14 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
         inquiries: seeded_inquiries.len(),
         email_logs: seeded_emails.len(),
         audit_logs: seeded_audits.len(),
-        pdf_files_written: seeded_policies.iter().filter(|p| p.pdf_path.is_some()).count()
-            + seeded_invoices.iter().filter(|i| i.pdf_path.is_some()).count(),
+        pdf_files_written: seeded_policies
+            .iter()
+            .filter(|p| p.pdf_path.is_some())
+            .count()
+            + seeded_invoices
+                .iter()
+                .filter(|i| i.pdf_path.is_some())
+                .count(),
         duration_ms: start.elapsed().as_millis(),
         ..Default::default()
     };

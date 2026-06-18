@@ -28,9 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/clients", get(list_clients).post(create_client))
         .route(
             "/clients/:id",
-            get(get_client)
-                .patch(update_client)
-                .delete(delete_client),
+            get(get_client).patch(update_client).delete(delete_client),
         )
         .route(
             "/testimonials",
@@ -200,12 +198,19 @@ async fn create_client(
         return Err(AppError::Validation("name required".into()));
     }
 
-    let (file_name, content_type, bytes) = file
-        .ok_or_else(|| AppError::Validation("logo file (field 'logo') is required".into()))?;
+    let (file_name, content_type, bytes) =
+        file.ok_or_else(|| AppError::Validation("logo file (field 'logo') is required".into()))?;
 
     let new_id = Uuid::new_v4();
-    let logo_path =
-        marketing::save_image(&state.config.upload_dir, "clients", new_id, &file_name, &content_type, &bytes).await?;
+    let logo_path = marketing::save_image(
+        &state.config.upload_dir,
+        "clients",
+        new_id,
+        &file_name,
+        &content_type,
+        &bytes,
+    )
+    .await?;
 
     let row: ClientRow = sqlx::query_as(
         r#"
@@ -260,8 +265,15 @@ async fn update_client(
     // If new logo provided, save it (overwriting path). Otherwise keep existing.
     let new_logo_path: Option<String> = if let Some((file_name, content_type, bytes)) = file_opt {
         Some(
-            marketing::save_image(&state.config.upload_dir, "clients", id, &file_name, &content_type, &bytes)
-                .await?,
+            marketing::save_image(
+                &state.config.upload_dir,
+                "clients",
+                id,
+                &file_name,
+                &content_type,
+                &bytes,
+            )
+            .await?,
         )
     } else {
         None
@@ -287,7 +299,11 @@ async fn update_client(
         "#,
     )
     .bind(id)
-    .bind(if form.name.is_empty() { None } else { Some(form.name.as_str()) })
+    .bind(if form.name.is_empty() {
+        None
+    } else {
+        Some(form.name.as_str())
+    })
     .bind(new_logo_path.as_deref())
     .bind(form.industry.as_deref())
     .bind(form.website.as_deref())
@@ -443,7 +459,8 @@ async fn get_testimonial(
     .bind(id)
     .fetch_optional(&state.pool)
     .await?;
-    row.map(Json).ok_or(AppError::NotFound("testimonial".into()))
+    row.map(Json)
+        .ok_or(AppError::NotFound("testimonial".into()))
 }
 
 async fn create_testimonial(
@@ -467,7 +484,17 @@ async fn create_testimonial(
 
     let new_id = Uuid::new_v4();
     let photo_path: Option<String> = if let Some((fn_, ct, bytes)) = file_opt {
-        Some(marketing::save_image(&state.config.upload_dir, "testimonials", new_id, &fn_, &ct, &bytes).await?)
+        Some(
+            marketing::save_image(
+                &state.config.upload_dir,
+                "testimonials",
+                new_id,
+                &fn_,
+                &ct,
+                &bytes,
+            )
+            .await?,
+        )
     } else {
         None
     };
@@ -544,9 +571,21 @@ async fn update_testimonial(
         "#,
     )
     .bind(id)
-    .bind(if form.customer_name.is_empty() { None } else { Some(form.customer_name.as_str()) })
-    .bind(if (1..=5).contains(&form.rating) { Some(form.rating) } else { None })
-    .bind(if form.review.is_empty() { None } else { Some(form.review.as_str()) })
+    .bind(if form.customer_name.is_empty() {
+        None
+    } else {
+        Some(form.customer_name.as_str())
+    })
+    .bind(if (1..=5).contains(&form.rating) {
+        Some(form.rating)
+    } else {
+        None
+    })
+    .bind(if form.review.is_empty() {
+        None
+    } else {
+        Some(form.review.as_str())
+    })
     .bind(form.role.as_deref())
     .bind(form.company.as_deref())
     .bind(form.policy_type.as_deref())

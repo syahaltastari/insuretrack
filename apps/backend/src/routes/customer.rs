@@ -30,12 +30,15 @@ use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
-    auth::{password::hash_password, password::verify_password, Role, RequireCustomer},
-    domain::{claim::can_transition as claim_can_transition, identifier::{next_id, EntityType}},
+    auth::{password::hash_password, password::verify_password, RequireCustomer, Role},
+    domain::{
+        claim::can_transition as claim_can_transition,
+        identifier::{next_id, EntityType},
+    },
     dto::{
-        calculate_group_premium, find_plan, product_name_from_code, ActivateRequest,
-        ApplicantType, LoginRequest, LoginResponse, PasswordResetConsumeRequest,
-        PasswordResetRequest, RegistrationData,
+        calculate_group_premium, find_plan, product_name_from_code, ActivateRequest, ApplicantType,
+        LoginRequest, LoginResponse, PasswordResetConsumeRequest, PasswordResetRequest,
+        RegistrationData,
     },
     error::{AppError, AppResult},
     repo::{Page, PageQuery},
@@ -53,10 +56,7 @@ pub fn router() -> Router<AppState> {
         .route("/activate", post(activate))
         .route("/login", post(login))
         .route("/password/reset", post(password_reset))
-        .route(
-            "/password/reset/consume",
-            post(password_reset_consume),
-        )
+        .route("/password/reset/consume", post(password_reset_consume))
         .route("/me", get(me).patch(update_me))
         .route("/password/change", axum::routing::post(change_password))
         .route("/registrations", post(submit_insurance_application))
@@ -70,8 +70,14 @@ pub fn router() -> Router<AppState> {
         .route("/claims/:id", get(get_claim))
         .route("/inquiries", get(list_inquiries).post(create_inquiry))
         .route("/inquiries/:id", get(get_inquiry))
-        .route("/inquiries/:id/messages", axum::routing::post(customer_inquiry_message))
-        .route("/inquiries/:id/close", axum::routing::post(customer_inquiry_close))
+        .route(
+            "/inquiries/:id/messages",
+            axum::routing::post(customer_inquiry_message),
+        )
+        .route(
+            "/inquiries/:id/close",
+            axum::routing::post(customer_inquiry_close),
+        )
 }
 
 #[derive(sqlx::FromRow)]
@@ -83,7 +89,10 @@ struct CustomerCredRow {
 }
 
 fn customer_id_from(claims: &crate::auth::Claims) -> AppResult<Uuid> {
-    claims.sub.parse::<Uuid>().map_err(|_| AppError::Unauthorized)
+    claims
+        .sub
+        .parse::<Uuid>()
+        .map_err(|_| AppError::Unauthorized)
 }
 
 // ---- POST /activate ----
@@ -115,9 +124,13 @@ async fn activate(
         "customer (already active or not found)".into(),
     ))?;
 
-    let token = state
-        .tokens
-        .issue(&customer.id.to_string(), Role::Customer, None, false, 60 * 60 * 8)?;
+    let token = state.tokens.issue(
+        &customer.id.to_string(),
+        Role::Customer,
+        None,
+        false,
+        60 * 60 * 8,
+    )?;
     Ok(Json(LoginResponse {
         token,
         role: "customer".to_string(),
@@ -157,9 +170,13 @@ async fn login(
     // submit_insurance_application) sehingga alur registrasi → aktivasi
     // → apply asuransi bisa dipandu step-by-step dari portal.
 
-    let token = state
-        .tokens
-        .issue(&customer.id.to_string(), Role::Customer, None, false, 60 * 60 * 8)?;
+    let token = state.tokens.issue(
+        &customer.id.to_string(),
+        Role::Customer,
+        None,
+        false,
+        60 * 60 * 8,
+    )?;
 
     audit_write(
         &state.pool,
@@ -262,9 +279,13 @@ async fn password_reset_consume(
     .await?;
 
     // Issue a fresh login token so the user is signed in immediately.
-    let token = state
-        .tokens
-        .issue(&customer.id.to_string(), Role::Customer, None, false, 60 * 60 * 8)?;
+    let token = state.tokens.issue(
+        &customer.id.to_string(),
+        Role::Customer,
+        None,
+        false,
+        60 * 60 * 8,
+    )?;
     Ok(Json(LoginResponse {
         token,
         role: "customer".to_string(),
@@ -447,9 +468,7 @@ async fn update_me(
     if let Some(ref m) = mobile {
         let digit_count = m.chars().filter(|c| c.is_ascii_digit()).count();
         if !(10..=15).contains(&digit_count) {
-            return Err(AppError::Validation(
-                "nomor HP harus 10-15 digit".into(),
-            ));
+            return Err(AppError::Validation("nomor HP harus 10-15 digit".into()));
         }
     }
     if let Some(ref f) = full {
@@ -460,15 +479,16 @@ async fn update_me(
 
     // Cek konflik email kalau diubah.
     if let Some(ref e) = email {
-        let conflict: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM customers WHERE email = $1 AND id <> $2",
-        )
-        .bind(e)
-        .bind(customer_id)
-        .fetch_optional(&state.pool)
-        .await?;
+        let conflict: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM customers WHERE email = $1 AND id <> $2")
+                .bind(e)
+                .bind(customer_id)
+                .fetch_optional(&state.pool)
+                .await?;
         if conflict.is_some() {
-            return Err(AppError::Conflict("email sudah dipakai customer lain".into()));
+            return Err(AppError::Conflict(
+                "email sudah dipakai customer lain".into(),
+            ));
         }
     }
 
@@ -551,12 +571,11 @@ async fn change_password(
         ));
     }
 
-    let row: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT password_hash FROM customers WHERE id = $1",
-    )
-    .bind(customer_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT password_hash FROM customers WHERE id = $1")
+            .bind(customer_id)
+            .fetch_optional(&state.pool)
+            .await?;
     let (current_hash_opt,) = row.ok_or(AppError::Unauthorized)?;
     let current_hash = current_hash_opt.as_deref().ok_or(AppError::Unauthorized)?;
 
@@ -776,10 +795,7 @@ async fn download_policy_pdf(
     let (pdf_path_opt,) = row.ok_or(AppError::NotFound("policy".into()))?;
     let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("policy pdf".into()))?;
 
-    let bytes = state
-        .storage
-        .read_bytes(&pdf_path)
-        .await?;
+    let bytes = state.storage.read_bytes(&pdf_path).await?;
     let body = Body::from(bytes);
 
     let mut headers = HeaderMap::new();
@@ -954,19 +970,25 @@ async fn create_claim(
     // Validate: policy belongs to customer, ACTIVE, incident_date in coverage period.
     // `claim_type` & `claimed_amount` di-derive dari policy di bawah
     // (lihat komentar di CreateClaimJson).
-    let policy: Option<(Uuid, String, String, Decimal, chrono::NaiveDate, chrono::NaiveDate)> =
-        sqlx::query_as(
-            r#"
+    let policy: Option<(
+        Uuid,
+        String,
+        String,
+        Decimal,
+        chrono::NaiveDate,
+        chrono::NaiveDate,
+    )> = sqlx::query_as(
+        r#"
             SELECT p.id, p.status, p.product, p.sum_assured, p.effective_date, p.expiry_date
               FROM policies p
               JOIN registrations r ON r.id = p.registration_id
              WHERE p.id = $1 AND r.customer_id = $2
             "#,
-        )
-        .bind(data.policy_id)
-        .bind(customer_id)
-        .fetch_optional(&state.pool)
-        .await?;
+    )
+    .bind(data.policy_id)
+    .bind(customer_id)
+    .fetch_optional(&state.pool)
+    .await?;
     let (pid, pstatus, product, sum_assured, eff, exp) =
         policy.ok_or(AppError::NotFound("policy not found or not owned".into()))?;
     if pstatus != "ACTIVE" {
@@ -1232,8 +1254,8 @@ async fn list_inquiries(
     let mut data = data;
     for row in data.iter_mut() {
         if row.status == "ANSWERED" {
-            if let Some(closed) = crate::services::inquiry::try_auto_close_stale(&state, row.id)
-                .await?
+            if let Some(closed) =
+                crate::services::inquiry::try_auto_close_stale(&state, row.id).await?
             {
                 row.status = "CLOSED".into();
                 row.closed_at = Some(closed);
@@ -1321,12 +1343,11 @@ async fn customer_inquiry_message(
     }
 
     // Verify ownership + get current status.
-    let current: Option<(String, Uuid, Option<Uuid>)> = sqlx::query_as(
-        r#"SELECT status, customer_id, policy_id FROM inquiries WHERE id = $1"#,
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let current: Option<(String, Uuid, Option<Uuid>)> =
+        sqlx::query_as(r#"SELECT status, customer_id, policy_id FROM inquiries WHERE id = $1"#)
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
     let (current_status, owner_id, policy_id) =
         current.ok_or(AppError::NotFound("inquiry".into()))?;
     if owner_id != customer_id {
@@ -1341,11 +1362,10 @@ async fn customer_inquiry_message(
     }
 
     // Lookup customer name untuk denormalized sender_name di thread.
-    let customer_name: String =
-        sqlx::query_scalar("SELECT full_name FROM customers WHERE id = $1")
-            .bind(customer_id)
-            .fetch_one(&state.pool)
-            .await?;
+    let customer_name: String = sqlx::query_scalar("SELECT full_name FROM customers WHERE id = $1")
+        .bind(customer_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     let mut tx = state.pool.begin().await?;
     // 1. Insert message.
@@ -1398,20 +1418,23 @@ async fn customer_inquiry_message(
     if let Some(admin_email) =
         crate::services::email::admin_notification_email(&state.pool, &state.config).await?
     {
-        let inquiry_no: String = sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+        let inquiry_no: String =
+            sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
+                .bind(id)
+                .fetch_one(&state.pool)
+                .await?;
         let subject_line: String =
             sqlx::query_scalar("SELECT subject FROM inquiries WHERE id = $1")
                 .bind(id)
                 .fetch_one(&state.pool)
                 .await?;
         let policy_no: Option<String> = match policy_id {
-            Some(pid) => sqlx::query_scalar("SELECT policy_no FROM policies WHERE id = $1")
-                .bind(pid)
-                .fetch_optional(&state.pool)
-                .await?,
+            Some(pid) => {
+                sqlx::query_scalar("SELECT policy_no FROM policies WHERE id = $1")
+                    .bind(pid)
+                    .fetch_optional(&state.pool)
+                    .await?
+            }
             None => None,
         };
         let body = format!(
@@ -1464,12 +1487,11 @@ async fn customer_inquiry_close(
     use crate::domain::inquiry::can_transition;
 
     let customer_id = customer_id_from(&claims)?;
-    let current: Option<(String, Uuid)> = sqlx::query_as(
-        "SELECT status, customer_id FROM inquiries WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let current: Option<(String, Uuid)> =
+        sqlx::query_as("SELECT status, customer_id FROM inquiries WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
     let (current_status, owner_id) = current.ok_or(AppError::NotFound("inquiry".into()))?;
     if owner_id != customer_id {
         return Err(AppError::NotFound("inquiry".into()));
@@ -1550,10 +1572,7 @@ async fn customer_inquiry_close(
 }
 
 /// Helper: build detail row (inquiry + messages) — DRY untuk multiple handlers.
-async fn build_inquiry_detail(
-    state: &AppState,
-    id: Uuid,
-) -> AppResult<InquiryDetailRow> {
+async fn build_inquiry_detail(state: &AppState, id: Uuid) -> AppResult<InquiryDetailRow> {
     let inquiry: InquiryRow = sqlx::query_as(
         r#"
         SELECT i.id, i.inquiry_no, i.policy_id, p.policy_no,
@@ -1639,11 +1658,10 @@ async fn create_inquiry(
     .await?;
 
     // Lookup customer name (untuk denormalized sender_name di thread).
-    let customer_name: String =
-        sqlx::query_scalar("SELECT full_name FROM customers WHERE id = $1")
-            .bind(customer_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let customer_name: String = sqlx::query_scalar("SELECT full_name FROM customers WHERE id = $1")
+        .bind(customer_id)
+        .fetch_one(&mut *tx)
+        .await?;
 
     // Insert pesan pertama ke thread (sender=CUSTOMER, created_at=now).
     sqlx::query(
@@ -1684,14 +1702,14 @@ async fn create_inquiry(
         crate::services::email::admin_notification_email(&state.pool, &state.config).await?
     {
         let policy_label = match req.policy_id {
-            Some(pid) => sqlx::query_scalar::<_, String>(
-                "SELECT policy_no FROM policies WHERE id = $1",
-            )
-            .bind(pid)
-            .fetch_optional(&state.pool)
-            .await?
-            .map(|p| format!("\nPolis: {p}"))
-            .unwrap_or_default(),
+            Some(pid) => {
+                sqlx::query_scalar::<_, String>("SELECT policy_no FROM policies WHERE id = $1")
+                    .bind(pid)
+                    .fetch_optional(&state.pool)
+                    .await?
+                    .map(|p| format!("\nPolis: {p}"))
+                    .unwrap_or_default()
+            }
             None => String::new(),
         };
         let body = format!(
@@ -1756,19 +1774,20 @@ async fn submit_insurance_application(
     RequireCustomer(claims): RequireCustomer,
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
-    let customer_id = claims.sub.parse::<Uuid>().map_err(|_| AppError::Unauthorized)?;
+    let customer_id = claims
+        .sub
+        .parse::<Uuid>()
+        .map_err(|_| AppError::Unauthorized)?;
 
     // `claims.sub` adalah UUID (lihat auth::jwt::issue) — BUKAN email. Source
     // email dari DB agar Resend menerima `to` berformat `email@example.com`.
     // Sekaligus preload `portal_status` untuk gate aktivasi (lihat di bawah).
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT portal_status, email FROM customers WHERE id = $1",
-    )
-    .bind(customer_id)
-    .fetch_optional(&state.pool)
-    .await?;
-    let (portal_status, customer_email) =
-        row.ok_or(AppError::NotFound("customer".into()))?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT portal_status, email FROM customers WHERE id = $1")
+            .bind(customer_id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let (portal_status, customer_email) = row.ok_or(AppError::NotFound("customer".into()))?;
     if portal_status != "ACTIVE" {
         // Frontend menampilkan banner aktivasi berdasarkan portal_status di
         // /me; error ini terjadi kalau user PENDING nyasar submit form.
@@ -1794,10 +1813,7 @@ async fn submit_insurance_application(
                 );
             }
             "id_card" => {
-                let file_name = field
-                    .file_name()
-                    .unwrap_or("ktp")
-                    .to_string();
+                let file_name = field.file_name().unwrap_or("ktp").to_string();
                 let content_type = field
                     .content_type()
                     .unwrap_or("application/octet-stream")
@@ -1812,7 +1828,8 @@ async fn submit_insurance_application(
         }
     }
 
-    let data_json = data_field.ok_or_else(|| AppError::Validation("missing 'data' field".into()))?;
+    let data_json =
+        data_field.ok_or_else(|| AppError::Validation("missing 'data' field".into()))?;
     let (ktp_name, ktp_ct, ktp_bytes) =
         ktp_field.ok_or_else(|| AppError::Validation("missing 'id_card' file".into()))?;
     let data: RegistrationData = serde_json::from_str(&data_json)
@@ -1867,52 +1884,55 @@ async fn submit_insurance_application(
     //   INSTANSI → per_participant_premium × N peserta
     let total_premium = match data.applicant_type {
         crate::dto::ApplicantType::Individu => per_participant_premium,
-        crate::dto::ApplicantType::Instansi => crate::dto::calculate_group_premium(
-            per_participant_premium,
-            data.participants.len(),
-        ),
+        crate::dto::ApplicantType::Instansi => {
+            crate::dto::calculate_group_premium(per_participant_premium, data.participants.len())
+        }
     };
 
     // Insert registration row. Untuk INSTANSI, sertakan applicant_type +
     // company_* fields. beneficiary_name hanya untuk INDIVIDU (peserta
     // Instansi punya beneficiary_name masing-masing di tabel participants).
     let reg_id: (Uuid,) = match data.applicant_type {
-        crate::dto::ApplicantType::Individu => sqlx::query_as(
-            r#"
+        crate::dto::ApplicantType::Individu => {
+            sqlx::query_as(
+                r#"
             INSERT INTO registrations
               (registration_no, customer_id, product, sum_assured, coverage_term,
                status, applicant_type, beneficiary_name)
             VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INDIVIDU', $6)
             RETURNING id
             "#,
-        )
-        .bind(&registration_no)
-        .bind(customer_id)
-        .bind(plan.product_code)
-        .bind(plan.sum_assured)
-        .bind(data.coverage_term)
-        .bind(data.beneficiary_name.as_deref().map(str::trim))
-        .fetch_one(&mut *tx)
-        .await?,
-        crate::dto::ApplicantType::Instansi => sqlx::query_as(
-            r#"
+            )
+            .bind(&registration_no)
+            .bind(customer_id)
+            .bind(plan.product_code)
+            .bind(plan.sum_assured)
+            .bind(data.coverage_term)
+            .bind(data.beneficiary_name.as_deref().map(str::trim))
+            .fetch_one(&mut *tx)
+            .await?
+        }
+        crate::dto::ApplicantType::Instansi => {
+            sqlx::query_as(
+                r#"
             INSERT INTO registrations
               (registration_no, customer_id, product, sum_assured, coverage_term,
                status, applicant_type, company_name, company_npwp, company_industry)
             VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INSTANSI', $6, $7, $8)
             RETURNING id
             "#,
-        )
-        .bind(&registration_no)
-        .bind(customer_id)
-        .bind(plan.product_code)
-        .bind(plan.sum_assured)
-        .bind(data.coverage_term)
-        .bind(data.company_name.as_deref().map(str::trim))
-        .bind(data.company_npwp.as_deref().map(str::trim))
-        .bind(data.company_industry.as_deref().map(str::trim))
-        .fetch_one(&mut *tx)
-        .await?,
+            )
+            .bind(&registration_no)
+            .bind(customer_id)
+            .bind(plan.product_code)
+            .bind(plan.sum_assured)
+            .bind(data.coverage_term)
+            .bind(data.company_name.as_deref().map(str::trim))
+            .bind(data.company_npwp.as_deref().map(str::trim))
+            .bind(data.company_industry.as_deref().map(str::trim))
+            .fetch_one(&mut *tx)
+            .await?
+        }
     };
 
     // Insert participants untuk INSTANSI (batch — all-or-nothing dalam tx).
@@ -2243,10 +2263,7 @@ async fn download_invoice_pdf(
     let (pdf_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
     let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("invoice pdf".into()))?;
 
-    let bytes = state
-        .storage
-        .read_bytes(&pdf_path)
-        .await?;
+    let bytes = state.storage.read_bytes(&pdf_path).await?;
     let body = Body::from(bytes);
 
     let mut headers = HeaderMap::new();
@@ -2259,9 +2276,8 @@ async fn download_invoice_pdf(
     let disp = format!("attachment; filename=\"{invoice_no}.pdf\"");
     headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&disp).map_err(|e| {
-            AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}"))
-        })?,
+        HeaderValue::from_str(&disp)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}")))?,
     );
     Ok((StatusCode::OK, headers, body).into_response())
 }

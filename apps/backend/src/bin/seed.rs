@@ -71,7 +71,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let mode = if cli.load { SeedMode::Load } else { SeedMode::Demo };
+    let mode = if cli.load {
+        SeedMode::Load
+    } else {
+        SeedMode::Demo
+    };
 
     if !cli.dry_run && cli.reset {
         println!("================================================================");

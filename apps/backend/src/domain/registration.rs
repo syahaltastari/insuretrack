@@ -5,9 +5,7 @@
 pub fn can_transition(from: &str, to: &str) -> bool {
     matches!(
         (from, to),
-        ("PENDING", "PAID")
-            | ("PENDING", "CANCELLED")
-            | ("PAID", "ISSUED")
+        ("PENDING", "PAID") | ("PENDING", "CANCELLED") | ("PAID", "ISSUED")
     )
 }
 

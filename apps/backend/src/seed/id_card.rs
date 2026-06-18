@@ -23,15 +23,12 @@ const PLACEHOLDER_PNG: &[u8] = &[
     0x54, 0x78, 0x9C, 0x62, 0x00, 0x01, 0x00, 0x00, // zlib stream
     0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, // deflate
     0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, // IEND length + type
-    0x42, 0x60, 0x82,                                     // CRC
+    0x42, 0x60, 0x82, // CRC
 ];
 
 /// Tulis stub KTP file ke `${upload_dir}/customers/{customer_id}/ktp.png`.
 /// Return relative path (disimpan di `customers.id_card_path`).
-pub async fn write_stub(
-    upload_dir: &str,
-    customer_id: Uuid,
-) -> anyhow::Result<String> {
+pub async fn write_stub(upload_dir: &str, customer_id: Uuid) -> anyhow::Result<String> {
     let relative = format!("customers/{}/ktp.png", customer_id);
     let absolute = Path::new(upload_dir).join(&relative);
 

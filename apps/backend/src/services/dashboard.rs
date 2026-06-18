@@ -55,10 +55,11 @@ impl Granularity {
                 if parts.len() >= 2 {
                     let m: u32 = parts[1].parse().unwrap_or(0);
                     const MONTHS: [&str; 12] = [
-                        "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
-                        "Jul", "Agu", "Sep", "Okt", "Nov", "Des",
+                        "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt",
+                        "Nov", "Des",
                     ];
-                    MONTHS.get((m.saturating_sub(1)) as usize)
+                    MONTHS
+                        .get((m.saturating_sub(1)) as usize)
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| bucket.to_string())
                 } else {
@@ -85,15 +86,18 @@ impl DashboardQuery {
         let to = self.to.unwrap_or_else(|| chrono::Utc::now().date_naive());
         let (default_from, default_gran) = match self.granularity {
             Some(g) => {
-                let from = self.from.unwrap_or_else(|| default_from_for_granularity(g, to));
+                let from = self
+                    .from
+                    .unwrap_or_else(|| default_from_for_granularity(g, to));
                 (from, g)
             }
             None => {
-                let g = self.granularity.unwrap_or_else(|| auto_granularity(
-                    self.from.unwrap_or(to) - Duration::days(0),
-                    to,
-                ));
-                let from = self.from.unwrap_or_else(|| default_from_for_granularity(g, to));
+                let g = self.granularity.unwrap_or_else(|| {
+                    auto_granularity(self.from.unwrap_or(to) - Duration::days(0), to)
+                });
+                let from = self
+                    .from
+                    .unwrap_or_else(|| default_from_for_granularity(g, to));
                 (from, g)
             }
         };
@@ -103,8 +107,8 @@ impl DashboardQuery {
 
 fn default_from_for_granularity(g: Granularity, to: NaiveDate) -> NaiveDate {
     match g {
-        Granularity::Day => to - Duration::days(13),     // last 14 days
-        Granularity::Week => to - Duration::weeks(11),  // last 12 weeks
+        Granularity::Day => to - Duration::days(13), // last 14 days
+        Granularity::Week => to - Duration::weeks(11), // last 12 weeks
         Granularity::Month => {
             // last 12 calendar months
             let total = to.year() * 12 + (to.month() as i32 - 1) - 11;
@@ -169,8 +173,7 @@ fn bucket_keys(from: NaiveDate, to: NaiveDate, granularity: Granularity) -> Vec<
             let days_from_mon = from.weekday().num_days_from_monday() as i64;
             from - Duration::days(days_from_mon)
         }
-        Granularity::Month => NaiveDate::from_ymd_opt(from.year(), from.month(), 1)
-            .unwrap_or(from),
+        Granularity::Month => NaiveDate::from_ymd_opt(from.year(), from.month(), 1).unwrap_or(from),
     };
     let cap = 400; // safety
     while cur <= to && keys.len() < cap {
@@ -285,10 +288,7 @@ fn pad_amounts(rows: Vec<BucketAmount>, keys: &[String]) -> Vec<BucketAmount> {
         .collect()
 }
 
-pub async fn fetch_all(
-    pool: &PgPool,
-    q: DashboardQuery,
-) -> Result<DashboardCharts, sqlx::Error> {
+pub async fn fetch_all(pool: &PgPool, q: DashboardQuery) -> Result<DashboardCharts, sqlx::Error> {
     let (from, to, granularity) = q.resolve();
     let keys = bucket_keys(from, to, granularity);
 

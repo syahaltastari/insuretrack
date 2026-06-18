@@ -170,8 +170,15 @@ pub async fn send(
     if let Some(key) = email.attachment_path.as_deref() {
         match storage.read_bytes(key).await {
             Ok(bytes) => {
-                let filename = key.rsplit('/').next().unwrap_or("attachment.pdf").to_string();
-                attachments.push(EmailAttachment { filename, content: bytes });
+                let filename = key
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("attachment.pdf")
+                    .to_string();
+                attachments.push(EmailAttachment {
+                    filename,
+                    content: bytes,
+                });
             }
             Err(e) => {
                 // Attachment gagal di-fetch -> log FAILED, return error.
@@ -210,14 +217,13 @@ pub async fn send(
     // 4. Render template (header + body + footer) → text + html,
     //    lalu kirim via Resend. Caller supply `body` plain + optional
     //    CTA; template yang bentuk final presentasi.
-    let rendered = crate::services::email_template::render(
-        &crate::services::email_template::EmailTemplate {
+    let rendered =
+        crate::services::email_template::render(&crate::services::email_template::EmailTemplate {
             subject: email.subject,
             body_text: email.body,
             cta_text: email.cta_text,
             cta_url: email.cta_url,
-        },
-    );
+        });
     let result = sender
         .send(
             email.recipient,

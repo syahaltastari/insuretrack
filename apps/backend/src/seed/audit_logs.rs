@@ -36,49 +36,55 @@ pub async fn seed_audit_logs(
 
     // 1) customer.created — 1 per customer.
     for c in customers {
-        out.push(write_audit(
-            &mut **tx,
-            "registration.created",
-            "customer",
-            c.id,
-            Some(json!({ "nik_hash_prefix": &c.nik[..6], "email": &c.email })),
-            "customer:seed",
-            &mut rng,
-        )
-        .await?);
+        out.push(
+            write_audit(
+                &mut **tx,
+                "registration.created",
+                "customer",
+                c.id,
+                Some(json!({ "nik_hash_prefix": &c.nik[..6], "email": &c.email })),
+                "customer:seed",
+                &mut rng,
+            )
+            .await?,
+        );
     }
 
     // 2) registration.created + invoice.generated.
     for (i, reg) in registrations.iter().enumerate() {
-        out.push(write_audit(
-            &mut **tx,
-            "registration.created",
-            "registration",
-            reg.id,
-            Some(json!({
-                "registration_no": &reg.registration_no,
-                "product": &reg.product,
-                "sum_assured": reg.sum_assured.to_string(),
-            })),
-            "customer:seed",
-            &mut rng,
-        )
-        .await?);
-
-        if let Some(inv) = invoices.get(i) {
-            out.push(write_audit(
+        out.push(
+            write_audit(
                 &mut **tx,
-                "invoice.generated",
-                "invoice",
-                inv.id,
+                "registration.created",
+                "registration",
+                reg.id,
                 Some(json!({
-                    "invoice_no": &inv.invoice_no,
-                    "premium": inv.premium_amount.to_string(),
+                    "registration_no": &reg.registration_no,
+                    "product": &reg.product,
+                    "sum_assured": reg.sum_assured.to_string(),
                 })),
-                "system",
+                "customer:seed",
                 &mut rng,
             )
-            .await?);
+            .await?,
+        );
+
+        if let Some(inv) = invoices.get(i) {
+            out.push(
+                write_audit(
+                    &mut **tx,
+                    "invoice.generated",
+                    "invoice",
+                    inv.id,
+                    Some(json!({
+                        "invoice_no": &inv.invoice_no,
+                        "premium": inv.premium_amount.to_string(),
+                    })),
+                    "system",
+                    &mut rng,
+                )
+                .await?,
+            );
         }
     }
 
@@ -99,89 +105,101 @@ pub async fn seed_audit_logs(
         .await?);
 
         if let Some(pol) = policies.get(i) {
-            out.push(write_audit(
-                &mut **tx,
-                "policy.issued",
-                "policy",
-                pol.id,
-                Some(json!({
-                    "policy_no": &pol.policy_no,
-                    "effective_date": pol.effective_date.to_string(),
-                })),
-                "system",
-                &mut rng,
-            )
-            .await?);
+            out.push(
+                write_audit(
+                    &mut **tx,
+                    "policy.issued",
+                    "policy",
+                    pol.id,
+                    Some(json!({
+                        "policy_no": &pol.policy_no,
+                        "effective_date": pol.effective_date.to_string(),
+                    })),
+                    "system",
+                    &mut rng,
+                )
+                .await?,
+            );
         }
     }
 
     // 4) claim.submitted + claim.status_changed.
     for claim in claims {
-        out.push(write_audit(
-            &mut **tx,
-            "claim.submitted",
-            "claim",
-            claim.id,
-            Some(json!({
-                "claim_no": &claim.claim_no,
-                "claimed_amount": claim.claimed_amount.to_string(),
-            })),
-            "customer:seed",
-            &mut rng,
-        )
-        .await?);
-        if claim.status != "SUBMITTED" && claim.status != "UNDER_REVIEW" {
-            out.push(write_audit(
+        out.push(
+            write_audit(
                 &mut **tx,
-                "claim.status_changed",
+                "claim.submitted",
                 "claim",
                 claim.id,
-                Some(json!({ "new_status": &claim.status })),
-                "admin",
+                Some(json!({
+                    "claim_no": &claim.claim_no,
+                    "claimed_amount": claim.claimed_amount.to_string(),
+                })),
+                "customer:seed",
                 &mut rng,
             )
-            .await?);
+            .await?,
+        );
+        if claim.status != "SUBMITTED" && claim.status != "UNDER_REVIEW" {
+            out.push(
+                write_audit(
+                    &mut **tx,
+                    "claim.status_changed",
+                    "claim",
+                    claim.id,
+                    Some(json!({ "new_status": &claim.status })),
+                    "admin",
+                    &mut rng,
+                )
+                .await?,
+            );
         }
     }
 
     // 5) inquiry.submitted + inquiry.answered.
     for inq in inquiries {
-        out.push(write_audit(
-            &mut **tx,
-            "inquiry.submitted",
-            "inquiry",
-            inq.id,
-            Some(json!({ "inquiry_no": &inq.inquiry_no })),
-            "customer:seed",
-            &mut rng,
-        )
-        .await?);
-        if inq.status != "OPEN" {
-            out.push(write_audit(
+        out.push(
+            write_audit(
                 &mut **tx,
-                "inquiry.answered",
+                "inquiry.submitted",
                 "inquiry",
                 inq.id,
-                Some(json!({ "new_status": &inq.status })),
-                "admin",
+                Some(json!({ "inquiry_no": &inq.inquiry_no })),
+                "customer:seed",
                 &mut rng,
             )
-            .await?);
+            .await?,
+        );
+        if inq.status != "OPEN" {
+            out.push(
+                write_audit(
+                    &mut **tx,
+                    "inquiry.answered",
+                    "inquiry",
+                    inq.id,
+                    Some(json!({ "new_status": &inq.status })),
+                    "admin",
+                    &mut rng,
+                )
+                .await?,
+            );
         }
     }
 
     // 6) Beberapa admin.login (3) — untuk realism audit log.
     for _ in 0..3 {
-        out.push(write_audit(
-            &mut **tx,
-            "admin.login",
-            "admin",
-            Uuid::nil(),
-            Some(json!({ "username": "admin" })),
-            "admin",
-            &mut rng,
-        )
-        .await?);
+        out.push(
+            write_audit(
+                &mut **tx,
+                "admin.login",
+                "admin",
+                Uuid::nil(),
+                Some(json!({ "username": "admin" })),
+                "admin",
+                &mut rng,
+            )
+            .await?,
+        );
     }
 
     Ok(out)

@@ -63,11 +63,7 @@ pub async fn seed_invoices(
         let due_date: NaiveDate = (reg.created_at + Duration::days(14)).date_naive();
 
         // Identifier pakai bulan registration (konsisten dengan REG).
-        let year_month = format!(
-            "{:04}{:02}",
-            reg.created_at.year(),
-            reg.created_at.month()
-        );
+        let year_month = format!("{:04}{:02}", reg.created_at.year(), reg.created_at.month());
         let invoice_no = next_id_with_year_month(tx, IdEntity::Invoice, &year_month).await?;
 
         // Insert.

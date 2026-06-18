@@ -23,10 +23,7 @@
 pub fn can_transition(from: &str, to: &str) -> bool {
     matches!(
         (from, to),
-        ("OPEN", "ANSWERED")
-            | ("OPEN", "CLOSED")
-            | ("ANSWERED", "OPEN")
-            | ("ANSWERED", "CLOSED")
+        ("OPEN", "ANSWERED") | ("OPEN", "CLOSED") | ("ANSWERED", "OPEN") | ("ANSWERED", "CLOSED")
     )
 }
 

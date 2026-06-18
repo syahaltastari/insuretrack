@@ -90,7 +90,10 @@ mod tests {
     fn default_claim_type_per_product() {
         assert_eq!(default_claim_type_for_product("LIFE"), "DEATH");
         assert_eq!(default_claim_type_for_product("HEALTH"), "HOSPITALIZATION");
-        assert_eq!(default_claim_type_for_product("PERSONAL_ACCIDENT"), "ACCIDENT");
+        assert_eq!(
+            default_claim_type_for_product("PERSONAL_ACCIDENT"),
+            "ACCIDENT"
+        );
     }
 
     #[test]
@@ -102,7 +105,13 @@ mod tests {
 
     #[test]
     fn is_valid_claim_type_accepts_known_values() {
-        for v in ["DEATH", "ACCIDENT", "HOSPITALIZATION", "MATURITY", "SURRENDER"] {
+        for v in [
+            "DEATH",
+            "ACCIDENT",
+            "HOSPITALIZATION",
+            "MATURITY",
+            "SURRENDER",
+        ] {
             assert!(is_valid_claim_type(v), "expected {v} to be valid");
         }
     }

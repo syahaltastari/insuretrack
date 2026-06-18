@@ -34,8 +34,7 @@ pub async fn seed_email_logs(
         };
 
         for _ in 0..n_emails {
-            let email_type = data::EMAIL_TYPES
-                [rng.gen_range(0..data::EMAIL_TYPES.len())];
+            let email_type = data::EMAIL_TYPES[rng.gen_range(0..data::EMAIL_TYPES.len())];
 
             // Status: 80% SENT, 15% QUEUED, 5% FAILED.
             let roll: u32 = rng.gen_range(0..100);

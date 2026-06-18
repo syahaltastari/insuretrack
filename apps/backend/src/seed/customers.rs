@@ -54,9 +54,7 @@ pub async fn seed_customers(
     // password yang sama). Hash beda per user karena salt random,
     // tapi generation cost berkurang.
     let pre_hashed = if cfg.counts.customers_with_portal > 0 {
-        Some(hash_password(DEMO_PASSWORD).map_err(|e| {
-            anyhow::anyhow!("hash password: {e}")
-        })?)
+        Some(hash_password(DEMO_PASSWORD).map_err(|e| anyhow::anyhow!("hash password: {e}"))?)
     } else {
         None
     };
@@ -82,9 +80,7 @@ pub async fn seed_customers(
 
         // Email: firstname.lastnameNN@example.com dengan NN 2-digit
         // untuk uniqueness (max 99 customers — load mode pakai 6 digit).
-        let email = unique_email(
-            first, last, &mut rng, &mut used_emails,
-        );
+        let email = unique_email(first, last, &mut rng, &mut used_emails);
 
         // Lokasi random — provinsi + kota.
         let (city, province) = random_location(&mut rng);

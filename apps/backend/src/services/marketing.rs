@@ -10,12 +10,7 @@ use crate::error::AppError;
 
 const MAX_BYTES: usize = 2 * 1024 * 1024; // 2 MB — gambar kecil.
 
-const ALLOWED_MIMES: &[&str] = &[
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/svg+xml",
-];
+const ALLOWED_MIMES: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/svg+xml"];
 
 pub async fn save_image(
     upload_dir: &str,

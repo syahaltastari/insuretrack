@@ -80,10 +80,7 @@ pub async fn next_id_with_year_month(
 /// Prefer the transactional version in production paths so allocation and
 /// insert of the target row share an atomic boundary.
 #[allow(dead_code)]
-pub async fn next_id_conn(
-    conn: &mut PgConnection,
-    entity: EntityType,
-) -> Result<String, AppError> {
+pub async fn next_id_conn(conn: &mut PgConnection, entity: EntityType) -> Result<String, AppError> {
     let year_month = Utc::now().format("%Y%m").to_string();
     let prefix = entity.prefix();
 

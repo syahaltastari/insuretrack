@@ -15,14 +15,13 @@ use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
-    auth::{password::verify_password, Role, RequireAdmin},
+    auth::{password::verify_password, RequireAdmin, Role},
     dto::{DashboardStats, LoginRequest, LoginResponse},
     error::{AppError, AppResult},
     repo::{filters as filters_helper, Page, PageQuery},
     services::{
         audit::{write as audit_write, AuditEntry},
-        dashboard,
-        storage,
+        dashboard, storage,
     },
     state::AppState,
 };
@@ -84,10 +83,21 @@ mod csv_tests {
 /// pre-formatted to String before calling).
 fn csv_response(headers: &[&str], rows: Vec<Vec<String>>, filename: &str) -> Response {
     let mut s = String::new();
-    s.push_str(&headers.iter().map(|h| csv_escape(h)).collect::<Vec<_>>().join(","));
+    s.push_str(
+        &headers
+            .iter()
+            .map(|h| csv_escape(h))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
     s.push_str("\r\n");
     for row in rows {
-        s.push_str(&row.iter().map(|c| csv_escape(c)).collect::<Vec<_>>().join(","));
+        s.push_str(
+            &row.iter()
+                .map(|c| csv_escape(c))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
         s.push_str("\r\n");
     }
     let mut resp = (StatusCode::OK, s).into_response();
@@ -137,7 +147,7 @@ pub fn router() -> Router<AppState> {
             "/inquiries/:id/close",
             axum::routing::post(admin_inquiry_close),
         )
-        // Marketing: clients + testimonials — see admin_marketing::router
+    // Marketing: clients + testimonials — see admin_marketing::router
 }
 
 async fn login(
@@ -296,11 +306,19 @@ async fn update_me(
     let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
     let full = req.full_name.and_then(|s| {
         let t = s.trim().to_string();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let email = req.email.and_then(|s| {
         let t = s.trim().to_string();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     if let Some(ref e) = email {
         if !e.contains('@') {
@@ -359,7 +377,9 @@ async fn change_password(
 ) -> AppResult<StatusCode> {
     let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
     if req.new_password.len() < 8 {
-        return Err(AppError::Validation("Password baru minimal 8 karakter".into()));
+        return Err(AppError::Validation(
+            "Password baru minimal 8 karakter".into(),
+        ));
     }
     let row: Option<(String,)> =
         sqlx::query_as("SELECT password_hash FROM admin_users WHERE id = $1")
@@ -478,7 +498,6 @@ async fn list_registrations(
         ));
     }
 
-
     let total: (i64,) = sqlx::query_as(
         r#"
         SELECT COUNT(*)
@@ -525,7 +544,8 @@ async fn list_registrations(
         page,
         page_size,
         total: total.0,
-    }).into_response())
+    })
+    .into_response())
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -572,7 +592,8 @@ async fn get_registration(
     .fetch_optional(&state.pool)
     .await?;
 
-    row.map(Json).ok_or(AppError::NotFound("registration".into()))
+    row.map(Json)
+        .ok_or(AppError::NotFound("registration".into()))
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -613,7 +634,8 @@ async fn list_invoices(
     // Date column: whitelist. Default = `created_at` (most common admin
     // question: "what invoices came in this period?").
     const INVOICE_DATE_FIELDS: &[&str] = &["created_at", "due_date", "paid_at"];
-    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), INVOICE_DATE_FIELDS);
+    let date_field =
+        filters_helper::validate_date_field(q.date_field.as_deref(), INVOICE_DATE_FIELDS);
     // Sort column: whitelist. Default = `created_at` DESC.
     const INVOICE_SORT_COLS: &[&str] = &[
         "created_at",
@@ -789,7 +811,8 @@ async fn list_invoices(
         page,
         page_size,
         total: total.0,
-    }).into_response())
+    })
+    .into_response())
 }
 
 async fn get_invoice(
@@ -828,10 +851,7 @@ async fn download_invoice_pdf(
     let (pdf_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
     let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("invoice pdf".into()))?;
 
-    let bytes = state
-        .storage
-        .read_bytes(&pdf_path)
-        .await?;
+    let bytes = state.storage.read_bytes(&pdf_path).await?;
     let body = Body::from(bytes);
 
     let mut headers = HeaderMap::new();
@@ -842,9 +862,8 @@ async fn download_invoice_pdf(
     let disp = format!("attachment; filename=\"{invoice_no}.pdf\"");
     headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&disp).map_err(|e| {
-            AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}"))
-        })?,
+        HeaderValue::from_str(&disp)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}")))?,
     );
     Ok((StatusCode::OK, headers, body).into_response())
 }
@@ -886,7 +905,8 @@ async fn list_policies(
     let (date_from, date_to) =
         filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
     const POLICY_DATE_FIELDS: &[&str] = &["created_at", "effective_date", "expiry_date"];
-    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), POLICY_DATE_FIELDS);
+    let date_field =
+        filters_helper::validate_date_field(q.date_field.as_deref(), POLICY_DATE_FIELDS);
     const POLICY_SORT_COLS: &[&str] = &[
         "created_at",
         "effective_date",
@@ -1060,7 +1080,8 @@ async fn list_policies(
         page,
         page_size,
         total: total.0,
-    }).into_response())
+    })
+    .into_response())
 }
 
 async fn get_policy(
@@ -1103,10 +1124,7 @@ async fn download_policy_pdf(
     let (pdf_path_opt, policy_no) = row.ok_or(AppError::NotFound("policy".into()))?;
     let pdf_path = pdf_path_opt.ok_or(AppError::NotFound("policy pdf".into()))?;
 
-    let bytes = state
-        .storage
-        .read_bytes(&pdf_path)
-        .await?;
+    let bytes = state.storage.read_bytes(&pdf_path).await?;
     let body = Body::from(bytes);
 
     let mut headers = HeaderMap::new();
@@ -1191,7 +1209,6 @@ async fn list_email_logs(
         ));
     }
 
-
     let total: (i64,) = sqlx::query_as(
         r#"
         SELECT COUNT(*)
@@ -1227,7 +1244,8 @@ async fn list_email_logs(
         page,
         page_size,
         total: total.0,
-    }).into_response())
+    })
+    .into_response())
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -1305,7 +1323,6 @@ async fn list_audit_logs(
         ));
     }
 
-
     let total: (i64,) = sqlx::query_as(
         r#"
         SELECT COUNT(*)
@@ -1341,7 +1358,8 @@ async fn list_audit_logs(
         page,
         page_size,
         total: total.0,
-    }).into_response())
+    })
+    .into_response())
 }
 
 // ---- Claims (admin view & review) ----
@@ -1384,7 +1402,8 @@ async fn list_claims_admin(
     let (date_from, date_to) =
         filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
     const CLAIM_DATE_FIELDS: &[&str] = &["submitted_at", "incident_date", "updated_at"];
-    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), CLAIM_DATE_FIELDS);
+    let date_field =
+        filters_helper::validate_date_field(q.date_field.as_deref(), CLAIM_DATE_FIELDS);
     const CLAIM_SORT_COLS: &[&str] = &[
         "submitted_at",
         "incident_date",
@@ -1556,7 +1575,8 @@ async fn list_claims_admin(
         page,
         page_size,
         total: total.0,
-    }).into_response())
+    })
+    .into_response())
 }
 
 #[derive(serde::Deserialize)]
@@ -1885,13 +1905,10 @@ async fn list_inquiries_admin(
     // ----- New filter inputs -----
     let (date_from, date_to) =
         filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
-    const INQUIRY_DATE_FIELDS: &[&str] = &[
-        "created_at",
-        "responded_at",
-        "last_message_at",
-        "closed_at",
-    ];
-    let date_field = filters_helper::validate_date_field(q.date_field.as_deref(), INQUIRY_DATE_FIELDS);
+    const INQUIRY_DATE_FIELDS: &[&str] =
+        &["created_at", "responded_at", "last_message_at", "closed_at"];
+    let date_field =
+        filters_helper::validate_date_field(q.date_field.as_deref(), INQUIRY_DATE_FIELDS);
     const INQUIRY_SORT_COLS: &[&str] = &[
         "created_at",
         "responded_at",
@@ -1961,7 +1978,9 @@ async fn list_inquiries_admin(
                     r.response.clone().unwrap_or_default(),
                     r.created_at.to_rfc3339(),
                     r.responded_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
-                    r.last_message_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
+                    r.last_message_at
+                        .map(|d| d.to_rfc3339())
+                        .unwrap_or_default(),
                     r.last_sender_type.clone().unwrap_or_default(),
                     r.closed_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
                     r.last_message_preview.clone().unwrap_or_default(),
@@ -2051,8 +2070,8 @@ async fn list_inquiries_admin(
     let mut data = data;
     for row in data.iter_mut() {
         if row.status == "ANSWERED" {
-            if let Some(closed) = crate::services::inquiry::try_auto_close_stale(&state, row.id)
-                .await?
+            if let Some(closed) =
+                crate::services::inquiry::try_auto_close_stale(&state, row.id).await?
             {
                 row.status = "CLOSED".into();
                 row.closed_at = Some(closed);
@@ -2065,7 +2084,8 @@ async fn list_inquiries_admin(
         page,
         page_size,
         total: total.0,
-    }).into_response())
+    })
+    .into_response())
 }
 
 async fn get_inquiry_admin(
@@ -2214,11 +2234,10 @@ async fn admin_inquiry_message(
     .await;
 
     // 4. Email customer — best-effort.
-    let inquiry_no: String =
-        sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let inquiry_no: String = sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
     let subject_line: String = sqlx::query_scalar("SELECT subject FROM inquiries WHERE id = $1")
         .bind(id)
         .fetch_one(&state.pool)
@@ -2367,11 +2386,10 @@ async fn admin_inquiry_close(
     .await;
 
     // Email customer — best-effort, kasih tahu tiket ditutup.
-    let inquiry_no: String =
-        sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let inquiry_no: String = sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
     let subject_line: String = sqlx::query_scalar("SELECT subject FROM inquiries WHERE id = $1")
         .bind(id)
         .fetch_one(&state.pool)

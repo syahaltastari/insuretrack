@@ -64,7 +64,6 @@ async fn list_products() -> Json<serde_json::Value> {
     }))
 }
 
-
 // ---- GET /registrations/{regNo} ----
 
 #[derive(Debug, Serialize)]
@@ -152,12 +151,11 @@ async fn payment_webhook(
     }
 
     // Idempotency: read invoice status first; if already PAID, return success no-op.
-    let invoice_row: Option<(Uuid, String, Uuid)> = sqlx::query_as(
-        "SELECT id, status, registration_id FROM invoices WHERE invoice_no = $1",
-    )
-    .bind(&body.invoice_no)
-    .fetch_optional(&state.pool)
-    .await?;
+    let invoice_row: Option<(Uuid, String, Uuid)> =
+        sqlx::query_as("SELECT id, status, registration_id FROM invoices WHERE invoice_no = $1")
+            .bind(&body.invoice_no)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let (invoice_id, invoice_status, registration_id) =
         invoice_row.ok_or_else(|| AppError::NotFound(format!("invoice {}", body.invoice_no)))?;
@@ -277,8 +275,15 @@ async fn payment_webhook(
     // Issue policy/policies. INDIVIDU → 1 policy. INSTANSI → N policies
     // (1 per participant, masing-masing dengan policy_no sendiri & link
     // ke participant_id).
-    let mut issued_policies: Vec<(Uuid, String, Uuid, String, String, chrono::NaiveDate, String)> =
-        Vec::new(); // (policy_id, policy_no, participant_id, participant_nik, participant_name, participant_birth_date, participant_address)
+    let mut issued_policies: Vec<(
+        Uuid,
+        String,
+        Uuid,
+        String,
+        String,
+        chrono::NaiveDate,
+        String,
+    )> = Vec::new(); // (policy_id, policy_no, participant_id, participant_nik, participant_name, participant_birth_date, participant_address)
 
     if applicant_type == "INSTANSI" {
         // Fetch all participants
@@ -414,7 +419,10 @@ async fn payment_webhook(
                 premium
             },
         })?;
-        let pdf_ref = state.storage.save_policy_pdf(*policy_id, &pdf_bytes).await?;
+        let pdf_ref = state
+            .storage
+            .save_policy_pdf(*policy_id, &pdf_bytes)
+            .await?;
         let pdf_path = pdf_ref.key;
 
         sqlx::query("UPDATE policies SET pdf_path = $1 WHERE id = $2")
@@ -474,8 +482,7 @@ async fn payment_webhook(
     if applicant_type == "INSTANSI" {
         let group_subject = format!(
             "E-Policy Group Terbit — {} polis untuk {}",
-            total_policies,
-            registration_no
+            total_policies, registration_no
         );
         send_email(
             &state.pool,
@@ -509,12 +516,10 @@ async fn payment_webhook(
         // INDIVIDU: 1 email dengan PDF attached
         let (policy_id, policy_no, _, _, _, _, _) = &issued_policies[0];
         // Re-fetch pdf_path for this single policy
-        let pdf_path: String = sqlx::query_scalar(
-            "SELECT pdf_path FROM policies WHERE id = $1",
-        )
-        .bind(policy_id)
-        .fetch_one(&state.pool)
-        .await?;
+        let pdf_path: String = sqlx::query_scalar("SELECT pdf_path FROM policies WHERE id = $1")
+            .bind(policy_id)
+            .fetch_one(&state.pool)
+            .await?;
         send_email(
             &state.pool,
             &*state.storage,
@@ -590,9 +595,8 @@ pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
     // Plan_code adalah source of truth untuk product + sum_assured.
     // Lookup sekali di sini — handler `submit_insurance_application` di
     // customer.rs reuse hasil lookup yang sama.
-    let plan = find_plan(&d.plan_code).ok_or_else(|| {
-        AppError::Validation(format!("invalid plan_code: {}", d.plan_code))
-    })?;
+    let plan = find_plan(&d.plan_code)
+        .ok_or_else(|| AppError::Validation(format!("invalid plan_code: {}", d.plan_code)))?;
 
     match d.applicant_type {
         ApplicantType::Individu => validate_individu(d, plan)?,
@@ -611,7 +615,9 @@ fn validate_individu(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
         return Err(AppError::Validation("full_name required".into()));
     }
     if d.birth_date > Utc::now().date_naive() {
-        return Err(AppError::Validation("birth_date cannot be in the future".into()));
+        return Err(AppError::Validation(
+            "birth_date cannot be in the future".into(),
+        ));
     }
     if !matches!(d.gender.as_str(), "MALE" | "FEMALE") {
         return Err(AppError::Validation("gender must be MALE or FEMALE".into()));
@@ -619,7 +625,11 @@ fn validate_individu(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
     if !is_email_valid(&d.email) {
         return Err(AppError::Validation("email format invalid".into()));
     }
-    let digit_count = d.mobile_number.chars().filter(|c| c.is_ascii_digit()).count();
+    let digit_count = d
+        .mobile_number
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .count();
     if !(10..=15).contains(&digit_count) || d.mobile_number.chars().any(|c| !c.is_ascii_digit()) {
         return Err(AppError::Validation(
             "mobile_number must be 10-15 digits, digits only".into(),
@@ -674,7 +684,11 @@ fn validate_instansi(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
             "Email representative tidak valid".into(),
         ));
     }
-    let digit_count = d.mobile_number.chars().filter(|c| c.is_ascii_digit()).count();
+    let digit_count = d
+        .mobile_number
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .count();
     if !(10..=15).contains(&digit_count) || d.mobile_number.chars().any(|c| !c.is_ascii_digit()) {
         return Err(AppError::Validation(
             "No HP representative harus 10-15 digit".into(),
@@ -699,9 +713,8 @@ fn validate_instansi(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
     }
     // Validate setiap peserta
     for (i, p) in d.participants.iter().enumerate() {
-        validate_participant(p, plan.product_code).map_err(|e| {
-            AppError::Validation(format!("Peserta #{}: {}", i + 1, e))
-        })?;
+        validate_participant(p, plan.product_code)
+            .map_err(|e| AppError::Validation(format!("Peserta #{}: {}", i + 1, e)))?;
     }
     Ok(())
 }
@@ -710,7 +723,10 @@ fn validate_instansi(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
 /// tidak ada email/mobile/beneficiary_name requirement (kecuali untuk LIFE).
 fn validate_participant(p: &ParticipantData, product_code: &str) -> Result<(), AppError> {
     if !is_16_digits(&p.nik) {
-        return Err(AppError::Validation(format!("NIK harus 16 digit ({})", p.nik)));
+        return Err(AppError::Validation(format!(
+            "NIK harus 16 digit ({})",
+            p.nik
+        )));
     }
     if p.full_name.trim().is_empty() {
         return Err(AppError::Validation("Nama lengkap wajib diisi".into()));
@@ -770,10 +786,7 @@ fn is_email_valid(s: &str) -> bool {
     let parts: Vec<&str> = s.split('@').collect();
     let local = parts[0];
     let domain = parts[1];
-    !local.is_empty()
-        && domain.contains('.')
-        && !domain.starts_with('.')
-        && !domain.ends_with('.')
+    !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
 }
 
 pub fn calculate_premium(plan: &ProductPlan, coverage_term: i32) -> Decimal {
@@ -807,9 +820,7 @@ struct PublicClient {
     sort_order: i32,
 }
 
-async fn list_clients_public(
-    State(state): State<AppState>,
-) -> AppResult<Json<serde_json::Value>> {
+async fn list_clients_public(State(state): State<AppState>) -> AppResult<Json<serde_json::Value>> {
     let data: Vec<PublicClient> = sqlx::query_as(
         r#"
         SELECT id, name, logo_path, industry, website, sort_order
@@ -1027,9 +1038,15 @@ async fn register_customer(
     if req.full_name.trim().is_empty() {
         return Err(AppError::Validation("nama wajib diisi".into()));
     }
-    let mobile_clean: String = req.mobile_number.chars().filter(|c| c.is_ascii_digit() || *c == '+').collect();
+    let mobile_clean: String = req
+        .mobile_number
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '+')
+        .collect();
     if mobile_clean.len() < 10 || mobile_clean.len() > 15 {
-        return Err(AppError::Validation("nomor HP tidak valid (10-15 digit)".into()));
+        return Err(AppError::Validation(
+            "nomor HP tidak valid (10-15 digit)".into(),
+        ));
     }
 
     // Check email uniqueness
@@ -1245,7 +1262,11 @@ mod tests {
     #[test]
     fn upload_url_passes_through_absolute_urls() {
         assert_eq!(
-            to_public_upload_url("https://app.example.com", "/uploads", "https://cdn.example.com/logo.png"),
+            to_public_upload_url(
+                "https://app.example.com",
+                "/uploads",
+                "https://cdn.example.com/logo.png"
+            ),
             "https://cdn.example.com/logo.png"
         );
     }
@@ -1253,7 +1274,11 @@ mod tests {
     #[test]
     fn upload_url_strips_upload_dir_prefix() {
         assert_eq!(
-            to_public_upload_url("https://app.example.com", "/uploads", "/uploads/clients/x/logo.svg"),
+            to_public_upload_url(
+                "https://app.example.com",
+                "/uploads",
+                "/uploads/clients/x/logo.svg"
+            ),
             "https://app.example.com/api/public/uploads/clients/x/logo.svg"
         );
     }

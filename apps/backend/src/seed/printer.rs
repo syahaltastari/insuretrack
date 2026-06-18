@@ -20,7 +20,10 @@ pub fn print_plan(cfg: &SeedConfig) {
     println!("  Reset              : {}", cfg.reset);
     println!("  Customers          : {}", cfg.counts.customers);
     println!("  Registrations      : {}", cfg.counts.registrations);
-    println!("  Portal customers   : {}", cfg.counts.customers_with_portal);
+    println!(
+        "  Portal customers   : {}",
+        cfg.counts.customers_with_portal
+    );
     println!("  Months back        : {}", cfg.months_back);
     println!("  Claims ratio       : {:.0}%", cfg.claims_ratio * 100.0);
     println!("  Upload dir         : {}", cfg.upload_dir);
@@ -35,8 +38,10 @@ pub fn print_plan(cfg: &SeedConfig) {
     println!("        - inquiry     : OPEN, ANSWERED, CLOSED");
     match cfg.mode {
         crate::seed::config::SeedMode::Demo => {
-            println!("    * PDF policies & invoices di-render ke {}/policies dan {}/invoices",
-                cfg.upload_dir, cfg.upload_dir);
+            println!(
+                "    * PDF policies & invoices di-render ke {}/policies dan {}/invoices",
+                cfg.upload_dir, cfg.upload_dir
+            );
         }
         crate::seed::config::SeedMode::Load => {
             println!("    * PDF di-SKIP (load mode) — pdf_path akan NULL");
@@ -63,8 +68,10 @@ pub fn print_summary(
     println!("================================================================");
     println!("  InsureTrack Seeder — DONE in {}ms", duration_ms);
     println!("================================================================");
-    println!("  Customers         : {:>5}  ({} with portal access)",
-        customers, portal_customers);
+    println!(
+        "  Customers         : {:>5}  ({} with portal access)",
+        customers, portal_customers
+    );
     println!("  Registrations     : {:>5}", registrations);
     println!("  Invoices          : {:>5}", invoices);
     println!("  Policies          : {:>5}", policies);

@@ -48,7 +48,11 @@ async fn seed_submitted_claim(pool: &sqlx::PgPool, product: &str) -> (Uuid, Uuid
     .await
     .unwrap();
 
-    let sum_assured: i64 = if product == "HEALTH" { 50_000_000 } else { 100_000_000 };
+    let sum_assured: i64 = if product == "HEALTH" {
+        50_000_000
+    } else {
+        100_000_000
+    };
     let (policy_id,): (Uuid,) = sqlx::query_as(
         r#"INSERT INTO policies (
             policy_no, registration_id, product, sum_assured, premium,
@@ -146,7 +150,11 @@ async fn claim_illegal_skip_to_paid_rejected() {
 
     // SUBMITTED → PAID (ILLEGAL — must pass through UNDER_REVIEW + APPROVED)
     let (status, body) = admin_patch_claim(&app, claim_id, "PAID").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "skip harus ditolak: {body}");
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "skip harus ditolak: {body}"
+    );
 
     let row: (String,) = sqlx::query_as("SELECT status FROM claims WHERE id = $1")
         .bind(claim_id)
@@ -199,9 +207,7 @@ async fn claim_admin_requires_auth() {
         .method(Method::PATCH)
         .uri(format!("/api/admin/claims/{claim_id}"))
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            json!({ "status": "UNDER_REVIEW" }).to_string(),
-        ))
+        .body(Body::from(json!({ "status": "UNDER_REVIEW" }).to_string()))
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
@@ -213,9 +219,7 @@ async fn claim_admin_requires_auth() {
         .uri(format!("/api/admin/claims/{claim_id}"))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::AUTHORIZATION, format!("Bearer {cust_token}"))
-        .body(Body::from(
-            json!({ "status": "UNDER_REVIEW" }).to_string(),
-        ))
+        .body(Body::from(json!({ "status": "UNDER_REVIEW" }).to_string()))
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);

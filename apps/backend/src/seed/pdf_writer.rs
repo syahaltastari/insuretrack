@@ -7,9 +7,7 @@ use rust_decimal::Decimal;
 use tokio::fs;
 use uuid::Uuid;
 
-use crate::{
-    services::pdf::{render, render_invoice, InvoicePdfInput, PolicyPdfInput},
-};
+use crate::services::pdf::{render, render_invoice, InvoicePdfInput, PolicyPdfInput};
 
 /// Plain-data untuk e-Policy PDF. Field customer (nama, NIK, address)
 /// belum di-include di step 5 ini — PDF minimal dulu. Step M4 bisa

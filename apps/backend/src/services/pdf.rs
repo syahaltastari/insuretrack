@@ -11,8 +11,8 @@
 //!   - Coverage & Payment: product, sum assured, premium, due_date
 
 use chrono::{Datelike, NaiveDate};
-use printpdf::{BuiltinFont, Color, Line, Mm, PdfDocument, PdfLayerReference, Point, Rgb};
 use printpdf::path::PaintMode;
+use printpdf::{BuiltinFont, Color, Line, Mm, PdfDocument, PdfLayerReference, Point, Rgb};
 use rust_decimal::Decimal;
 use std::io::BufWriter;
 
@@ -59,7 +59,13 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
 
     draw_section(&layer, &bold, &reg, "Policy Information", &mut y);
     draw_kv(&layer, &reg, "Policy No", input.policy_no, &mut y);
-    draw_kv(&layer, &reg, "Registration No", input.registration_no, &mut y);
+    draw_kv(
+        &layer,
+        &reg,
+        "Registration No",
+        input.registration_no,
+        &mut y,
+    );
     draw_kv(
         &layer,
         &reg,
@@ -258,19 +264,33 @@ fn format_idr(d: Decimal) -> String {
 
 /// Format tanggal Indonesia: "9 Juni 2026". Indonesian month names.
 const ID_MONTHS: [&str; 12] = [
-    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
 ];
 fn format_date_id(d: NaiveDate) -> String {
-    format!("{} {} {}", d.day(), ID_MONTHS[(d.month() - 1) as usize], d.year())
+    format!(
+        "{} {} {}",
+        d.day(),
+        ID_MONTHS[(d.month() - 1) as usize],
+        d.year()
+    )
 }
 
 /// Render invoice PDF — A4 portrait, layout modern dengan header bar,
 /// two-column info block, tabel coverage dengan header, total box, dan
 /// footer bar. Pakai Helvetica/HelveticaBold (built-in printpdf).
 pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> {
-    let (doc, page1, layer1) =
-        PdfDocument::new("Invoice", Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
+    let (doc, page1, layer1) = PdfDocument::new("Invoice", Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
     let layer = doc.get_page(page1).get_layer(layer1);
 
     let bold = doc
@@ -355,13 +375,7 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
         input.customer_birth_place,
         format_date_id(input.customer_birth_date)
     );
-    layer.use_text(
-        format!("TTL: {}", ttl),
-        8.5_f32,
-        Mm(25.0),
-        Mm(195.0),
-        &reg,
-    );
+    layer.use_text(format!("TTL: {}", ttl), 8.5_f32, Mm(25.0), Mm(195.0), &reg);
     let addr_lines_vec = wrap_text(input.customer_address, 38);
     for (i, line) in addr_lines_vec.iter().enumerate() {
         let y_pos = 189.0_f32 - (i as f32) * 4.0_f32;
@@ -393,13 +407,7 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
     set_color(&layer, C_SILVER);
     layer.use_text("INVOICE", 7.0_f32, Mm(110.0), Mm(216.0), &bold);
     set_color(&layer, C_BLACK);
-    layer.use_text(
-        input.invoice_no,
-        11.0_f32,
-        Mm(110.0),
-        Mm(208.0),
-        &bold,
-    );
+    layer.use_text(input.invoice_no, 11.0_f32, Mm(110.0), Mm(208.0), &bold);
     set_color(&layer, C_CHARCOAL);
     layer.use_text(
         format!("No. Reg: {}", input.registration_no),
@@ -416,7 +424,14 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
         &reg,
     );
     if input.status == "UNPAID" {
-        fill_rect(&layer, 108.0_f32, 182.0_f32, 188.0_f32, 189.0_f32, C_LEMON_400);
+        fill_rect(
+            &layer,
+            108.0_f32,
+            182.0_f32,
+            188.0_f32,
+            189.0_f32,
+            C_LEMON_400,
+        );
     }
     set_color(&layer, C_BLACK);
     layer.use_text(
@@ -433,7 +448,14 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
     set_color(&layer, C_OAT_BORDER);
     draw_line(&layer, 20.0, 162.0, 190.0, 162.0, 0.3);
 
-    fill_rect(&layer, 20.0_f32, 152.0_f32, 190.0_f32, 160.0_f32, C_OAT_LIGHT);
+    fill_rect(
+        &layer,
+        20.0_f32,
+        152.0_f32,
+        190.0_f32,
+        160.0_f32,
+        C_OAT_LIGHT,
+    );
     set_color(&layer, C_CHARCOAL);
     layer.use_text("PRODUK", 7.0_f32, Mm(23.0), Mm(155.0), &bold);
     layer.use_text("SUM ASSURED", 7.0_f32, Mm(85.0), Mm(155.0), &bold);
@@ -450,13 +472,7 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
     );
     set_color(&layer, C_CHARCOAL);
     let sum_str = format_idr(input.sum_assured);
-    layer.use_text(
-        sum_str.as_str(),
-        10.0_f32,
-        Mm(85.0),
-        Mm(145.0),
-        &reg,
-    );
+    layer.use_text(sum_str.as_str(), 10.0_f32, Mm(85.0), Mm(145.0), &reg);
     layer.use_text(
         format!("{} tahun", input.coverage_term_years).as_str(),
         10.0_f32,
@@ -483,36 +499,18 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
     layer.use_text("Subtotal", 8.0_f32, Mm(125.0), Mm(120.0), &reg);
     let subtotal_str2 = format_idr(input.premium);
     let x_sub = 187.0_f32 - (subtotal_str2.chars().count() as f32) * 2.0_f32;
-    layer.use_text(
-        subtotal_str2.as_str(),
-        9.0_f32,
-        Mm(x_sub),
-        Mm(120.0),
-        &reg,
-    );
+    layer.use_text(subtotal_str2.as_str(), 9.0_f32, Mm(x_sub), Mm(120.0), &reg);
     set_color(&layer, C_OAT_BORDER);
     draw_line(&layer, 125.0, 113.0, 185.0, 113.0, 0.3);
     set_color(&layer, C_BLACK);
     layer.use_text("TOTAL", 11.0_f32, Mm(125.0), Mm(108.0), &bold);
     let total_str = format_idr(input.premium);
     let x_total = 187.0_f32 - (total_str.chars().count() as f32) * 3.2_f32;
-    layer.use_text(
-        total_str.as_str(),
-        14.0_f32,
-        Mm(x_total),
-        Mm(107.0),
-        &bold,
-    );
+    layer.use_text(total_str.as_str(), 14.0_f32, Mm(x_total), Mm(107.0), &bold);
 
     // ===== PAYMENT INSTRUCTIONS =====
     set_color(&layer, C_SILVER);
-    layer.use_text(
-        "INSTRUKSI PEMBAYARAN",
-        7.0_f32,
-        Mm(20.0),
-        Mm(120.0),
-        &bold,
-    );
+    layer.use_text("INSTRUKSI PEMBAYARAN", 7.0_f32, Mm(20.0), Mm(120.0), &bold);
     set_color(&layer, C_CHARCOAL);
     layer.use_text(
         "1. Login ke portal InsureTrack → menu Invoice",
@@ -569,14 +567,7 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
 // ---- Drawing helpers ---------------------------------------------------------
 
 /// Fill rectangle. Coords: bottom-left (x1, y1) and top-right (x2, y2) in mm.
-fn fill_rect(
-    layer: &PdfLayerReference,
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
-    color: (u8, u8, u8),
-) {
+fn fill_rect(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, color: (u8, u8, u8)) {
     set_color(layer, color);
     layer.set_outline_thickness(0.0);
     layer.add_rect(printpdf::Rect {
