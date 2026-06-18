@@ -5,7 +5,7 @@
 //! 2 crate berbeda (binary vs library) — oleh karena itu kita `use
 //! insuretrack_backend::*` di sini, BUKAN `crate::*`.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use sqlx::postgres::PgPoolOptions;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -14,7 +14,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use insuretrack_backend::{
     config::Config,
     routes,
-    services::{resend::ResendClient, storage},
+    services::{email::EmailSender, resend::ResendClient, storage},
     state::AppState,
 };
 
@@ -48,7 +48,12 @@ async fn main() -> anyhow::Result<()> {
         cfg.resend_from_name.clone(),
     )?;
 
-    let state = AppState::new(pool, cfg.clone(), storage, resend);
+    let state = AppState::new(
+        pool,
+        cfg.clone(),
+        storage,
+        Arc::new(resend) as Arc<dyn EmailSender>,
+    );
 
     let app = routes::build(state)
         .layer(TraceLayer::new_for_http())

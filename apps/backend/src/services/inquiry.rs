@@ -133,7 +133,7 @@ pub async fn try_auto_close_stale(
         let _ = crate::services::email::send(
             &state.pool,
             &*state.storage,
-            &state.resend,
+            &*state.email,
             crate::services::email::Email {
                 email_type: crate::services::email::EmailType::InquiryAutoClosed,
                 recipient: &email,

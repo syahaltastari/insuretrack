@@ -7,7 +7,7 @@ use sqlx::PgPool;
 use crate::{
     auth::TokenService,
     config::Config,
-    services::{resend::ResendClient, storage::Storage},
+    services::{email::EmailSender, storage::Storage},
 };
 
 #[derive(Clone)]
@@ -16,7 +16,9 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub tokens: Arc<TokenService>,
     pub storage: Arc<dyn Storage>,
-    pub resend: Arc<ResendClient>,
+    /// Production: `Arc<ResendClient>` (impl `EmailSender`).
+    /// Tests: `Arc<RecordingEmailSender>` (lihat `tests/common/mod.rs`).
+    pub email: Arc<dyn EmailSender>,
 }
 
 impl AppState {
@@ -24,7 +26,7 @@ impl AppState {
         pool: PgPool,
         config: Config,
         storage: Arc<dyn Storage>,
-        resend: ResendClient,
+        email: Arc<dyn EmailSender>,
     ) -> Self {
         let tokens = TokenService::new(&config.jwt_secret);
         Self {
@@ -32,7 +34,7 @@ impl AppState {
             config: Arc::new(config),
             tokens: Arc::new(tokens),
             storage,
-            resend: Arc::new(resend),
+            email,
         }
     }
 }

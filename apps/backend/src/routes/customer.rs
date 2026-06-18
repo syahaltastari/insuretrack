@@ -1044,7 +1044,7 @@ async fn create_claim(
     send_email(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         Email {
             email_type: EmailType::ClaimReceived,
             recipient: &customer_email,
@@ -1428,7 +1428,7 @@ async fn customer_inquiry_message(
         let _ = crate::services::email::send(
             &state.pool,
             &*state.storage,
-            &state.resend,
+            &*state.email,
             crate::services::email::Email {
                 email_type: crate::services::email::EmailType::InquiryCustomerReply,
                 recipient: &admin_email,
@@ -1708,7 +1708,7 @@ async fn create_inquiry(
         let _ = crate::services::email::send(
             &state.pool,
             &*state.storage,
-            &state.resend,
+            &*state.email,
             crate::services::email::Email {
                 email_type: crate::services::email::EmailType::InquiryNew,
                 recipient: &admin_email,
@@ -2023,7 +2023,7 @@ async fn submit_insurance_application(
     let _ = send_email(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         Email {
             email_type: EmailType::RegistrationSuccess,
             recipient: &customer_email,
@@ -2051,7 +2051,7 @@ async fn submit_insurance_application(
     let _ = send_email(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         Email {
             email_type: EmailType::InvoiceNotification,
             recipient: &customer_email,

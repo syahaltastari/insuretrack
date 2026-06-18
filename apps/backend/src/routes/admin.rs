@@ -51,6 +51,34 @@ fn csv_escape(s: &str) -> String {
     }
 }
 
+#[cfg(test)]
+mod csv_tests {
+    use super::*;
+
+    #[test]
+    fn passes_through_plain_strings() {
+        assert_eq!(csv_escape("hello"), "hello");
+        assert_eq!(csv_escape("REG-202606-000001"), "REG-202606-000001");
+        assert_eq!(csv_escape(""), "");
+    }
+
+    #[test]
+    fn wraps_values_with_comma() {
+        assert_eq!(csv_escape("Doe, John"), r#""Doe, John""#);
+    }
+
+    #[test]
+    fn doubles_inner_quotes() {
+        assert_eq!(csv_escape(r#"she said "hi""#), r#""she said ""hi""""#);
+    }
+
+    #[test]
+    fn wraps_values_with_newlines() {
+        assert_eq!(csv_escape("line1\nline2"), "\"line1\nline2\"");
+        assert_eq!(csv_escape("line1\r\nline2"), "\"line1\r\nline2\"");
+    }
+}
+
 /// Build a CSV download response. `headers` is the column labels; `rows`
 /// is the cell text per row (Decimal / NaiveDate / Option<…> should be
 /// pre-formatted to String before calling).
@@ -1631,7 +1659,7 @@ async fn patch_claim(
     crate::services::email::send(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::ClaimStatusUpdate,
             recipient: &customer_email,
@@ -2209,7 +2237,7 @@ async fn admin_inquiry_message(
     let _ = crate::services::email::send(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::InquiryResponse,
             recipient: &customer_email,
@@ -2359,7 +2387,7 @@ async fn admin_inquiry_close(
     let _ = crate::services::email::send(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         crate::services::email::Email {
             email_type: crate::services::email::EmailType::InquiryResponse,
             recipient: &customer_email,

@@ -6,12 +6,20 @@
 //! Auth: `Authorization: Bearer <api_key>`
 //! Payload: { from, to: [..], subject, html|text, attachments: [{filename, content (base64)}] }
 //! Response: { "id": "<message_id>" }
+//!
+//! Implements `EmailSender` trait so production code (dan integration test
+//! dengan `RecordingEmailSender`) share the same `services::email::send()`
+//! orchestrator.
 
+use async_trait::async_trait;
 use base64::Engine;
 use reqwest::Client;
 use serde::Serialize;
 
-use crate::error::AppError;
+use crate::{
+    error::AppError,
+    services::email::{EmailAttachment, EmailSender},
+};
 
 const RESEND_API_URL: &str = "https://api.resend.com/emails";
 
@@ -21,12 +29,6 @@ pub struct ResendClient {
     api_key: String,
     from_email: String,
     from_name: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResendAttachment {
-    pub filename: String,
-    pub content: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
@@ -68,18 +70,21 @@ impl ResendClient {
             from_name,
         })
     }
+}
 
+#[async_trait]
+impl EmailSender for ResendClient {
     /// Send transactional email. Returns Resend message ID on success.
     /// `text` adalah fallback plain-text body; `html` adalah HTML version
     /// (preferred). Keduanya dikirim supaya email client bisa pilih
     /// (HTML-capable client pakai `html`, sisanya pakai `text`).
-    pub async fn send(
+    async fn send(
         &self,
         to: &str,
         subject: &str,
         text: &str,
         html: &str,
-        attachments: &[ResendAttachment],
+        attachments: &[EmailAttachment],
     ) -> Result<String, AppError> {
         let from = match &self.from_name {
             Some(name) => format!("{name} <{0}>", self.from_email),

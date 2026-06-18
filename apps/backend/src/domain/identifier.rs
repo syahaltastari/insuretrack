@@ -107,3 +107,42 @@ pub async fn next_id_conn(
 // Unused helper kept to avoid the uuid warning while we only need Uuid in M3+.
 #[allow(dead_code)]
 fn _typecheck(_: Uuid) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefix_matches_spec() {
+        // Spec §9: REG / INV / POL / CLM / INQ — semua 3 karakter uppercase.
+        assert_eq!(EntityType::Registration.prefix(), "REG");
+        assert_eq!(EntityType::Invoice.prefix(), "INV");
+        assert_eq!(EntityType::Policy.prefix(), "POL");
+        assert_eq!(EntityType::Claim.prefix(), "CLM");
+        assert_eq!(EntityType::Inquiry.prefix(), "INQ");
+    }
+
+    #[test]
+    fn identifier_format_is_well_formed() {
+        // Kalau format regex "{prefix}-YYYYMM-NNNNNN" pernah bergeser,
+        // identifier generator akan menghasilkan string yang invalid untuk
+        // kolom `*_no` (UNIQUE constraint) atau response API. Test format
+        // ini catch refactor tanpa perlu DB.
+        for entity in [
+            EntityType::Registration,
+            EntityType::Invoice,
+            EntityType::Policy,
+            EntityType::Claim,
+            EntityType::Inquiry,
+        ] {
+            let prefix = entity.prefix();
+            let sample = format!("{prefix}-202606-000001");
+            let parts: Vec<&str> = sample.split('-').collect();
+            assert_eq!(parts.len(), 3, "expected 3 segments in {sample}");
+            assert_eq!(parts[0], prefix);
+            assert_eq!(parts[1].len(), 6, "YYYYMM should be 6 chars");
+            assert_eq!(parts[2].len(), 6, "NNNNNN should be 6 chars");
+            assert!(parts[2].chars().all(|c| c.is_ascii_digit()));
+        }
+    }
+}

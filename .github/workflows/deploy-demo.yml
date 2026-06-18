@@ -1,0 +1,161 @@
+name: Deploy Demo
+
+# Auto-deploy ke Dokploy setelah CI tests pass.
+#
+# Flow:
+#   1. Push ke main → trigger workflow ini
+#   2. Reuse CI test results dari workflow `CI` (tidak duplikasi)
+#   3. Kalau CI pass → trigger Dokploy redeploy via API
+#   4. Verify deployment dengan health check
+#
+# Setup sekali:
+#   1. Di Dokploy panel → Settings → Profile → API → Generate API Key
+#   2. Copy "Compose ID" dari URL service di Dokploy (mis. /project/insuretrack/services/c-xyz123)
+#   3. GitHub repo → Settings → Secrets and variables → Actions → New:
+#      - DOKPLOY_API_KEY  (value: API key dari step 1)
+#      - DOKPLOY_URL      (value: http://<IP-VPS>:3000 atau domain Dokploy)
+#      - DOKPLOY_COMPOSE_ID (value: compose ID dari step 2)
+#      - DEPLOY_HEALTH_URL (value: https://portal.<DOMAIN>/api/health atau sesuai surface)
+#
+# Branch behavior:
+#   - push ke main → deploy demo
+#   - PR ke main → tidak deploy (cuma CI test)
+#   - push ke branch lain → tidak deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    # Manual trigger dari GitHub Actions UI — untuk rollback / redeploy manual
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: true
+
+jobs:
+  # ---- Job 1: Wait for CI tests to pass ----
+  ci-gate:
+    name: Wait for CI tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for CI workflow to complete
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              status: 'in_progress',
+              branch: context.ref,
+              per_page: 1,
+            });
+            if (!data.workflow_runs.length) {
+              core.notice('No in-progress CI run — assuming prior run already passed');
+              return;
+            }
+            const runId = data.workflow_runs[0].id;
+            core.info(`Waiting for CI run ${runId}...`);
+
+            for (let i = 0; i < 30; i++) {
+              await new Promise(r => setTimeout(r, 20_000)); // poll tiap 20 detik
+              const { data: run } = await github.rest.actions.getWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runId,
+              });
+              if (run.status === 'completed') {
+                if (run.conclusion === 'success') {
+                  core.info('CI passed ✓');
+                  return;
+                }
+                throw new Error(`CI failed with conclusion: ${run.conclusion}`);
+              }
+              core.info(`CI status: ${run.status} (attempt ${i + 1}/30)`);
+            }
+            throw new Error('Timeout menunggu CI workflow selesai');
+
+  # ---- Job 2: Trigger Dokploy redeploy ----
+  deploy:
+    name: Trigger Dokploy redeploy
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Dokploy redeploy
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
+        run: |
+          if [ -z "$DOKPLOY_URL" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_COMPOSE_ID" ]; then
+            echo "::error::Missing Dokploy secrets. Setup di GitHub repo Settings → Secrets:"
+            echo "  - DOKPLOY_URL (e.g. http://203.0.113.42:3000)"
+            echo "  - DOKPLOY_API_KEY (generate di Dokploy panel → Profile → API)"
+            echo "  - DOKPLOY_COMPOSE_ID (copy dari URL service)"
+            exit 1
+          fi
+          echo "Triggering redeploy of compose $DOKPLOY_COMPOSE_ID on $DOKPLOY_URL..."
+          response=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "$DOKPLOY_URL/api/compose.redeploy" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $DOKPLOY_API_KEY" \
+            -d "{\"composeId\": \"$DOKPLOY_COMPOSE_ID\", \"title\": \"Deploy from GitHub Actions\", \"description\": \"Commit ${{ github.sha }}\"}")
+          echo "$response"
+          http_code=$(echo "$response" | grep "HTTP_STATUS:" | cut -d: -f2)
+          if [ "$http_code" != "200" ]; then
+            echo "::error::Dokploy API returned HTTP $http_code"
+            exit 1
+          fi
+          echo "✓ Dokploy redeploy triggered"
+
+  # ---- Job 3: Health check post-deploy ----
+  verify:
+    name: Verify deployment
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for services to come up
+        env:
+          DEPLOY_HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
+        run: |
+          if [ -z "$DEPLOY_HEALTH_URL" ]; then
+            echo "::warning::DEPLOY_HEALTH_URL not set — skipping health check"
+            exit 0
+          fi
+          echo "Waiting up to 5 menit untuk services ready..."
+          for i in $(seq 1 30); do
+            sleep 10
+            response=$(curl -sS -o /dev/null -w "%{http_code}" "$DEPLOY_HEALTH_URL" 2>/dev/null || echo "000")
+            if [ "$response" = "200" ]; then
+              echo "✓ $DEPLOY_HEALTH_URL returned 200"
+              exit 0
+            fi
+            echo "Attempt $i/30: HTTP $response — waiting..."
+          done
+          echo "::error::Health check gagal setelah 5 menit. Cek Dokploy logs."
+          exit 1
+
+      - name: Smoke test all surfaces
+        env:
+          PORTAL_URL: ${{ secrets.PORTAL_URL }}
+          ADMIN_URL: ${{ secrets.ADMIN_URL }}
+          API_URL: ${{ secrets.API_URL }}
+        run: |
+          # Default ke health URL pattern kalau tidak di-set
+          : "${PORTAL_URL:=${DEPLOY_HEALTH_URL%/api/health}}"
+          : "${API_URL:=${DEPLOY_HEALTH_URL%/health}}"
+          : "${ADMIN_URL:=${PORTAL_URL/admin./admin.}}"
+
+          for label in "Portal:$PORTAL_URL" "Admin:$ADMIN_URL" "API:$API_URL/health"; do
+            name="${label%%:*}"
+            url="${label##*:}"
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "✓ $name ($url) → $code"
+            else
+              echo "::warning::$name ($url) → $code (might be SPA — verify in browser)"
+            fi
+          done

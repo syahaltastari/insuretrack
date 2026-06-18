@@ -86,3 +86,73 @@ impl TokenService {
             .map_err(|_| AppError::Unauthorized)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_SECRET: &str = "test-secret-key-for-unit-tests-only";
+
+    fn svc() -> TokenService {
+        TokenService::new(TEST_SECRET)
+    }
+
+    #[test]
+    fn round_trip_preserves_claims() {
+        let s = svc();
+        let token = s
+            .issue("user-1", Role::Customer, Some("activation".into()), false, 3600)
+            .unwrap();
+        let claims = s.verify(&token).unwrap();
+        assert_eq!(claims.sub, "user-1");
+        assert_eq!(claims.role, Role::Customer);
+        assert_eq!(claims.purpose.as_deref(), Some("activation"));
+        assert_eq!(claims.is_super_admin, false);
+        assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn expired_token_is_rejected() {
+        let s = svc();
+        // jsonwebtoken default leeway = 60s → pakai TTL well past itu
+        // supaya test deterministic (tidak flaky di slow CI).
+        let token = s
+            .issue("user-1", Role::Admin, None, false, -3600)
+            .unwrap();
+        let err = s.verify(&token).unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn wrong_secret_is_rejected() {
+        let issuer = TokenService::new(TEST_SECRET);
+        let verifier = TokenService::new("different-secret");
+        let token = issuer
+            .issue("user-1", Role::Customer, None, false, 3600)
+            .unwrap();
+        let err = verifier.verify(&token).unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn is_super_admin_flag_round_trips() {
+        let s = svc();
+        let token = s
+            .issue("admin-1", Role::Admin, None, true, 3600)
+            .unwrap();
+        let claims = s.verify(&token).unwrap();
+        assert!(claims.is_super_admin);
+    }
+
+    #[test]
+    fn is_super_admin_false_is_skipped_from_payload() {
+        let s = svc();
+        // Saat false, field di-skip dari serialisasi — ini memastikan
+        // token customer/admin-biasa tetap ramping dan payload lama
+        // (sebelum field ini ada) tetap kompatibel.
+        let token = s
+            .issue("admin-1", Role::Admin, None, false, 3600)
+            .unwrap();
+        assert!(!token.contains("is_super_admin"));
+    }
+}

@@ -171,3 +171,116 @@ fn html_escape(s: &str) -> String {
 fn html_escape_attr(s: &str) -> String {
     html_escape(s)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn minimal() -> EmailTemplate<'static> {
+        EmailTemplate {
+            subject: "Halo Dunia",
+            body_text: "Ini body test.",
+            cta_text: None,
+            cta_url: None,
+        }
+    }
+
+    #[test]
+    fn render_produces_text_and_html() {
+        let r = render(&minimal());
+        assert!(!r.text.is_empty());
+        assert!(!r.html.is_empty());
+        assert!(r.html.starts_with("<!DOCTYPE html>"));
+    }
+
+    #[test]
+    fn html_escapes_special_chars_in_body() {
+        let tmpl = EmailTemplate {
+            subject: "sub & <test>",
+            body_text: "kode <script>alert(1)</script> & \"quoted\"",
+            cta_text: None,
+            cta_url: None,
+        };
+        let r = render(&tmpl);
+        // Subject ke-escape di HTML
+        assert!(r.html.contains("sub &amp; &lt;test&gt;"));
+        // Body ke-escape — raw <script> tidak boleh ada
+        assert!(!r.html.contains("<script>alert(1)</script>"));
+        assert!(r.html.contains("&lt;script&gt;"));
+        assert!(r.html.contains("&amp;"));
+        assert!(r.html.contains("&quot;"));
+    }
+
+    #[test]
+    fn cta_only_renders_when_both_text_and_url_present() {
+        // Both present → CTA muncul.
+        let with_both = EmailTemplate {
+            subject: "sub",
+            body_text: "body",
+            cta_text: Some("Aktifkan"),
+            cta_url: Some("https://example.com/activate"),
+        };
+        let r = render(&with_both);
+        assert!(r.html.contains(r#"href="https://example.com/activate""#));
+        assert!(r.text.contains("Aktifkan: https://example.com/activate"));
+
+        // CTA text tanpa URL → button tidak render.
+        let only_text = EmailTemplate {
+            subject: "sub",
+            body_text: "body",
+            cta_text: Some("Aktifkan"),
+            cta_url: None,
+        };
+        let r = render(&only_text);
+        assert!(!r.html.contains("Aktifkan"));
+        assert!(!r.text.contains("Aktifkan:"));
+
+        // CTA URL tanpa text → button tidak render.
+        let only_url = EmailTemplate {
+            subject: "sub",
+            body_text: "body",
+            cta_text: None,
+            cta_url: Some("https://example.com/x"),
+        };
+        let r = render(&only_url);
+        assert!(!r.html.contains(r#"href="https://example.com/x""#));
+        assert!(!r.text.contains("https://example.com/x"));
+
+        // Empty CTA strings → button tidak render.
+        let empty_cta = EmailTemplate {
+            subject: "sub",
+            body_text: "body",
+            cta_text: Some(""),
+            cta_url: Some("https://example.com/x"),
+        };
+        let r = render(&empty_cta);
+        assert!(!r.html.contains(r#"href="https://example.com/x""#));
+    }
+
+    #[test]
+    fn text_and_html_include_subject_and_body() {
+        let r = render(&minimal());
+        assert!(r.text.contains("Halo Dunia"));
+        assert!(r.text.contains("Ini body test."));
+        assert!(r.html.contains("Halo Dunia"));
+        assert!(r.html.contains("Ini body test."));
+    }
+
+    #[test]
+    fn empty_body_does_not_crash() {
+        let tmpl = EmailTemplate {
+            subject: "kosong",
+            body_text: "",
+            cta_text: None,
+            cta_url: None,
+        };
+        let r = render(&tmpl);
+        // Subject tetap muncul walaupun body kosong.
+        assert!(r.html.contains("kosong"));
+        assert!(r.text.contains("kosong"));
+        // Output non-empty (placeholder <p> OK — caller harusnya tidak
+        // mengirim body kosong, tapi render() tidak panic).
+        assert!(!r.html.is_empty());
+        assert!(!r.text.is_empty());
+    }
+}

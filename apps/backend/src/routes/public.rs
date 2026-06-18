@@ -439,7 +439,7 @@ async fn payment_webhook(
     send_email(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         Email {
             email_type: EmailType::PaymentSuccess,
             recipient: &email,
@@ -480,7 +480,7 @@ async fn payment_webhook(
         send_email(
             &state.pool,
             &*state.storage,
-            &state.resend,
+            &*state.email,
             Email {
                 email_type: EmailType::EPolicyDelivery,
                 recipient: &email,
@@ -518,7 +518,7 @@ async fn payment_webhook(
         send_email(
             &state.pool,
             &*state.storage,
-            &state.resend,
+            &*state.email,
             Email {
                 email_type: EmailType::EPolicyDelivery,
                 recipient: &email,
@@ -1113,7 +1113,7 @@ async fn register_customer(
     let _ = send_email(
         &state.pool,
         &*state.storage,
-        &state.resend,
+        &*state.email,
         Email {
             email_type: EmailType::PortalActivation,
             recipient: &email,
@@ -1133,4 +1133,145 @@ async fn register_customer(
         email,
         activation_url: Some(activation_url),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit test untuk helper pure di file ini. Tidak butuh DB / HTTP —
+    //! kalau bisa di-test sebagai pure function, taruh di sini (bukan di
+    //! tests/ integration yang butuh `spawn_app()`).
+
+    use rust_decimal::Decimal;
+
+    use super::*;
+    use crate::dto::ProductPlan;
+
+    // ---- is_16_digits (NIK validator) ----
+
+    #[test]
+    fn is_16_digits_accepts_exact_16_digits() {
+        assert!(is_16_digits("3201010101010001"));
+        assert!(is_16_digits("0000000000000000"));
+        assert!(is_16_digits("9999999999999999"));
+    }
+
+    #[test]
+    fn is_16_digits_rejects_wrong_length() {
+        assert!(!is_16_digits(""));
+        assert!(!is_16_digits("1234567890")); // 10
+        assert!(!is_16_digits("32010101010100010")); // 17
+    }
+
+    #[test]
+    fn is_16_digits_rejects_non_digits() {
+        assert!(!is_16_digits("320101010101000a"));
+        assert!(!is_16_digits("3201-101-0101-0001"));
+        assert!(!is_16_digits(" 3201010101010001"));
+    }
+
+    // ---- is_email_valid ----
+
+    #[test]
+    fn is_email_valid_accepts_basic_addresses() {
+        assert!(is_email_valid("a@b.c"));
+        assert!(is_email_valid("user@example.com"));
+        assert!(is_email_valid("first.last@sub.example.co.id"));
+    }
+
+    #[test]
+    fn is_email_valid_rejects_malformed() {
+        assert!(!is_email_valid(""));
+        assert!(!is_email_valid("no-at-sign"));
+        assert!(!is_email_valid("@no-local.com"));
+        assert!(!is_email_valid("no-domain@"));
+        assert!(!is_email_valid("two@@signs.com"));
+        assert!(!is_email_valid("no-dot@domain"));
+        assert!(!is_email_valid("trailing-dot@domain."));
+        assert!(!is_email_valid("leading-dot@.domain"));
+    }
+
+    // ---- calculate_premium ----
+
+    fn plan_with(monthly: &str) -> ProductPlan {
+        ProductPlan {
+            code: "TEST",
+            product_code: "LIFE",
+            tier: "BASIC",
+            name: "Test",
+            sum_assured: Decimal::from(100_000_000),
+            monthly_premium: Decimal::from_str_exact(monthly).unwrap(),
+            description: "test",
+        }
+    }
+
+    #[test]
+    fn calculate_premium_life_basic_10_years() {
+        // Contoh dari komentar spec: 75.000/bulan × 12 × 10 = 9.000.000
+        let plan = plan_with("75000");
+        let premium = calculate_premium(&plan, 10);
+        assert_eq!(premium, Decimal::from(9_000_000));
+    }
+
+    #[test]
+    fn calculate_premium_scales_linearly_with_term() {
+        let plan = plan_with("100000");
+        let p1 = calculate_premium(&plan, 1);
+        let p5 = calculate_premium(&plan, 5);
+        let p10 = calculate_premium(&plan, 10);
+        // 5× lebih besar dari 1 tahun (kecuali rounding), 10× = 2 × 5 tahun.
+        assert_eq!(p5, p1 * Decimal::from(5));
+        assert_eq!(p10, p5 * Decimal::from(2));
+    }
+
+    #[test]
+    fn calculate_premium_rounds_to_two_decimals() {
+        // Monthly 33333.335 × 12 = 400000.02 → fractional digit valid (≤ 2dp).
+        let plan = plan_with("33333.335");
+        let premium = calculate_premium(&plan, 1);
+        assert_eq!(premium, Decimal::new(40000002, 2));
+        // scale(): max 2 fractional digits
+        assert!(premium.scale() <= 2);
+    }
+
+    #[test]
+    fn calculate_premium_one_year_term() {
+        let plan = plan_with("100000");
+        // 100.000 × 12 × 1 = 1.200.000
+        assert_eq!(calculate_premium(&plan, 1), Decimal::from(1_200_000));
+    }
+
+    // ---- to_public_upload_url ----
+
+    #[test]
+    fn upload_url_passes_through_absolute_urls() {
+        assert_eq!(
+            to_public_upload_url("https://app.example.com", "/uploads", "https://cdn.example.com/logo.png"),
+            "https://cdn.example.com/logo.png"
+        );
+    }
+
+    #[test]
+    fn upload_url_strips_upload_dir_prefix() {
+        assert_eq!(
+            to_public_upload_url("https://app.example.com", "/uploads", "/uploads/clients/x/logo.svg"),
+            "https://app.example.com/api/public/uploads/clients/x/logo.svg"
+        );
+    }
+
+    #[test]
+    fn upload_url_handles_relative_path() {
+        // Path tanpa prefix upload_dir → dipakai apa adanya (relatif).
+        assert_eq!(
+            to_public_upload_url("https://app.example.com", "uploads", "marketing/banner.jpg"),
+            "https://app.example.com/api/public/uploads/marketing/banner.jpg"
+        );
+    }
+
+    #[test]
+    fn upload_url_trims_trailing_slash_from_base() {
+        assert_eq!(
+            to_public_upload_url("https://app.example.com/", "/uploads", "/uploads/x.png"),
+            "https://app.example.com/api/public/uploads/x.png"
+        );
+    }
 }

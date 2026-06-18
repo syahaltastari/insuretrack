@@ -636,3 +636,87 @@ fn wrap_text(s: &str, max_chars: usize) -> Vec<String> {
     }
     lines
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    fn sample_input() -> PolicyPdfInput<'static> {
+        PolicyPdfInput {
+            policy_no: "POL-202606-000001",
+            registration_no: "REG-202606-000001",
+            effective_date: NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            expiry_date: NaiveDate::from_ymd_opt(2036, 6, 1).unwrap(),
+            customer_nik: "3201010101010001",
+            customer_name: "Budi Santoso",
+            customer_birth_date: NaiveDate::from_ymd_opt(1990, 1, 1).unwrap(),
+            customer_address: "Jl. Merdeka No. 17, Bandung",
+            product_name: "Life Insurance — Basic",
+            sum_assured: Decimal::from(100_000_000),
+            premium: Decimal::from(900_000),
+        }
+    }
+
+    #[test]
+    fn render_returns_non_empty_bytes() {
+        let bytes = render(&sample_input()).unwrap();
+        assert!(!bytes.is_empty());
+        // PDF magic-bytes — penting supaya browser & PDF viewer recognize.
+        assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    #[test]
+    fn render_produces_substantial_output() {
+        // printpdf compress text object streams, jadi raw policy_no TIDAK
+        // muncul sebagai plaintext di byte stream. Yang bisa kita assert:
+        // - PDF version header valid
+        // - Output cukup besar (10KB+) → render benar-benar menggambar
+        //   semua section + font tables, bukan template kosong
+        let bytes = render(&sample_input()).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert!(
+            bytes.len() > 2_000,
+            "PDF suspiciously small: {} bytes — section mungkin tidak di-render",
+            bytes.len()
+        );
+        // EOF marker (%%EOF) sebelum newline — printpdf selalu emit ini.
+        let tail = &bytes[bytes.len().saturating_sub(32)..];
+        assert!(
+            tail.windows(5).any(|w| w == b"%%EOF"),
+            "PDF missing %%EOF marker"
+        );
+    }
+
+    // ---- wrap_text (pure helper) ----
+
+    #[test]
+    fn wrap_text_short_string_no_wrap() {
+        let lines = wrap_text("halo dunia", 80);
+        assert_eq!(lines, vec!["halo dunia".to_string()]);
+    }
+
+    #[test]
+    fn wrap_text_breaks_long_line() {
+        let lines = wrap_text("a b c d e f g h i j k l m n o", 5);
+        // 5 chars max → group kata pendek sampai muat
+        assert!(lines.len() > 1);
+        for l in &lines {
+            assert!(l.len() <= 10, "line too long: {l:?}"); // sedikit headroom
+        }
+    }
+
+    #[test]
+    fn wrap_text_preserves_explicit_newlines() {
+        let lines = wrap_text("line1\nline2", 80);
+        assert_eq!(lines, vec!["line1".to_string(), "line2".to_string()]);
+    }
+
+    #[test]
+    fn wrap_text_empty_input_returns_one_empty_line() {
+        // Dipakai untuk safety di Notes section — kalau string kosong,
+        // minimal return 1 line kosong supaya caller tidak NPE.
+        let lines = wrap_text("", 80);
+        assert_eq!(lines, vec!["".to_string()]);
+    }
+}

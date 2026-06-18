@@ -1,13 +1,15 @@
-//! Email service — record ke `email_logs` lalu kirim via Resend HTTP API.
+//! Email service — record ke `email_logs` lalu kirim via `EmailSender`
+//! (production: ResendClient → Resend HTTP API; tests: RecordingEmailSender).
 //!
 //! Spec FS-05 lists 8 email types + 3 tambahan untuk inquiry ticketing
 //! (InquiryNew, InquiryCustomerReply, InquiryAutoClosed). Setiap send:
 //! 1. Insert `email_logs` row dengan status `QUEUED` (return id buat tracking).
 //! 2. Kalau `attachment_path` di-set, fetch file dari storage.
 //! 3. Render template (header + body + footer) → text + html.
-//! 4. POST ke Resend. Update email_logs ke `SENT` (simpan resend_id) atau `FAILED` (simpan error_message).
+//! 4. POST ke sender. Update email_logs ke `SENT` (simpan message id) atau `FAILED` (simpan error_message).
 //! 5. Audit `email_queued`, `email_sent`, atau `email_failed` ke `audit_logs` (FS-15).
 
+use async_trait::async_trait;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -15,12 +17,33 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     error::AppError,
-    services::{
-        audit::AuditEntry,
-        resend::{ResendAttachment, ResendClient},
-        storage::Storage,
-    },
+    services::{audit::AuditEntry, storage::Storage},
 };
+
+/// Attachment file yang akan dikirim sebagai email attachment.
+/// `content` = raw bytes; `EmailSender` impl bertanggung jawab encoding
+/// (Resend butuh base64).
+#[derive(Debug, Clone)]
+pub struct EmailAttachment {
+    pub filename: String,
+    pub content: Vec<u8>,
+}
+
+/// Abstraction untuk HTTP call ke provider email. Production pakai
+/// `ResendClient`; test pakai `RecordingEmailSender` (lihat
+/// `tests/common/mod.rs`). Return value = provider message id
+/// (Resend: `"<uuid>@resend.dev"`).
+#[async_trait]
+pub trait EmailSender: Send + Sync {
+    async fn send(
+        &self,
+        to: &str,
+        subject: &str,
+        text: &str,
+        html: &str,
+        attachments: &[EmailAttachment],
+    ) -> Result<String, AppError>;
+}
 
 /// Resolve admin notification email dengan fallback chain:
 /// 1. `Config.admin_notification_email` (env `ADMIN_NOTIFICATION_EMAIL`)
@@ -105,7 +128,7 @@ pub struct Email<'a> {
 pub async fn send(
     pool: &PgPool,
     storage: &dyn Storage,
-    resend: &ResendClient,
+    sender: &dyn EmailSender,
     email: Email<'_>,
 ) -> Result<Uuid, AppError> {
     // 1. Insert email_logs dengan status QUEUED.
@@ -143,12 +166,12 @@ pub async fn send(
     .await;
 
     // 3. Resolve attachment (kalau ada).
-    let mut attachments: Vec<ResendAttachment> = Vec::new();
+    let mut attachments: Vec<EmailAttachment> = Vec::new();
     if let Some(key) = email.attachment_path.as_deref() {
         match storage.read_bytes(key).await {
             Ok(bytes) => {
                 let filename = key.rsplit('/').next().unwrap_or("attachment.pdf").to_string();
-                attachments.push(ResendAttachment { filename, content: bytes });
+                attachments.push(EmailAttachment { filename, content: bytes });
             }
             Err(e) => {
                 // Attachment gagal di-fetch -> log FAILED, return error.
@@ -195,7 +218,7 @@ pub async fn send(
             cta_url: email.cta_url,
         },
     );
-    let result = resend
+    let result = sender
         .send(
             email.recipient,
             email.subject,
@@ -206,7 +229,7 @@ pub async fn send(
         .await;
 
     match &result {
-        Ok(resend_id) => {
+        Ok(message_id) => {
             // 5a. Update status SENT, audit log success.
             sqlx::query(
                 r#"UPDATE email_logs
@@ -227,7 +250,7 @@ pub async fn send(
                     metadata: Some(json!({
                         "email_type": email.email_type.as_str(),
                         "recipient": email.recipient,
-                        "resend_id": resend_id,
+                        "resend_id": message_id,
                         "related_entity_type": email.related_entity_type,
                         "related_entity_id": email.related_entity_id,
                     })),
@@ -240,8 +263,8 @@ pub async fn send(
                 email_log_id = %email_log_id,
                 email_type = email.email_type.as_str(),
                 recipient = email.recipient,
-                resend_id = %resend_id,
-                "email sent via Resend",
+                resend_id = %message_id,
+                "email sent",
             );
         }
         Err(e) => {

@@ -92,4 +92,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 base64 = "0.22"
 
 [dev-dependencies]
-# Optional di MVP; tambahkan testcontainers di M6 jika diaktifkan
+# Integration test infra (shared test DB + EmailSender mock). Real Postgres
+# di `insuretrack_test` — no testcontainers, native-friendly. Test isolation
+# via truncate-all-tables di `tests/common/mod.rs::spawn_app`.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde_json = "1"
+tempfile = "3"
+serial_test = "3"
+tokio = { version = "1.40", features = ["full", "test-util"] }
