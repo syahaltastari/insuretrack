@@ -35,14 +35,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          # Pin ke Rust 1.85 — minimum yang stabil edition2024 (diperlukan
-          # indexmap 2.14+ transitive dep dari aws-sdk). Tanpa pin,
-          # default `stable` bisa auto-bump ke versi yang lebih baru dan
-          # cache miss — pin eksplisit = reproducible.
+          # Pin ke Rust 1.92 — match dengan Dockerfile lokal
+          # (`rust:1.92-slim-bookworm`). Dependencies baru (aws-sdk 1.135+,
+          # icu 2.2+, time 0.3.47+) butuh rustc ≥ 1.91.1.
           #
-          # Note: `rust-version = "1.75"` di Cargo.toml tetap — itu cuma
-          # metadata minimum, bukan blocker untuk pakai Rust lebih baru.
-          toolchain: "1.85"
+          # Toolchain bawah (1.85, 1.88) gagal di clippy dengan error
+          # "rustc 1.85.1 is not supported by aws-config@1.8.18 ...".
+          # 1.92 = match Dockerfile = reproducible.
+          #
+          # Note: `rust-version = "1.75"` di Cargo.toml adalah metadata
+          # minimum, bukan blocker — pakai Rust lebih baru selalu OK.
+          toolchain: "1.92"
           # rustfmt + clippy tidak otomatis di-install di GH Actions image
           components: rustfmt, clippy
       - name: Cache cargo
