@@ -35,10 +35,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.75"
-          # rustfmt + clippy tidak otomatis di-install — perlu explicit
-          # (di lokal biasanya sudah ada via rustup default, tapi di GH
-          # Actions image minimal, component harus di-install)
+          # Pin ke Rust 1.85 — minimum yang stabil edition2024 (diperlukan
+          # indexmap 2.14+ transitive dep dari aws-sdk). Tanpa pin,
+          # default `stable` bisa auto-bump ke versi yang lebih baru dan
+          # cache miss — pin eksplisit = reproducible.
+          #
+          # Note: `rust-version = "1.75"` di Cargo.toml tetap — itu cuma
+          # metadata minimum, bukan blocker untuk pakai Rust lebih baru.
+          toolchain: "1.85"
+          # rustfmt + clippy tidak otomatis di-install di GH Actions image
           components: rustfmt, clippy
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
