@@ -23,3 +23,9 @@ export type {
   RegistrationRequest,
   RegistrationResponse,
 } from "./dto/registrations";
+export type {
+  AdminUser,
+  CreateAdminUserRequest,
+  UpdateAdminUserRequest,
+  ResetPasswordResponse,
+} from "./dto/admin";

@@ -116,14 +116,23 @@ async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> AppResult<Json<LoginResponse>> {
-    let row: Option<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, username, password_hash FROM admin_users WHERE username = $1",
+    let row: Option<(Uuid, String, String, bool, bool)> = sqlx::query_as(
+        "SELECT id, username, password_hash, is_active, is_super_admin \
+           FROM admin_users WHERE username = $1",
     )
     .bind(&req.username)
     .fetch_optional(&state.pool)
     .await?;
 
-    let (admin_id, admin_username, password_hash) = row.ok_or(AppError::Unauthorized)?;
+    let (admin_id, admin_username, password_hash, is_active, is_super_admin) =
+        row.ok_or(AppError::Unauthorized)?;
+
+    // Block login untuk akun nonaktif. Pesan generic "akun nonaktif"
+    // bukan "password salah" — admin perlu tahu akunnya disabled agar
+    // hubungi super admin untuk reaktivasi.
+    if !is_active {
+        return Err(AppError::Validation("akun nonaktif".into()));
+    }
 
     if !verify_password(&req.password, &password_hash)? {
         return Err(AppError::Unauthorized);
@@ -135,9 +144,13 @@ async fn login(
         .execute(&state.pool)
         .await;
 
-    let token = state
-        .tokens
-        .issue(&admin_id.to_string(), Role::Admin, None, 60 * 60 * 8)?;
+    let token = state.tokens.issue(
+        &admin_id.to_string(),
+        Role::Admin,
+        None,
+        is_super_admin,
+        60 * 60 * 8,
+    )?;
 
     audit_write(
         &state.pool,
@@ -156,6 +169,7 @@ async fn login(
         token,
         role: "admin".to_string(),
         id: Some(admin_id),
+        is_super_admin: Some(is_super_admin),
     }))
 }
 
@@ -216,6 +230,7 @@ struct AdminMe {
     full_name: Option<String>,
     email: Option<String>,
     role: String,
+    is_super_admin: bool,
     is_active: bool,
     last_login_at: Option<chrono::DateTime<chrono::Utc>>,
     password_changed_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -229,8 +244,8 @@ async fn get_me(
 ) -> AppResult<Json<AdminMe>> {
     let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
     let row: Option<AdminMe> = sqlx::query_as(
-        r#"SELECT id, username, full_name, email, role, is_active, last_login_at,
-                  password_changed_at, created_at, updated_at
+        r#"SELECT id, username, full_name, email, role, is_super_admin, is_active,
+                  last_login_at, password_changed_at, created_at, updated_at
              FROM admin_users WHERE id = $1"#,
     )
     .bind(id)
@@ -270,8 +285,8 @@ async fn update_me(
                   email     = COALESCE($3, email),
                   updated_at = now()
             WHERE id = $1
-        RETURNING id, username, full_name, email, role, is_active, last_login_at,
-                  password_changed_at, created_at, updated_at"#,
+        RETURNING id, username, full_name, email, role, is_super_admin, is_active,
+                  last_login_at, password_changed_at, created_at, updated_at"#,
     )
     .bind(id)
     .bind(full.as_deref())

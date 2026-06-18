@@ -27,6 +27,11 @@ pub struct LoginResponse {
     /// it can still compile.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<Uuid>,
+    /// Admin-only flag: true kalau akun punya hak mengelola user lain.
+    /// `skip_serializing_if` agar customer login response tetap ramping
+    /// (field ini tidak relevan untuk customer).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_super_admin: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

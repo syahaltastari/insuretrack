@@ -46,6 +46,9 @@ import {
   LogOut,
   // User
   User,
+  Users,
+  UserPlus,
+  UserCog,
   KeyRound,
   // Sidebar toggle
   PanelLeftClose,
@@ -105,6 +108,9 @@ export const Icons: Record<string, LucideIcon> = {
   Send,
   LogOut,
   User,
+  Users,
+  UserPlus,
+  UserCog,
   KeyRound,
   PanelLeftClose,
   PanelLeftOpen,

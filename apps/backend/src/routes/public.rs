@@ -1078,6 +1078,7 @@ async fn register_customer(
         &customer_id.to_string(),
         Role::Customer,
         Some("activation".to_string()),
+        false,
         60 * 60 * 24,
     )?;
     let activation_url = format!(

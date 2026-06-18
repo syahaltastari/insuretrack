@@ -1,9 +1,12 @@
 //! JWT issuance & verification (HS256).
 //!
 //! Claims:
-//!   sub  : subject id (UUID string for customer; username for admin)
+//!   sub  : subject id (UUID string for customer; UUID string for admin)
 //!   role : "admin" | "customer"
 //!   purpose : optional, e.g. "activation" or "password_reset" for one-time tokens
+//!   is_super_admin : admin-only flag, di-skip serialize kalau false supaya
+//!                    token customer tetap ramping. `#[serde(default)]` agar
+//!                    token lama (issued sebelum field ini ada) tetap valid.
 //!   exp / iat : standard expiry / issued-at
 
 use chrono::Utc;
@@ -25,8 +28,17 @@ pub struct Claims {
     pub role: Role,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
+    /// Hanya relevan untuk `role = Admin`. `false`/absent = admin biasa,
+    /// `true` = super admin (boleh kelola user lain). Stale sampai token
+    /// expire (8h) setelah promote/demote — acceptable untuk admin internal.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_super_admin: bool,
     pub exp: i64,
     pub iat: i64,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Clone)]
@@ -48,6 +60,7 @@ impl TokenService {
         subject: &str,
         role: Role,
         purpose: Option<String>,
+        is_super_admin: bool,
         ttl_seconds: i64,
     ) -> Result<String, AppError> {
         let now = Utc::now().timestamp();
@@ -55,6 +68,7 @@ impl TokenService {
             sub: subject.to_string(),
             role,
             purpose,
+            is_super_admin,
             exp: now + ttl_seconds,
             iat: now,
         };

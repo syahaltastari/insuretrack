@@ -117,11 +117,12 @@ async fn activate(
 
     let token = state
         .tokens
-        .issue(&customer.id.to_string(), Role::Customer, None, 60 * 60 * 8)?;
+        .issue(&customer.id.to_string(), Role::Customer, None, false, 60 * 60 * 8)?;
     Ok(Json(LoginResponse {
         token,
         role: "customer".to_string(),
         id: Some(customer.id),
+        is_super_admin: None,
     }))
 }
 
@@ -158,7 +159,7 @@ async fn login(
 
     let token = state
         .tokens
-        .issue(&customer.id.to_string(), Role::Customer, None, 60 * 60 * 8)?;
+        .issue(&customer.id.to_string(), Role::Customer, None, false, 60 * 60 * 8)?;
 
     audit_write(
         &state.pool,
@@ -177,6 +178,7 @@ async fn login(
         token,
         role: "customer".to_string(),
         id: Some(customer.id),
+        is_super_admin: None,
     }))
 }
 
@@ -202,6 +204,7 @@ async fn password_reset(
         &customer.id.to_string(),
         Role::Customer,
         Some("password_reset".to_string()),
+        false,
         60 * 30,
     )?;
 
@@ -261,11 +264,12 @@ async fn password_reset_consume(
     // Issue a fresh login token so the user is signed in immediately.
     let token = state
         .tokens
-        .issue(&customer.id.to_string(), Role::Customer, None, 60 * 60 * 8)?;
+        .issue(&customer.id.to_string(), Role::Customer, None, false, 60 * 60 * 8)?;
     Ok(Json(LoginResponse {
         token,
         role: "customer".to_string(),
         id: Some(customer.id),
+        is_super_admin: None,
     }))
 }
 

@@ -13,6 +13,7 @@ export type AdminProfile = {
   full_name: string | null;
   email: string | null;
   role: string;
+  is_super_admin: boolean;
   is_active: boolean;
   last_login_at: string | null;
   password_changed_at: string | null;

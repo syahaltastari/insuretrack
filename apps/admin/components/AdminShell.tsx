@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@insuretrack/ui";
 import { AdminUserMenu, fetchAdminProfile, type AdminProfile } from "@/components/AdminUserMenu";
 import { clearAdminToken, getAdminToken } from "@insuretrack/api-client";
 
-const navItems: Array<{ href: string; label: string; icon: IconName }> = [
+const navItems: Array<{ href: string; label: string; icon: IconName; superAdminOnly?: boolean }> = [
   { href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
   { href: "/admin/registrations", label: "Registrasi", icon: "ClipboardList" },
   { href: "/admin/invoices", label: "Invoice", icon: "Receipt" },
@@ -18,6 +18,7 @@ const navItems: Array<{ href: string; label: string; icon: IconName }> = [
   { href: "/admin/testimonials", label: "Testimoni", icon: "Quote" },
   { href: "/admin/email-logs", label: "Email Log", icon: "Mail" },
   { href: "/admin/audit-logs", label: "Audit Trail", icon: "ScrollText" },
+  { href: "/admin/users", label: "Manajemen User", icon: "Users", superAdminOnly: true },
 ];
 
 const SIDEBAR_MINIMIZED_KEY = "admin_sidebar_minimized";
@@ -39,6 +40,16 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [minimizedHydrated, setMinimizedHydrated] = useState(false);
+
+  // Items yang di-flag `superAdminOnly` hanya render untuk akun
+  // is_super_admin=true. Filter ini cosmetic-only — backend juga
+  // gate via `RequireSuperAdmin` extractor, jadi menu yang "hilang"
+  // beneran inaccessible walaupun user ngetik URL-nya manual.
+  const isSuperAdmin = profile?.is_super_admin ?? false;
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => !item.superAdminOnly || isSuperAdmin),
+    [isSuperAdmin],
+  );
 
   useEffect(() => {
     // Halaman publik (login) tidak butuh token. setReady(true) langsung
@@ -127,7 +138,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           {!minimized && <span>InsureTrack Admin</span>}
         </div>
         <nav>
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const active =
               pathname === item.href ||
               (pathname?.startsWith(item.href + "/") ?? false);
