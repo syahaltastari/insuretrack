@@ -36,6 +36,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.75"
+          # rustfmt + clippy tidak otomatis di-install — perlu explicit
+          # (di lokal biasanya sudah ada via rustup default, tapi di GH
+          # Actions image minimal, component harus di-install)
+          components: rustfmt, clippy
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -61,8 +65,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        # Pakai version eksplisit yang match package.json `packageManager`
+        # field — kalau pakai `version: 10` saja, pnpm akan complain
+        # "Multiple versions specified" dan tidak bisa resolve.
         with:
-          version: 10
+          version: 10.15.0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
