@@ -485,10 +485,15 @@ fn sanitize_filename(name: &str) -> String {
             }
         })
         .collect();
-    if cleaned.is_empty() {
+    // `..` di-string bisa survive di Linux/Mac di mana `\` bukan path
+    // separator, jadi `Path::file_name("..\\bad")` mengembalikan string
+    // utuh. Strip manual supaya hasil akhir aman lintas platform — tanpa
+    // ini, test `sanitize_strips_path_traversal` gagal di CI Linux.
+    let safe = cleaned.replace("..", "_");
+    if safe.is_empty() {
         "upload".to_string()
     } else {
-        cleaned
+        safe
     }
 }
 
