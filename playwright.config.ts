@@ -6,9 +6,12 @@
 // Mode:
 // - Default (lokal/CI tanpa E2E_USE_PROD): `pnpm dev:portal` + `pnpm dev:admin`
 //   (Next.js dev server, slower start tapi hot-reload friendly).
-// - E2E_USE_PROD=1: `next start` (production, butuh `pnpm build` dulu).
-//   Di CI, build sudah jalan di step sebelumnya, jadi `next start` cuma
-//   ~3-5s untuk siap. Lebih cepat total wall time.
+// - E2E_USE_PROD=1: pakai standalone server dari `next build`
+//   (`node .next/standalone/apps/{portal,admin}/server.js`). Butuh
+//   `pnpm build` dulu. Di CI, build sudah jalan di step sebelumnya,
+//   jadi start ~3-5s. `next start` tidak dipakai karena kedua app
+//   pakai `output: "standalone"` di next.config.ts — `next start` emit
+//   warning dan mungkin tidak serve trace'd deps.
 //
 // Backend harus di-start manual via `cargo run` atau di-skip dengan
 // `--mock` flag (frontend panggil MSW).
@@ -16,8 +19,14 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const useProd = process.env.E2E_USE_PROD === "1";
-const portalCmd = useProd ? "pnpm --filter @insuretrack/portal start" : "pnpm dev:portal";
-const adminCmd = useProd ? "pnpm --filter @insuretrack/admin start" : "pnpm dev:admin";
+// PORT dan ADMIN_PORT di-set agar server.js (yang baca dari process.env)
+// respect custom port. Default Next.js standalone: 3000/3001.
+const portalCmd = useProd
+  ? "node .next/standalone/apps/portal/server.js"
+  : "pnpm dev:portal";
+const adminCmd = useProd
+  ? "node .next/standalone/apps/admin/server.js"
+  : "pnpm dev:admin";
 
 export default defineConfig({
   testDir: "./e2e",

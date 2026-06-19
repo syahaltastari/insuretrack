@@ -19,9 +19,14 @@ test.describe("admin login", () => {
     await page.getByLabel(/username/i).fill("admin");
     await page.getByLabel(/password/i).fill("definitely-wrong-password");
     await page.getByRole("button", { name: /login|masuk/i }).click();
-    // Tunggu error banner / role="alert"
+    // Tunggu error banner / role="alert". Pakai .first() karena Next.js
+    // built-in `__next-route-announcer__` juga match role="alert" dan
+    // strict mode locator akan reject multiple matches.
     await expect(
-      page.getByRole("alert").or(page.locator("[data-testid='login-error']")),
+      page
+        .getByRole("alert")
+        .or(page.locator("[data-testid='login-error']"))
+        .first(),
     ).toBeVisible({ timeout: 10_000 });
     // Masih di /admin/login, tidak redirect ke dashboard
     await expect(page).toHaveURL(/\/admin\/login/);
