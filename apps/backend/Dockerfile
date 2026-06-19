@@ -11,9 +11,10 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-registry \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked,id=cargo-git \
-    mkdir -p src \
+    mkdir -p src/bin \
     && echo "fn main() {}" > src/main.rs \
     && echo "// stub for dep pre-build" > src/lib.rs \
+    && echo "fn main() {}" > src/bin/seed.rs \
     && cargo build --release \
     && rm -rf src target/release/deps/insuretrack_backend*
 
