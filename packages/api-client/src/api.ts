@@ -8,13 +8,23 @@
 //   service `backend` di internal network. Fallback ke public URL untuk
 //   local dev di luar Docker (`pnpm dev` di host).
 
+// Append `/api` ke base URL, strip trailing slash kalau ada.
+// Konsisten dengan `API_BASE_INTERNAL` di bawah — baik PUBLIC maupun
+// INTERNAL base URL diharapkan TIDAK include `/api` suffix di env var;
+// client cukup set `http://api.example.com` (atau `http://backend:8080`).
+// `appendApi` helper sentralisasi logic ini agar tidak duplikasi.
+const appendApi = (base: string): string =>
+  `${base.replace(/\/+$/, "")}/api`;
+
 export const API_BASE_PUBLIC =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) ||
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
+    ? appendApi(process.env.NEXT_PUBLIC_API_URL)
+    : null) ||
   "http://localhost:8080/api";
 
 export const API_BASE_INTERNAL =
   (typeof process !== "undefined" && process.env.BACKEND_URL
-    ? `${process.env.BACKEND_URL.replace(/\/+$/, "")}/api`
+    ? appendApi(process.env.BACKEND_URL)
     : null) ||
   API_BASE_PUBLIC;
 
