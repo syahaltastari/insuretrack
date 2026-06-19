@@ -68,6 +68,14 @@ jobs:
             context: .
             dockerfile: ./apps/admin/Dockerfile
 
+    # Belt-and-suspenders: `branches: [main]` di `on.workflow_run` tidak
+    # reliable (GitHub evaluate terhadap current workflow file's branch,
+    # bukan upstream). Explicit guard via head_branch dari triggering
+    # push. `workflow_dispatch` skip filter — user already verified.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.head_branch == 'main'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
