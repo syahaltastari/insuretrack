@@ -46,6 +46,7 @@ pub struct SeedConfig {
 /// `UPLOAD_DIR`; kalau None, pakai env var, fallback ke `./uploads`.
 /// Penting karena `.env` lokal set `UPLOAD_DIR=/var/uploads` (path
 /// Linux container) yang tidak valid di Windows native dev.
+#[allow(clippy::too_many_arguments)]
 pub fn build_config(
     mode: SeedMode,
     reset: bool,

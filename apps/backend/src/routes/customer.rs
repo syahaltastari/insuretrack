@@ -26,7 +26,6 @@ use axum::{
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
@@ -36,9 +35,8 @@ use crate::{
         identifier::{next_id, EntityType},
     },
     dto::{
-        calculate_group_premium, find_plan, product_name_from_code, ActivateRequest, ApplicantType,
-        LoginRequest, LoginResponse, PasswordResetConsumeRequest, PasswordResetRequest,
-        RegistrationData,
+        find_plan, product_name_from_code, ActivateRequest, LoginRequest, LoginResponse,
+        PasswordResetConsumeRequest, PasswordResetRequest, RegistrationData,
     },
     error::{AppError, AppResult},
     repo::{Page, PageQuery},

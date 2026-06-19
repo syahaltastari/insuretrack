@@ -11,7 +11,6 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use serial_test::serial;
-use std::path::PathBuf;
 use tower::ServiceExt;
 
 async fn upload(app: &common::TestApp, path: &str) -> (StatusCode, Vec<u8>, String) {

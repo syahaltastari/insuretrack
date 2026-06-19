@@ -10,9 +10,9 @@
 
 use axum::{
     body::Body,
-    extract::{Multipart, Path, State},
+    extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -23,7 +23,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    auth::{hash_password, Role, TokenService},
+    auth::{hash_password, Role},
     domain::identifier::{next_id, EntityType},
     dto::{
         find_plan, product_catalog, product_name_from_code, product_plan_catalog, ApplicantType,
@@ -411,7 +411,7 @@ async fn payment_webhook(
             customer_name: p_name,
             customer_birth_date: *p_birth_date,
             customer_address: p_address,
-            product_name: &product_name,
+            product_name,
             sum_assured,
             premium: if applicant_type == "INSTANSI" {
                 per_participant_premium
@@ -797,6 +797,7 @@ pub fn calculate_premium(plan: &ProductPlan, coverage_term: i32) -> Decimal {
     (plan.monthly_premium * Decimal::from(12) * years).round_dp(2)
 }
 
+#[allow(dead_code)]
 async fn customer_id_from_registration(
     state: &AppState,
     registration_id: Uuid,
@@ -857,9 +858,11 @@ async fn list_clients_public(State(state): State<AppState>) -> AppResult<Json<se
 }
 
 /// Bangun URL publik untuk path upload.
+///
 /// `path` di DB bisa berupa:
 ///   - path relatif: `clients/{uuid}/logo.svg` (produksi, dari `marketing::save_image`)
 ///   - path absolut host: `/var/uploads/clients/seed-...svg` (dari seed migration, host-specific)
+///
 /// Normalisasi: jika `path` di-prefix dengan `upload_dir` (absolute atau trim-slash),
 /// strip prefix-nya agar URL jadi `${APP_BASE_URL}/api/public/uploads/{relatif}`.
 fn to_public_upload_url(app_base_url: &str, upload_dir: &str, path: &str) -> String {

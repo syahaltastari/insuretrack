@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(claims.sub, "user-1");
         assert_eq!(claims.role, Role::Customer);
         assert_eq!(claims.purpose.as_deref(), Some("activation"));
-        assert_eq!(claims.is_super_admin, false);
+        assert!(!claims.is_super_admin);
         assert!(claims.exp > claims.iat);
     }
 

@@ -89,7 +89,7 @@ pub struct Page<T> {
 /// at the call site (e.g. `i.created_at`) when interpolating into SQL.
 pub fn validate_sort<'a>(input: Option<&str>, allowed: &'a [&'a str]) -> &'a str {
     match input {
-        Some(s) if allowed.iter().any(|a| *a == s) => {
+        Some(s) if allowed.contains(&s) => {
             // Safe: we just confirmed `s` is one of `allowed` entries.
             allowed
                 .iter()

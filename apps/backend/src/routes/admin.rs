@@ -11,7 +11,6 @@ use axum::{
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
@@ -21,7 +20,7 @@ use crate::{
     repo::{filters as filters_helper, Page, PageQuery},
     services::{
         audit::{write as audit_write, AuditEntry},
-        dashboard, storage,
+        dashboard,
     },
     state::AppState,
 };
@@ -966,7 +965,7 @@ async fn list_policies(
             "#,
             order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
         );
-        let mut q_builder = sqlx::query_as::<_, PolicyRow>(&sql)
+        let q_builder = sqlx::query_as::<_, PolicyRow>(&sql)
             .bind(&like)
             .bind(&status)
             .bind(df)
@@ -1460,7 +1459,7 @@ async fn list_claims_admin(
             "#,
             order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
         );
-        let mut q_builder = sqlx::query_as::<_, AdminClaimRow>(&sql)
+        let q_builder = sqlx::query_as::<_, AdminClaimRow>(&sql)
             .bind(&like)
             .bind(&status)
             .bind(df)

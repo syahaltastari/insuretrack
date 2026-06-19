@@ -51,6 +51,7 @@ pub fn print_plan(cfg: &SeedConfig) {
     println!();
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn print_summary(
     customers: usize,
     portal_customers: usize,

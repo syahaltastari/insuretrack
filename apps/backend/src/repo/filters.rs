@@ -62,7 +62,7 @@ pub const VALID_CLAIM_TYPES: &[&str] = &[
 pub fn parse_product(raw: Option<&str>) -> AppResult<Option<String>> {
     match raw {
         None => Ok(None),
-        Some(v) if v.is_empty() => Ok(None),
+        Some("") => Ok(None),
         Some(v) if VALID_PRODUCTS.contains(&v) => Ok(Some(v.to_string())),
         Some(v) => Err(AppError::Validation(format!(
             "invalid product '{v}'; must be one of {}",
@@ -76,7 +76,7 @@ pub fn parse_product(raw: Option<&str>) -> AppResult<Option<String>> {
 pub fn parse_claim_type(raw: Option<&str>) -> AppResult<Option<String>> {
     match raw {
         None => Ok(None),
-        Some(v) if v.is_empty() => Ok(None),
+        Some("") => Ok(None),
         Some(v) if VALID_CLAIM_TYPES.contains(&v) => Ok(Some(v.to_string())),
         Some(v) => Err(AppError::Validation(format!(
             "invalid claim_type '{v}'; must be one of {}",

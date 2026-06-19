@@ -38,7 +38,7 @@ pub async fn seed_audit_logs(
     for c in customers {
         out.push(
             write_audit(
-                &mut **tx,
+                tx,
                 "registration.created",
                 "customer",
                 c.id,
@@ -54,7 +54,7 @@ pub async fn seed_audit_logs(
     for (i, reg) in registrations.iter().enumerate() {
         out.push(
             write_audit(
-                &mut **tx,
+                tx,
                 "registration.created",
                 "registration",
                 reg.id,
@@ -72,7 +72,7 @@ pub async fn seed_audit_logs(
         if let Some(inv) = invoices.get(i) {
             out.push(
                 write_audit(
-                    &mut **tx,
+                    tx,
                     "invoice.generated",
                     "invoice",
                     inv.id,
@@ -94,7 +94,7 @@ pub async fn seed_audit_logs(
             continue;
         }
         out.push(write_audit(
-            &mut **tx,
+            tx,
             "payment.received",
             "invoice",
             inv.id,
@@ -107,7 +107,7 @@ pub async fn seed_audit_logs(
         if let Some(pol) = policies.get(i) {
             out.push(
                 write_audit(
-                    &mut **tx,
+                    tx,
                     "policy.issued",
                     "policy",
                     pol.id,
@@ -127,7 +127,7 @@ pub async fn seed_audit_logs(
     for claim in claims {
         out.push(
             write_audit(
-                &mut **tx,
+                tx,
                 "claim.submitted",
                 "claim",
                 claim.id,
@@ -143,7 +143,7 @@ pub async fn seed_audit_logs(
         if claim.status != "SUBMITTED" && claim.status != "UNDER_REVIEW" {
             out.push(
                 write_audit(
-                    &mut **tx,
+                    tx,
                     "claim.status_changed",
                     "claim",
                     claim.id,
@@ -160,7 +160,7 @@ pub async fn seed_audit_logs(
     for inq in inquiries {
         out.push(
             write_audit(
-                &mut **tx,
+                tx,
                 "inquiry.submitted",
                 "inquiry",
                 inq.id,
@@ -173,7 +173,7 @@ pub async fn seed_audit_logs(
         if inq.status != "OPEN" {
             out.push(
                 write_audit(
-                    &mut **tx,
+                    tx,
                     "inquiry.answered",
                     "inquiry",
                     inq.id,
@@ -190,7 +190,7 @@ pub async fn seed_audit_logs(
     for _ in 0..3 {
         out.push(
             write_audit(
-                &mut **tx,
+                tx,
                 "admin.login",
                 "admin",
                 Uuid::nil(),

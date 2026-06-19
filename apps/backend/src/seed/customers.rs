@@ -2,6 +2,7 @@
 //!
 //! 30 customers realistic Indonesia. 3 pertama dapat password hash
 //! + portal_status='ACTIVE' (login-able di portal). Sisanya PENDING
+//!
 //! (belum aktivasi, tidak punya password).
 
 use chrono::{Datelike, NaiveDate};

@@ -11,7 +11,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -127,14 +127,14 @@ async fn list_users(
     // Safe: sort_col berasal dari USER_SORT_COLUMNS whitelist.
     let order_clause = format!("ORDER BY {sort_col} {sort_dir}, created_at DESC");
 
-    let total: (i64,) = sqlx::query_as(&format!(
+    let total: (i64,) = sqlx::query_as(
         r#"
             SELECT COUNT(*) FROM admin_users
              WHERE ($1 = '' OR LOWER(username) LIKE LOWER($1)
                           OR LOWER(COALESCE(full_name, '')) LIKE LOWER($1))
                AND ($2 = '' OR is_active = ($2 = 'true'))
-            "#
-    ))
+            "#,
+    )
     .bind(&search)
     .bind(&is_active_filter)
     .fetch_one(&state.pool)

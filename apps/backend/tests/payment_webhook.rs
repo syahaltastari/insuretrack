@@ -120,7 +120,7 @@ async fn webhook_idempotency_five_replays_yield_one_policy() {
         })
         .count();
     assert!(
-        payment_emails >= 2 && payment_emails <= 5,
+        (2..=5).contains(&payment_emails),
         "email flow harus ~3 (Payment + E-Policy + Activation), dapat {payment_emails}"
     );
 }

@@ -7,7 +7,7 @@
 //! `created_at` di-backdate ke bulan yang dipilih supaya identifier
 //! prefix `REG-YYYYMM-NNNNNN` berbeda per bulan (sesuai spec §9).
 
-use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rust_decimal::Decimal;
 use sqlx::{Postgres, Transaction};

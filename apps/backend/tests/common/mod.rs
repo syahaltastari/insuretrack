@@ -1,3 +1,8 @@
+// Dead code di-allow: setiap test file pakai subset berbeda dari
+// helper (mis. `claims.rs` tidak butuh `admin_token`); semua di-publish
+// dari satu common module untuk konsistensi.
+#![allow(dead_code)]
+
 //! Shared bootstrap & helpers untuk integration test.
 //!
 //! Setiap integration test file (`tests/payment_webhook.rs`, `tests/claims.rs`,
@@ -6,6 +11,10 @@
 //! di-truncate sebelum return), `LocalStorage` pointed ke `TempDir`,
 //! `RecordingEmailSender` (mock HTTP Resend), router siap pakai via
 //! `tower::ServiceExt::oneshot`.
+//!
+//! Dead code di-allow: setiap test file pakai subset helper yang berbeda
+//! (mis. `claims.rs` tidak butuh `admin_token`), tapi semua di-publish
+//! dari satu common module untuk konsistensi.
 //!
 //! ## Setup sekali (host lokal)
 //!
@@ -297,8 +306,9 @@ pub fn activation_token(app: &TestApp, customer_id: Uuid) -> String {
 // ---- HTTP helpers ---------------------------------------------------------
 
 /// Kirim request via in-memory router (no real port). Kembalikan response
-/// + body bytes. Default response tidak memuat body; pakai `response_bytes()`
-/// untuk extract.
+/// + body bytes.
+///
+/// Default response tidak memuat body; pakai `response_bytes()` untuk extract.
 pub async fn send(app: &TestApp, req: Request<Body>) -> Response<Body> {
     app.router
         .clone()

@@ -74,8 +74,7 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
     // Extract premium amounts per registration untuk policies.
     let premiums: Vec<rust_decimal::Decimal> = seeded_registrations
         .iter()
-        .enumerate()
-        .map(|(i, reg)| {
+        .map(|reg| {
             seeded_invoices
                 .iter()
                 .find(|inv| inv.registration_id == reg.id)
@@ -126,7 +125,6 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
                 .filter(|i| i.pdf_path.is_some())
                 .count(),
         duration_ms: start.elapsed().as_millis(),
-        ..Default::default()
     };
 
     printer::print_summary(

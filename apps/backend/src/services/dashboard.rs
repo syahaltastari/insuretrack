@@ -8,7 +8,7 @@
 //! they always reflect the current state. This matches typical dashboard UX:
 //! trend charts respect the range, distribution charts always show "today".
 
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use chrono::{Datelike, Duration, NaiveDate};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -222,6 +222,7 @@ async fn count_per_period(
     Ok(rows)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn sum_per_period(
     pool: &PgPool,
     table: &str,

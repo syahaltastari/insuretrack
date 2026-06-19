@@ -224,10 +224,8 @@ const C_CREAM: (u8, u8, u8) = (250, 249, 247); // --warm-cream
 const C_OAT_LIGHT: (u8, u8, u8) = (238, 233, 223); // --oat-light
 const C_OAT_BORDER: (u8, u8, u8) = (218, 212, 200); // --oat-border
 const C_MATCHA_300: (u8, u8, u8) = (132, 231, 165);
-const C_MATCHA_600: (u8, u8, u8) = (7, 138, 82);
 const C_POMEGRANATE: (u8, u8, u8) = (252, 121, 129);
 const C_LEMON_400: (u8, u8, u8) = (248, 204, 101);
-const C_LEMON_700: (u8, u8, u8) = (208, 138, 17);
 const C_CHARCOAL: (u8, u8, u8) = (85, 83, 78); // --warm-charcoal
 const C_SILVER: (u8, u8, u8) = (159, 155, 147); // --warm-silver
 
