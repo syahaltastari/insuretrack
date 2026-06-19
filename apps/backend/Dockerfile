@@ -16,7 +16,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked,id=cargo-
     && echo "// stub for dep pre-build" > src/lib.rs \
     && echo "fn main() {}" > src/bin/seed.rs \
     && cargo build --release \
-    && rm -rf src target/release/deps/insuretrack_backend*
+    # Hapus SEMUA artifact lib + bin biar re-build pake source asli,
+    # bukan metadata dari stub. `libinsuretrack_backend*` prefix `lib`
+    # berbeda dari `insuretrack_backend*` jadi keduanya harus disebut.
+    && rm -rf src target/release/deps/libinsuretrack_backend* target/release/deps/insuretrack_backend*
 
 COPY src ./src
 COPY migrations ./migrations
