@@ -47,8 +47,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     volumes:
       - backend_uploads:/var/uploads
-    ports:
-      - "127.0.0.1:8080:8080"
+    # `ports:` dihapus — Dokploy's Traefik (port 80/443) route by Host label
+    # ke container port internal, tidak butuh host port mapping.
+    # Mapping `127.0.0.1:8080:8080` di sini bentrok dengan service lain
+    # (mis. portal `3000` bentrok dengan Dokploy panel di host).
     depends_on:
       db: { condition: service_healthy }
     restart: unless-stopped
@@ -70,8 +72,8 @@ services:
     container_name: insuretrack_portal
     environment:
       BACKEND_URL: http://backend:8080
-    ports:
-      - "127.0.0.1:3000:3000"
+    # `ports:` dihapus — Traefik Dokploy route by Host label.
+    # (Lihat comment di `backend` di atas untuk alasan lengkap.)
     depends_on:
       backend: { condition: service_healthy }
     restart: unless-stopped
@@ -93,8 +95,8 @@ services:
     container_name: insuretrack_admin
     environment:
       BACKEND_URL: http://backend:8080
-    ports:
-      - "127.0.0.1:3001:3001"
+    # `ports:` dihapus — Traefik Dokploy route by Host label.
+    # (Lihat comment di `backend` di atas untuk alasan lengkap.)
     depends_on:
       backend: { condition: service_healthy }
     restart: unless-stopped
