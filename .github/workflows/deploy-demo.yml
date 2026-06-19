@@ -2,8 +2,8 @@ name: Deploy Demo
 
 # Auto-deploy ke Dokploy setelah CI tests pass + image build sukses.
 #
-# Flow lengkap per push ke main:
-#   1. push ke main → CI workflow jalan (tests)
+# Flow lengkap per push:
+#   1. push ke main/dev → CI workflow jalan (tests)
 #   2. CI selesai → build workflow trigger, build image + push ke GHCR
 #   3. Build selesai → workflow ini trigger (workflow_run)
 #   4. Trigger Dokploy API → Dokploy pull image baru dari GHCR
@@ -24,7 +24,7 @@ name: Deploy Demo
 #      - DEPLOY_HEALTH_URL    (value: http://api.<DOMAIN>.sslip.io/health)
 #
 # Branch behavior:
-#   - push ke main → CI → build → deploy
+#   - push ke main/dev → CI → build → deploy
 #   - PR ke main → tidak deploy (cuma CI test)
 #   - workflow_dispatch → manual trigger (rollback / redeploy)
 
@@ -32,7 +32,10 @@ on:
   workflow_run:
     workflows: ["Build & Push Images"]
     types: [completed]
-    branches: [main]
+    # Tanpa `branches:` filter — `workflow_run` + branches tidak reliable
+    # di GitHub Actions (kadang applied, kadang ignored per workflow).
+    # Push ke branch manapun yang trigger Build akan trigger deploy ini.
+    # Branch-specific restrictions bisa ditambah via `if:` di job.
   workflow_dispatch:
     # Manual trigger dari GitHub Actions UI — untuk rollback / redeploy manual
 

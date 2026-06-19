@@ -2,8 +2,8 @@ name: Build & Push Images
 
 # Build 3 Docker images paralel + push ke GitHub Container Registry (GHCR).
 #
-# Flow lengkap per push ke main:
-#   1. push ke main
+# Flow lengkap per push:
+#   1. push ke main/dev
 #   2. CI workflow jalan (cargo test + pnpm test + playwright)
 #   3. Build workflow ini trigger via workflow_run SETELAH CI selesai
 #   4. Build 3 image (backend, portal, admin) paralel
@@ -15,7 +15,7 @@ name: Build & Push Images
 # GitHub-hosted runner (4 vCPU, 16 GB RAM, gratis untuk public repo).
 #
 # Image tag strategy:
-#   - :latest        ← setiap push ke main (rolling, dipakai Dokploy)
+#   - :latest        ← setiap push (rolling, dipakai Dokploy)
 #   - :git-<sha>     ← immutable, untuk rollback manual via Dokploy UI
 #
 # Setup sekali di GitHub repo:
@@ -32,7 +32,10 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main]
+    # Tanpa `branches:` filter — `workflow_run` + branches tidak reliable
+    # di GitHub Actions (kadang applied, kadang ignored per workflow).
+    # Push ke branch manapun yang trigger CI akan trigger build ini.
+    # Branch-specific restrictions bisa ditambah via `if:` di job.
   workflow_dispatch:
 
 concurrency:
