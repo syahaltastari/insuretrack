@@ -3,11 +3,21 @@
 // Setup: asumsi backend sudah running di port 8080 (lokal atau remote)
 // + portal di 3000 + admin di 3001. webServer otomatis start jika belum.
 //
-// Default: pakai `pnpm dev` (turbo run dev) untuk start portal+admin secara
-// parallel. Backend harus di-start manual via `cargo run` atau di-skip
-// dengan `--mock` flag (frontend panggil MSW).
+// Mode:
+// - Default (lokal/CI tanpa E2E_USE_PROD): `pnpm dev:portal` + `pnpm dev:admin`
+//   (Next.js dev server, slower start tapi hot-reload friendly).
+// - E2E_USE_PROD=1: `next start` (production, butuh `pnpm build` dulu).
+//   Di CI, build sudah jalan di step sebelumnya, jadi `next start` cuma
+//   ~3-5s untuk siap. Lebih cepat total wall time.
+//
+// Backend harus di-start manual via `cargo run` atau di-skip dengan
+// `--mock` flag (frontend panggil MSW).
 
 import { defineConfig, devices } from "@playwright/test";
+
+const useProd = process.env.E2E_USE_PROD === "1";
+const portalCmd = useProd ? "pnpm --filter @insuretrack/portal start" : "pnpm dev:portal";
+const adminCmd = useProd ? "pnpm --filter @insuretrack/admin start" : "pnpm dev:admin";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -33,22 +43,23 @@ export default defineConfig({
       testMatch: /admin\.spec\.ts$/,
     },
   ],
-  // webServer otomatis start portal + admin jika belum jalan. Untuk lokal
-  // tanpa backend, skip webServer & pakai FE-only smoke test.
+  // webServer otomatis start portal + admin jika belum jalan. Untuk
+  // skip (mis. server sudah jalan manual / pakai remote), set
+  // E2E_SKIP_SERVER=1.
   webServer: process.env.E2E_SKIP_SERVER
     ? undefined
     : [
         {
-          command: "pnpm dev:portal",
+          command: portalCmd,
           url: "http://localhost:3000",
           reuseExistingServer: true,
-          timeout: 120_000,
+          timeout: useProd ? 30_000 : 120_000,
         },
         {
-          command: "pnpm dev:admin",
+          command: adminCmd,
           url: "http://localhost:3001",
           reuseExistingServer: true,
-          timeout: 120_000,
+          timeout: useProd ? 30_000 : 120_000,
         },
       ],
 });
