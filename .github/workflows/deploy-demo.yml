@@ -40,10 +40,6 @@ concurrency:
   group: deploy-demo
   cancel-in-progress: true
 
-concurrency:
-  group: deploy-demo
-  cancel-in-progress: true
-
 jobs:
   # ---- Job 1: Wait for CI tests to pass ----
   ci-gate:
