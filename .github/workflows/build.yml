@@ -97,21 +97,22 @@ jobs:
           tags: |
             # Tag immutable per commit — untuk rollback
             type=sha,prefix=git-,format=short
-            # Tag rolling — dipakai Dokploy. Enable untuk main (default branch)
-            # dan dev. Branch lain tidak punya auto-deploy chain, dapat
-            # tag :git-<sha> saja.
+            # Tag rolling — dipakai Dokploy. Build workflow hanya trigger
+            # via `workflow_run` dari CI (yang listen ke main + dev saja),
+            # jadi :latest otomatis hanya di-apply untuk main/dev push.
+            # Branch lain (feature/eksperimen) TIDAK trigger Build, jadi
+            # :latest tidak akan ter-set untuk mereka.
             #
-            # Split jadi 2 entry (bukan OR expression) karena LiquidJS
-            # template engine docker/metadata-action tidak parse `||` atau
-            # `env.GITHUB_REF` (compound OR) dengan reliable. Pakai 2 entry
-            # sederhana yang masing-masing evaluate ke boolean tunggal.
+            # Tanpa `enable` filter karena parser LiquidJS docker/metadata-action
+            # tidak support compound expression (`||`, `env.GITHUB_REF`,
+            # `contains(branch, ...)`) — selalu parse error. `enable` filter
+            # jadi redundant: trigger workflow sendiri sudah jadi filter.
             #
-            # Context variable `branch` (string: nama branch, mis. "main" atau
-            # "dev") adalah salah satu subset yang di-expose docker/metadata-action
-            # (selain: tag, sha, is_default_branch, is_pr). `github.ref` (full
-            # GitHub Actions context) TIDAK tersedia di LiquidJS context ini.
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable={{contains(branch, 'dev')}}
+            # Trade-off: kalau ada manual `workflow_dispatch` di branch lain
+            # (mis. eksperimen), :latest akan ter-set untuk branch itu. Bisa
+            # di-mitigate dengan `branches:` filter di workflow_run kalau
+            # dibutuhkan strict isolation.
+            type=raw,value=latest
           labels: |
             org.opencontainers.image.title=InsureTrack ${{ matrix.service }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
