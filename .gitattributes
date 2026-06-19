@@ -1,0 +1,55 @@
+# File ini kontrol line endings + diff behavior per file type di Git.
+# Tanpa ini, Git di Windows dengan `core.autocrlf=true` convert semua
+# text file ke CRLF di working tree, yang by-pass `text eol=lf` per-file
+# rule di .gitattributes (kalau ada conflict antara global & per-file,
+# .gitattributes menang — tapi autocrlf bisa reverse-convert lagi saat
+# `git checkout` di Windows).
+#
+# Untuk .sql files specifically: line endings HARUS konsisten (LF)
+# karena sqlx::migrate pakai SHA384 checksum dari raw bytes. CRLF vs LF
+# = checksum beda = drift error "migration was previously applied but
+# has been modified". Hal yang sama akan berlaku untuk semua binary-ish
+# text file yang dipakai tool untuk checksum (lock files, manifests, etc).
+#
+# `text eol=lf` → paksa LF di working tree & commit, regardless of OS.
+# `text` saja (no eol) → biarkan normalization sesuai platform (LF di
+# Linux/Mac, CRLF di Windows).
+#
+# Reference: https://git-scm.com/docs/gitattributes
+
+# --- Database migrations: WAJIB LF (sqlx::migrate checksum) -----------
+*.sql text eol=lf
+
+# --- Source code: biarkan platform decide (no eol specified) ---------
+*.ts text
+*.tsx text
+*.js text
+*.jsx text
+*.rs text
+*.py text
+*.go text
+*.java text
+*.yml text
+*.yaml text
+*.json text
+*.md text
+*.sh text
+*.toml text
+*.css text
+*.scss text
+*.html text
+
+# --- Binary files (jangan di-convert) --------------------------------
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
