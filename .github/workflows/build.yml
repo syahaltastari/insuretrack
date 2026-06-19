@@ -97,9 +97,17 @@ jobs:
           tags: |
             # Tag immutable per commit — untuk rollback
             type=sha,prefix=git-,format=short
-            # Tag rolling — dipakai Dokploy. Enable di main+dev saja;
-            # branch lain tidak punya auto-deploy chain.
-            type=raw,value=latest,enable={{contains(env.GITHUB_REF, 'refs/heads/main') || contains(env.GITHUB_REF, 'refs/heads/dev')}}
+            # Tag rolling — dipakai Dokploy. Enable untuk main (default branch)
+            # dan dev. Branch lain tidak punya auto-deploy chain, dapat
+            # tag :git-<sha> saja.
+            #
+            # Split jadi 2 entry (bukan OR expression) karena LiquidJS
+            # template engine docker/metadata-action tidak parse `||`/
+            # `env.GITHUB_REF`/compound OR dengan reliable — parser
+            # error out di build sebelumnya. Pakai 2 entry sederhana
+            # yang masing-masing evaluate ke boolean tunggal.
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable={{contains(github.ref, 'refs/heads/dev')}}
           labels: |
             org.opencontainers.image.title=InsureTrack ${{ matrix.service }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
