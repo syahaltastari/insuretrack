@@ -114,6 +114,20 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # `NEXT_PUBLIC_*` di-bake ke client bundle saat build. Wajib di-pass
+          # sebagai build-arg, kalau tidak ENV di Dockerfile jadi kosong dan
+          # bundle fallback ke "http://localhost:8080/api" — browser fetch
+          # ke localhost (PC user), bukan ke VPS via Traefik.
+          #
+          # `BACKEND_URL` (tanpa NEXT_PUBLIC_) TIDAK di-pass di sini karena
+          # dia runtime env, di-set via Dokploy Secrets → di-inject ke
+          # container saat docker compose up. Dipakai untuk SSR/RSC fetch
+          # dari dalam container (Docker service name `backend:8080`).
+          #
+          # Backend (Rust) tidak pakai arg ini — Dockerfile-nya tidak
+          # declare ARG, jadi Docker silently ignore. Aman di-pass.
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
           # Cache layers di GitHub Actions — second build jauh lebih cepat
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
