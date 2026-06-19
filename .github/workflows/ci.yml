@@ -91,13 +91,11 @@ jobs:
       - name: Vitest (unit + component)
         run: pnpm test
       - name: Playwright (E2E)
-        env:
-          # Pakai `next start` (production) — `pnpm build` di step
-          # sebelumnya sudah produce artifact, jadi start ~3-5s vs 30-60s
-          # untuk dev server. Backend tidak di-spawn di CI ini — test
-          # admin login "wrong credentials" tetap jalan karena FE
-          # tampilkan error alert saat backend unreachable.
-          E2E_USE_PROD: "1"
+        # Pakai Next.js dev server (`pnpm dev:portal` + `pnpm dev:admin`).
+        # `pnpm build` saat ini gagal pre-render beberapa page (Next.js
+        # 15.0.3 + React 19 RC + Radix UI SSR `useContext` issue) —
+        # investigasi terpisah. Dev server cukup untuk smoke test yang
+        # ada (page load + form validation).
         run: pnpm exec playwright install --with-deps chromium && pnpm exec playwright test
       - name: Upload Playwright report
         if: always()
