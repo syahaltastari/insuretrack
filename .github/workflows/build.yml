@@ -52,9 +52,13 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    # GITHUB_TOKEN perlu write ke Packages untuk push image ke GHCR
+    # `actions: read` WAJIB explicit — `workflow_run` event butuh ini
+    # untuk baca payload (termasuk `conclusion` field di `if:` check).
+    # Tanpa di-explicit, default token permissions di-override dan event
+    # tidak fire sama sekali (workflow tidak muncul di tab Actions).
     permissions:
       contents: read
+      actions: read
       packages: write
 
     strategy:
