@@ -97,8 +97,9 @@ jobs:
           tags: |
             # Tag immutable per commit — untuk rollback
             type=sha,prefix=git-,format=short
-            # Tag rolling — yang dipakai Dokploy (production)
-            type=raw,value=latest,enable={{is_default_branch}}
+            # Tag rolling — dipakai Dokploy. Enable di main+dev saja;
+            # branch lain tidak punya auto-deploy chain.
+            type=raw,value=latest,enable={{contains(env.GITHUB_REF, 'refs/heads/main') || contains(env.GITHUB_REF, 'refs/heads/dev')}}
           labels: |
             org.opencontainers.image.title=InsureTrack ${{ matrix.service }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
