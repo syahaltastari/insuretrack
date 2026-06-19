@@ -21,9 +21,9 @@ describe("StatusBadge", () => {
 
   it("replaces underscore in label (e.g. UNDER_REVIEW → UNDER REVIEW)", () => {
     render(<StatusBadge status="UNDER_REVIEW" />);
-    expect(screen.getByText("UNDER REVIEW")).toBeInTheDocument();
-    // Tidak ada lagi underscore di text content
-    expect(screen.queryByText("UNDER_REVIEW")).not.toBeInTheDocument();
+    // "UNDER REVIEW" di-render, "UNDER_REVIEW" tidak ada.
+    expect(screen.getByText("UNDER REVIEW")).toBeTruthy();
+    expect(screen.queryByText("UNDER_REVIEW")).toBeNull();
   });
 
   it("covers all spec-defined statuses", () => {
@@ -53,7 +53,9 @@ describe("StatusBadge", () => {
       render(<StatusBadge status={s} />);
       const el = screen.getByText(s.replace(/_/g, " "));
       // Bukan muted fallback → semua harus punya variant.
-      expect(el.className).not.toContain("status-muted", `status ${s} harus punya variant`);
+      // Pakai `expect(value, msg)` (vitest built-in) untuk custom
+      // failure message — `toContain(string, msg)` tidak ada di signature.
+      expect(el.className, `status ${s} harus punya variant`).not.toContain("status-muted");
     }
   });
 });
