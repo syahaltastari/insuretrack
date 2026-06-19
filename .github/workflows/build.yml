@@ -102,12 +102,16 @@ jobs:
             # tag :git-<sha> saja.
             #
             # Split jadi 2 entry (bukan OR expression) karena LiquidJS
-            # template engine docker/metadata-action tidak parse `||`/
-            # `env.GITHUB_REF`/compound OR dengan reliable — parser
-            # error out di build sebelumnya. Pakai 2 entry sederhana
-            # yang masing-masing evaluate ke boolean tunggal.
+            # template engine docker/metadata-action tidak parse `||` atau
+            # `env.GITHUB_REF` (compound OR) dengan reliable. Pakai 2 entry
+            # sederhana yang masing-masing evaluate ke boolean tunggal.
+            #
+            # Context variable `branch` (string: nama branch, mis. "main" atau
+            # "dev") adalah salah satu subset yang di-expose docker/metadata-action
+            # (selain: tag, sha, is_default_branch, is_pr). `github.ref` (full
+            # GitHub Actions context) TIDAK tersedia di LiquidJS context ini.
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable={{contains(github.ref, 'refs/heads/dev')}}
+            type=raw,value=latest,enable={{contains(branch, 'dev')}}
           labels: |
             org.opencontainers.image.title=InsureTrack ${{ matrix.service }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
