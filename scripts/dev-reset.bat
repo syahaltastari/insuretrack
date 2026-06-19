@@ -25,8 +25,8 @@ REM ============================================================================
 REM --- Config (override via env var kalau perlu) ---------------------------
 if "%PSQL_BIN%"=="" set "PSQL_BIN=C:\Program Files\PostgreSQL\18\bin\psql.exe"
 set "PG_SUPERUSER=postgres"
-set "PG_DB_USER=insurance_admin"
-set "PG_DB_NAME=digital_insurance"
+set "PG_DB_USER=postgres"
+set "PG_DB_NAME=insuretrack"
 set "REPO_ROOT=%~dp0.."
 if "%REPO_ROOT:~-1%"=="\" set "REPO_ROOT=%REPO_ROOT:~0,-1%"
 
