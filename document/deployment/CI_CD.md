@@ -767,7 +767,7 @@ Atau via GitHub Actions UI (manual trigger):
 
 ## 15. Troubleshooting
 
-Lihat **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** untuk detail lengkap. Highlights khusus untuk GH Actions flow:
+Lihat **[TROUBLESHOOTING.md](./../operations/TROUBLESHOOTING.md)** untuk detail lengkap. Highlights khusus untuk GH Actions flow:
 
 ### 15.1 Build workflow gagal di GH Actions
 
@@ -899,11 +899,11 @@ Lihat **[DEPLOYMENT.md](./DEPLOYMENT.md)** untuk production-grade.
 | Quickstart (ringkas, untuk yang sudah paham) | [DEPLOY_QUICKSTART.md](./DEPLOY_QUICKSTART.md) |
 | Production deployment (HTTPS, HA, backup) | [DEPLOYMENT.md](./DEPLOYMENT.md) |
 | Deep dive VPS + Dokploy + HTTP-only | [RUNBOOK_VPS_DEV.md](./RUNBOOK_VPS_DEV.md) |
-| Error reference by symptom | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
-| Docker setup detail | [DOCKER_SETUP.md](./DOCKER_SETUP.md) |
+| Error reference by symptom | [TROUBLESHOOTING.md](./../operations/TROUBLESHOOTING.md) |
+| Docker setup detail | [DOCKER_SETUP.md](./../operations/DOCKER_SETUP.md) |
 | Cloudflare R2 storage | [R2_SETUP.md](./R2_SETUP.md) |
 | Application spec | `Technical Specification Document Digital Insurance v1.2.pdf` |
-| OpenAPI | [openapi.yaml](./openapi.yaml) |
+| OpenAPI | [openapi.yaml](./../api/openapi.yaml) |
 | GitHub Actions docs | https://docs.github.com/actions |
 | GHCR docs | https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-container-registry |
 | Dokploy API docs | https://docs.dokploy.com/docs/api/reference-compose |

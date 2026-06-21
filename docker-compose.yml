@@ -11,11 +11,11 @@
 #   → http://localhost:8080/api (backend)
 #   → postgresql://localhost:5433 (psql dari host)
 #
-# Deploy ke VPS + Dokploy: lihat document/RUNBOOK_VPS_DEV.md.
+# Deploy ke VPS + Dokploy: lihat document/deployment/RUNBOOK_VPS_DEV.md.
 # Traefik labels di bawah aktif saat Traefik hadir (Dokploy); di lokal
 # Traefik tidak jalan, label diabaikan. Entry point `web` (HTTP 80) karena
 # Dev belum pakai SSL — saat migrasi ke HTTPS ganti `web` → `websecure`
-# dan tambah `tls.certresolver=letsencrypt` (lihat DEPLOYMENT.md §6.2).
+# dan tambah `tls.certresolver=letsencrypt` (lihat document/deployment/DEPLOYMENT.md §6.2).
 #
 # Reset: docker compose down -v  ← HAPUS VOLUME, data hilang.
 # =============================================================================
@@ -111,7 +111,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     environment:
       # BACKEND_URL: untuk Next.js SSR/RSC fetch dari dalam container.
-      # Wajib di-set di Dokploy Secrets juga (lihat RUNBOOK_VPS_DEV.md).
+      # Wajib di-set di Dokploy Secrets juga (lihat document/deployment/RUNBOOK_VPS_DEV.md).
       BACKEND_URL: http://backend:8080
     container_name: insuretrack_admin
     ports:

@@ -171,11 +171,11 @@ docker compose down -v
 | --- | --- |
 | `ERROR: failed to solve: failed to compute cache key: ... not found` | Ada Dockerfile yang reference path salah. Cek `docker compose build portal` log. |
 | `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` | `pnpm-workspace.yaml` atau `package.json` root tidak ke-COPY. Biasanya karena edit Dockerfile — revert dan re-build. |
-| Build context > 100 MB | Root `.dockerignore` corrupt. Lihat `document/DOCKER_SETUP.md` §2. |
+| Build context > 100 MB | Root `.dockerignore` corrupt. Lihat `document/operations/DOCKER_SETUP.md` §2. |
 | Backend `unhealthy` terus | Image backend tidak punya `wget`. Rebuild: `docker compose build --no-cache backend`. |
 | Port 3000/3001/8080 already in use | `lsof -i :3000` (Mac/Linux) atau `netstat -ano | findstr :3000` (Windows). Stop aplikasi yang konflik. |
 
-Lihat [`DOCKER_SETUP.md`](./DOCKER_SETUP.md) §8 untuk troubleshooting lengkap.
+Lihat [`DOCKER_SETUP.md`](./../operations/DOCKER_SETUP.md) §8 untuk troubleshooting lengkap.
 
 ---
 
@@ -756,11 +756,11 @@ Cukup import compose yang sama — semua fitur di atas adalah layer tambahan (Tr
 
 | Topik | File |
 | --- | --- |
-| Docker setup & troubleshooting lengkap | [`DOCKER_SETUP.md`](./DOCKER_SETUP.md) |
+| Docker setup & troubleshooting lengkap | [`DOCKER_SETUP.md`](./../operations/DOCKER_SETUP.md) |
 | Production deployment (HTTPS, HA, backup) | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
 | Cloudflare R2 storage | [`R2_SETUP.md`](./R2_SETUP.md) |
 | Spec aplikasi | `Technical Specification Document Digital Insurance v1.2.pdf` |
-| OpenAPI spec | [`openapi.yaml`](./openapi.yaml) |
+| OpenAPI spec | [`openapi.yaml`](./../api/openapi.yaml) |
 | Dokploy docs | https://docs.dokploy.com |
 | Traefik docs | https://doc.traefik.io/traefik/ |
 

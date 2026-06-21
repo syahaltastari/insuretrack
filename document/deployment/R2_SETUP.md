@@ -282,5 +282,5 @@ Kalau sudah ada file di `local` storage (volume `backend_uploads`) dan mau migra
 - **S3 API compat:** https://developers.cloudflare.com/r2/api/s3/api/
 - **Backend code:** `apps/backend/src/services/storage.rs` (lihat `R2Storage` impl di line 200)
 - **Config loader:** `apps/backend/src/config.rs` (lihat validation R2 env di line 75–87)
-- **Existing DOCKER_SETUP:** `document/DOCKER_SETUP.md` (note tentang R2 secrets di line 29 & 98)
+- **Existing DOCKER_SETUP:** `document/operations/DOCKER_SETUP.md` (note tentang R2 secrets di line 29 & 98)
 - **Env template:** `.env.example` (line 56–62)

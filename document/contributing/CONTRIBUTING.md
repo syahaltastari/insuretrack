@@ -3,7 +3,7 @@
 Panduan kontribusi untuk repository **InsureTrack** (Digital Insurance Platform).
 Sebelum mengirim pull request, baca dokumen spesifikasi teknis
 (`Technical Specification Document Digital Insurance v1.2.pdf`) dan
-`DESIGN.md` untuk konsistensi API, status state machine, dan design system.
+`document/product/DESIGN.md` untuk konsistensi API, status state machine, dan design system.
 
 ---
 

@@ -1,5 +1,5 @@
 // Status badge — pakai CSS variables (clay-badge + status-* modifiers).
-// Reference: DESIGN.md §Badges + §Status colors.
+// Reference: document/product/DESIGN.md §Badges + §Status colors.
 
 const STATUS_MAP: Record<string, string> = {
   // Registrations / Invoices

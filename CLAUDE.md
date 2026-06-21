@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 End-to-end online policy registration & issuance system. Auto-accept insurance product, no manual underwriting: customer registers → invoice is generated → payment webhook fires → policy is issued (e-policy PDF delivered by email). Also includes a customer self-service portal (policies, claims, inquiries) and an admin back office.
 
-Full requirements live in **`Technical Specification Document Digital Insurance v1.2.pdf`** (read it for functional specs FS-01..FS-20, API contracts, identifier formats, status state machines, and non-functional requirements).
+Full requirements live in **`document/spec/Technical Specification Document Digital Insurance v1.2.pdf`** (read it for functional specs FS-01..FS-20, API contracts, identifier formats, status state machines, and non-functional requirements).
 
 ## Technology Stack (per spec)
 
@@ -182,7 +182,7 @@ Every entry below MUST produce a row in `audit_logs` (`actor`, `action`, `entity
 
 ## Design System (frontend)
 
-Visual system inspired by Clay.com — see `DESIGN.md` for the full spec. Implemented in `packages/ui/src/styles/globals.css` (di-import via `@insuretrack/ui/styles/globals.css` di layout masing-masing app). All UI must use these tokens/classes; do not introduce ad-hoc inline styles for color, radius, or shadow.
+Visual system inspired by Clay.com — see `document/product/DESIGN.md` for the full spec. Implemented in `packages/ui/src/styles/globals.css` (di-import via `@insuretrack/ui/styles/globals.css` di layout masing-masing app). All UI must use these tokens/classes; do not introduce ad-hoc inline styles for color, radius, or shadow.
 
 ### Fonts
 - **Body/UI:** Plus Jakarta Sans (substitute for proprietary Roobert; both geometric with rich OpenType features)
@@ -212,7 +212,7 @@ Visual system inspired by Clay.com — see `DESIGN.md` for the full spec. Implem
 - `--shadow-hard-hover`: `rgb(0,0,0) -7px 7px` — applied on button hover
 
 ### Color usage rules
-- **Maximum 2 swatch colors per section** (per DESIGN.md §7)
+- **Maximum 2 swatch colors per section** (per `document/product/DESIGN.md` §7)
 - Swatch colors are for **full sections**, not small accents
 - Dashed borders (`border-style: dashed`) for decorative/secondary containers
 - Borders: always warm oat, never neutral gray
@@ -225,7 +225,7 @@ Visual system inspired by Clay.com — see `DESIGN.md` for the full spec. Implem
 ## Commit & Contribution Standards
 
 Standar pesan commit, format PR, dan checklist kontribusi ada di
-[`CONTRIBUTING.md`](./CONTRIBUTING.md). Repo ini mengikuti
+[`CONTRIBUTING.md`](./document/contributing/CONTRIBUTING.md). Repo ini mengikuti
 [Conventional Commits 1.0](https://www.conventionalcommits.org/) —
 wajib untuk PR title, commit subject, dan changelog otomatis.
 

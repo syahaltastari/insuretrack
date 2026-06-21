@@ -1,5 +1,5 @@
 // Landing page (FS-01) — Clay-inspired design
-// Reference: DESIGN.md + globals.css design tokens
+// Reference: document/product/DESIGN.md + globals.css design tokens
 //
 // Catatan: dipindah dari app/page.tsx → app/(marketing)/page.tsx agar
 // Navbar + Footer di-share via `app/(marketing)/layout.tsx`. URL tetap `/`.

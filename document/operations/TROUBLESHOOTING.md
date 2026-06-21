@@ -2,7 +2,7 @@
 
 Quick reference untuk error yang umum muncul saat deploy demo + development. Diorganisir by **gejala** (apa yang Anda lihat) → **diagnosa** (cek apa) → **fix** (langkah konkret).
 
-> Untuk detail lengkap tentang deployment, lihat [`DEPLOY_QUICKSTART.md`](./DEPLOY_QUICKSTART.md) (mode demo) atau [`RUNBOOK_VPS_DEV.md`](./RUNBOOK_VPS_DEV.md) (deep dive).
+> Untuk detail lengkap tentang deployment, lihat [`DEPLOY_QUICKSTART.md`](./../deployment/DEPLOY_QUICKSTART.md) (mode demo) atau [`RUNBOOK_VPS_DEV.md`](./../deployment/RUNBOOK_VPS_DEV.md) (deep dive).
 
 ---
 
@@ -264,7 +264,7 @@ docker compose up -d <service>
   - DOKPLOY_API_KEY
   - DOKPLOY_COMPOSE_ID
 ```
-**Fix:** Setup 3 secrets di GitHub repo → Settings → Secrets → Actions. Lihat [`DEPLOY_QUICKSTART.md` §5](./DEPLOY_QUICKSTART.md#5-setup-github-secrets-sekali).
+**Fix:** Setup 3 secrets di GitHub repo → Settings → Secrets → Actions. Lihat [`DEPLOY_QUICKSTART.md` §5](./../deployment/DEPLOY_QUICKSTART.md#5-setup-github-secrets-sekali).
 
 #### `Dokploy API returned HTTP 401`
 ```
@@ -384,7 +384,7 @@ nc -zv <IP-VPS> 80  # bash/Git Bash
 |---|---|
 | Connection refused | Traefik belum jalan atau down. `ssh ubuntu@<IP-VPS> && docker ps` — pastikan `dokploy-traefik` Up. |
 | Timeout | Firewall VPS (`ufw`) atau cloud firewall block. |
-| UFW allow sudah OK tapi masih timeout | Cloud firewall (Azure NSG / Hetzner SG) yang block. Lihat [`DEPLOY_QUICKSTART.md` §4.2](./DEPLOY_QUICKSTART.md). |
+| UFW allow sudah OK tapi masih timeout | Cloud firewall (Azure NSG / Hetzner SG) yang block. Lihat [`DEPLOY_QUICKSTART.md` §4.2](./../deployment/DEPLOY_QUICKSTART.md). |
 
 ---
 
@@ -663,7 +663,7 @@ git push origin main
 ```
 
 #### Rollback DB schema
-Lihat [`DEPLOY_QUICKSTART.md` §8.2](./DEPLOY_QUICKSTART.md).
+Lihat [`DEPLOY_QUICKSTART.md` §8.2](./../deployment/DEPLOY_QUICKSTART.md).
 
 #### Nuclear: full reset
 ```bash
@@ -752,9 +752,9 @@ Save output ini ke file dan share ke tim support kalau perlu debug.
 
 | Topik | File |
 |---|---|
-| Quickstart (demo, single env, IP/sslip.io) | [`DEPLOY_QUICKSTART.md`](./DEPLOY_QUICKSTART.md) |
-| Deep dive VPS Dev + HTTP-only | [`RUNBOOK_VPS_DEV.md`](./RUNBOOK_VPS_DEV.md) |
-| Production deployment | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
+| Quickstart (demo, single env, IP/sslip.io) | [`DEPLOY_QUICKSTART.md`](./../deployment/DEPLOY_QUICKSTART.md) |
+| Deep dive VPS Dev + HTTP-only | [`RUNBOOK_VPS_DEV.md`](./../deployment/RUNBOOK_VPS_DEV.md) |
+| Production deployment | [`DEPLOYMENT.md`](./../deployment/DEPLOYMENT.md) |
 | Docker troubleshooting | [`DOCKER_SETUP.md`](./DOCKER_SETUP.md) |
 | Spec aplikasi | `Technical Specification Document Digital Insurance v1.2.pdf` |
 | Dokploy API docs | https://docs.dokploy.com/docs/api |

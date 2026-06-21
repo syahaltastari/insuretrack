@@ -660,10 +660,10 @@ Masing-masing butuh effort 1-4 jam, well-documented di [`DEPLOYMENT.md`](./DEPLO
 |---|---|
 | Production-grade deployment | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
 | Dokploy + HTTP-only deep dive | [`RUNBOOK_VPS_DEV.md`](./RUNBOOK_VPS_DEV.md) |
-| Docker troubleshooting | [`DOCKER_SETUP.md`](./DOCKER_SETUP.md) |
+| Docker troubleshooting | [`DOCKER_SETUP.md`](./../operations/DOCKER_SETUP.md) |
 | Cloudflare R2 storage | [`R2_SETUP.md`](./R2_SETUP.md) |
 | Application spec | `Technical Specification Document Digital Insurance v1.2.pdf` |
-| OpenAPI | [`openapi.yaml`](./openapi.yaml) |
+| OpenAPI | [`openapi.yaml`](./../api/openapi.yaml) |
 | Dokploy docs | https://docs.dokploy.com |
 | Traefik docs | https://doc.traefik.io/traefik/ |
 

@@ -571,7 +571,7 @@ Lokasi: `.env` di root repo (untuk local dev) atau tab **Secrets** di Dokploy UI
 | `NEXT_PUBLIC_API_URL` | ✅ | `https://api.${DOMAIN}` | Di-bake ke Next.js client bundle |
 | `REPLICAS` | ❌ | `2` | Jumlah instance per app service |
 | `STORAGE_BACKEND` | ❌ | `local` | `local` atau `r2` |
-| `R2_*` | Kalau `STORAGE_BACKEND=r2` | — | Cloudflare R2 credentials (lihat `document/R2_SETUP.md`) |
+| `R2_*` | Kalau `STORAGE_BACKEND=r2` | — | Cloudflare R2 credentials (lihat `document/deployment/R2_SETUP.md`) |
 | `INQUIRY_AUTO_CLOSE_DAYS` | ❌ | `7` | Auto-close inquiry setelah N hari tanpa balasan |
 | `BACKUP_CRON_SCHEDULE` | ❌ | `@daily` | Cron schedule db-backup |
 | `BACKUP_KEEP_DAYS` | ❌ | `7` | Retensi harian |
@@ -1118,7 +1118,7 @@ Kalau Dokploy panel di-expose ke internet, **强烈推荐** untuk limit akses. D
 
 ### 10.5 (Phase 2) Prometheus + Grafana
 
-Lihat backlog di `document/DOCKER_SETUP.md` §10 — out of scope untuk hardened stack sekarang, planned untuk iterasi berikutnya.
+Lihat backlog di `document/operations/DOCKER_SETUP.md` §10 — out of scope untuk hardened stack sekarang, planned untuk iterasi berikutnya.
 
 ---
 
@@ -1342,11 +1342,11 @@ Anda saat ini mungkin punya 3 Dokploy Application service terpisah (portal, admi
 
 ### F. Companion documents
 
-- [`DOCKER_SETUP.md`](./DOCKER_SETUP.md) — Setup Docker untuk local development, troubleshooting umum
+- [`DOCKER_SETUP.md`](./../operations/DOCKER_SETUP.md) — Setup Docker untuk local development, troubleshooting umum
 - [`R2_SETUP.md`](./R2_SETUP.md) — Konfigurasi Cloudflare R2 untuk storage backend
-- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — Commit conventions, PR process
-- [`DESIGN.md`](./DESIGN.md) — UI/UX design system (Clay-inspired)
-- [`USER_JOURNEYS.md`](./USER_JOURNEYS.md) — User journey maps untuk test cases
+- [`CONTRIBUTING.md`](./../contributing/CONTRIBUTING.md) — Commit conventions, PR process
+- [`DESIGN.md`](./../product/DESIGN.md) — UI/UX design system (Clay-inspired)
+- [`USER_JOURNEYS.md`](./../product/USER_JOURNEYS.md) — User journey maps untuk test cases
 - `Technical Specification Document Digital Insurance v1.2.pdf` — Canonical spec (FS-01..FS-20, identifier formats, state machines)
 
 ---

@@ -25,10 +25,10 @@ test it step-by-step without flipping back to other sections.
 
 ### Test credentials (seed data)
 
-After running `docker compose up -d --build`, the database is seeded with:
+After running `docker compose up -d --build` (or `dev.bat` for hybrid local), the database is seeded with:
 
-- **Admin:** username `admin`, password `admin` (change before production!)
-- **Customer:** no seed customer — register one through the public flow.
+- **Super Admin:** username `admin`, password `admin` (change before production!). Promoted to `is_super_admin = TRUE` by migration 0015 — can manage other admin accounts.
+- **Customer:** no seed customer — register one through the public flow (J2).
 - **Storage:** defaults to `local` (uploads go to `./apps/backend/uploads/`).
 
 ### API Conventions
@@ -38,7 +38,7 @@ After running `docker compose up -d --build`, the database is seeded with:
   { "error": { "code": "VALIDATION", "message": "..." } }
   ```
 - Customer auth: `Authorization: Bearer <jwt>` from `POST /api/customer/login`.
-- Admin auth: `Authorization: Bearer <jwt>` from `POST /api/admin/login`.
+- Admin auth: `Authorization: Bearer <jwt>` from `POST /api/admin/login`. The admin JWT includes the `is_super_admin` boolean claim (since migration 0015); super-admin-only routes check it via the `RequireSuperAdmin` extractor (see J31).
 - Webhook secret: `X-Webhook-Secret: dev_webhook_secret_change_me` (set in `.env`).
 - Customer vs admin JWTs are role-scoped — middleware refuses a customer token on admin routes and vice versa. A customer may only see/modify their own rows.
 
@@ -80,7 +80,7 @@ Monthly-reset sequences allocated inside a DB transaction:
 
 Every meaningful action writes a row to `audit_logs` (`actor`, `action`, `entity_type`, `entity_id`, `metadata` JSONB, `ip_address`). The full set emitted by the implementation:
 
-`admin_login`, `customer_login`, `customer_registered`, `registration_created`, `invoice_generated`, `policy_issued`, `claim_submitted`, `claim_status_changed`, `claim_payment_proof_uploaded`, `inquiry_submitted`, `inquiry_message_sent`, `inquiry_closed_by_customer`, `inquiry_closed_by_admin`, `inquiry_auto_closed`, `customer_profile_updated`, `customer_password_changed`, `customer_password_reset`, `admin_profile_updated`, `admin_password_changed`, `client_created`, `client_updated`, `client_deleted`, `testimonial_created`, `testimonial_updated`, `testimonial_deleted`, `email_queued`, `email_sent`, `email_failed`.
+`admin_login`, `admin_user_created`, `admin_user_updated`, `admin_user_activated`, `admin_user_deactivated`, `admin_user_password_reset`, `customer_login`, `customer_registered`, `registration_created`, `invoice_generated`, `policy_issued`, `claim_submitted`, `claim_status_changed`, `claim_payment_proof_uploaded`, `inquiry_submitted`, `inquiry_message_sent`, `inquiry_closed_by_customer`, `inquiry_closed_by_admin`, `inquiry_auto_closed`, `customer_profile_updated`, `customer_password_changed`, `customer_password_reset`, `admin_profile_updated`, `admin_password_changed`, `client_created`, `client_updated`, `client_deleted`, `testimonial_created`, `testimonial_updated`, `testimonial_deleted`, `email_queued`, `email_sent`, `email_failed`.
 
 > **Note on `payment_received`:** the older spec listing (`CLAUDE.md` and
 > the FS-15 table in the spec PDF) mentioned a `payment_received` audit
@@ -91,6 +91,11 @@ Every meaningful action writes a row to `audit_logs` (`actor`, `action`, `entity
 > `/admin/audit-logs?entity_type=policy`; the webhook response's
 > `replayed: true/false` flag plus the e-policy email send are the
 > other observable signals.
+
+> **Note on `admin_user_*`:** the 5 admin-user events are emitted by
+> **J31 — Admin User Management** (super-admin only). They use the
+> `admin_users` entity type and a `actor: admin:<uuid>` actor. Filter
+> in `/admin/audit-logs?entity_type=admin_users` to view them.
 
 ---
 
@@ -258,15 +263,19 @@ Content-Type: application/json
 
 **Goal:** A customer who forgot their password gets a reset link via email.
 
-**Path:** `http://localhost:3000/portal/reset`
+**Path:** `http://localhost:3000/portal/reset` — a **single page** that handles both modes (no separate `/reset/consume` route). The page reads `?token=<jwt>` from the URL and switches its form automatically.
 
-**Steps:**
-1. Open `/portal/reset`.
+**Steps — Mode 1: no token in URL (request link):**
+1. Open `/portal/reset` (no query string).
 2. Enter the registered email.
 3. Backend returns a `reset_token` in the response (in production, only via email).
-4. Open `/portal/reset/consume?token=<jwt>` (the link from the email).
-5. Enter a new password, confirm, click submit.
-6. Password is updated. Audit: `customer_password_reset`. You can now log in with the new password.
+4. Success screen: "Link reset password sudah dikirim ke email Anda".
+
+**Steps — Mode 2: `?token=...` in URL (consume link):**
+1. Open the link from the email: `/portal/reset?token=<jwt>`.
+2. Form auto-switches to "set new password" mode.
+3. Enter a new password + confirmation, submit.
+4. Backend returns a fresh login JWT, the page stores it in `localStorage` (`insuretrack_customer_token`) and auto-redirects to `/portal/dashboard`. Audit: `customer_password_reset`.
 
 **API:**
 ```
@@ -282,6 +291,8 @@ POST /api/customer/password/reset/consume
 Content-Type: application/json
 { "token": "<jwt>", "new_password": "NewPassword456" }
 ```
+
+Response includes a fresh login JWT for auto-login.
 
 ---
 
@@ -550,12 +561,12 @@ X-Webhook-Secret: dev_webhook_secret_change_me
 
 **What the backend does (in a single transaction):**
 1. Update `invoices.status = 'PAID'`, set `paid_at`.
-2. Update `registrations.status = 'PAID'`. Audit: `payment_received`.
+2. Update `registrations.status = 'PAID'`. (No `payment_received` audit — see note below.)
 3. Generate `policy_no` (e.g., `POL-202606-000001`).
 4. Insert `policies` row with `status = 'ACTIVE'`.
 5. Update `registrations.status = 'ISSUED'`.
 6. Commit.
-7. Render e-policy PDF, save to storage, update `policies.pdf_path`. Audit: `policy_issued`.
+7. Render e-policy PDF, save to storage, update `policies.pdf_path`. Audit: `policy_issued` (1 per issued policy — so 1 for INDIVIDU, N for INSTANSI; this serves as the implicit payment trail).
 8. Send 2 emails: **PAYMENT_SUCCESS** (text) + **E_POLICY_DELIVERY** (with PDF attachment).
 9. (Already covered) **PORTAL_ACTIVATION** is sent only on the *first* issued policy for that customer, with a one-time set-password link. Subsequent policies just send `E_POLICY_DELIVERY`.
 
@@ -567,7 +578,7 @@ X-Webhook-Secret: dev_webhook_secret_change_me
 - [ ] `policies.pdf_path` is set, file exists.
 - [ ] Customer now has 1 (or N) active policies in dashboard (J6).
 - [ ] Email with e-policy PDF arrives in inbox.
-- [ ] Audit: `payment_received`, `policy_issued`.
+- [ ] Audit: `policy_issued` (one per issued policy — filter via `/admin/audit-logs?entity_type=policy`).
 
 **Idempotency:** Replay the same webhook → returns `200 OK` with `replayed: true`, no duplicate policy, no duplicate emails.
 
@@ -609,7 +620,9 @@ GET /api/customer/invoices/:id/pdf
 
 ### J11. Submit a Claim
 
-**Path:** `http://localhost:3000/portal/claims/new` (or via `/portal/claims` → **Ajukan Klaim** button, gated by `activePolicyCount > 0`)
+**Path:** `http://localhost:3000/portal/claims/new` (or via `/portal/claims` → **Ajukan Klaim** button)
+
+**Pre-condition (gating):** the **Ajukan Klaim** button is **disabled** when the customer has zero active policies. The portal calls `GET /api/customer/policies?status=ACTIVE&page=1&page_size=1` on mount to read the count; if `total === 0`, the button is greyed-out with a tooltip "Anda belum memiliki polis aktif". An active policy is therefore a hard pre-requisite — submit a registration, complete the payment webhook (J8), and wait for `policy.status = 'ACTIVE'` before a claim can be filed.
 
 **Design note (industry-aligned):** in real insurance, crucial fields like
 the claim type and the payout amount are *not* chosen by the customer
@@ -693,7 +706,7 @@ GET /api/customer/claims/:id
 
 **Steps:**
 1. Open `/portal/inquiries`.
-2. Fill subject + message. Submit. Backend creates an inquiry with `status = 'OPEN'`, generates `inquiry_no`, creates the first message in `inquiry_messages` (sender_type=CUSTOMER, sender_id=you, sender_name=your name). Audit: `inquiry_submitted`.
+2. Fill subject + message. Submit. Backend creates an inquiry with `status = 'OPEN'`, generates `inquiry_no`, creates the first message in `inquiry_messages` (sender_type=CUSTOMER, sender_id=you, sender_name=your name), and sends an `INQUIRY_NEW` notification email to admin. Audit: `inquiry_submitted`.
 3. The new inquiry appears in the list as a card; click to expand the thread (see J14).
 
 **API:**
@@ -722,13 +735,13 @@ Content-Type: application/json
 
 **Reply to thread:**
 1. Type a new message. Click **Kirim Balasan**.
-2. Backend inserts a new `inquiry_messages` row (sender_type=CUSTOMER), updates `last_message_at`, `last_sender_type = 'CUSTOMER'`, sets status back to `OPEN`. Sends an internal notification email to admin (subject `[Inquiry INQ-...] Balasan dari customer`). Audit: `inquiry_message_sent`.
+2. Backend inserts a new `inquiry_messages` row (sender_type=CUSTOMER), updates `last_message_at`, `last_sender_type = 'CUSTOMER'`, sets status back to `OPEN`. Sends an `INQUIRY_CUSTOMER_REPLY` notification email to admin (subject `[Inquiry INQ-...] Balasan dari customer`). Audit: `inquiry_message_sent`.
 
 **Close inquiry:**
 1. Click **Tutup Tiket** (button visible when status is `ANSWERED` — i.e. admin already replied and you don't want to continue).
 2. Backend sets `status = 'CLOSED'`, `closed_at = now()`. Audit: `inquiry_closed_by_customer`.
 
-**Auto-close behavior:** If neither party replies for `INQUIRY_AUTO_CLOSE_DAYS` (default 7) days after the last message, the inquiry is auto-closed on the next GET. No email is sent for auto-close.
+**Auto-close behavior:** If neither party replies for `INQUIRY_AUTO_CLOSE_DAYS` (default 7) days after the last message, the inquiry is auto-closed on the next GET. The customer receives an `INQUIRY_AUTO_CLOSED` email to confirm the closure. Audit: `inquiry_auto_closed`.
 
 **API:**
 ```
@@ -834,6 +847,35 @@ The portal uses a sidebar + topbar layout. Understanding it helps when testing n
 ## Part 4 — Admin Backoffice (logged-in as admin)
 
 > Admin is a separate role. Token is stored under `insuretrack_admin_token` in `localStorage`.
+
+### Admin layout (visual reference)
+
+The admin surface uses the same sidebar + topbar as the portal but with admin-only routes:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ ☰ [sidebar toggle] [minimize]  InsureTrack Admin  [👤 ▼]   │  ← topbar
+├──────────────┬──────────────────────────────────────────────┤
+│ Dashboard    │                                              │
+│ Registrasi   │                                              │
+│ Invoice      │                                              │
+│ Polis        │            <page content here>               │
+│ Klaim        │                                              │
+│ Pertanyaan   │                                              │
+│ Email Logs   │                                              │
+│ Audit Logs   │                                              │
+│ ─────────    │                                              │
+│ Marketing    │                                              │
+│  ├ Klien     │                                              │
+│  └ Testimoni │                                              │
+│ ─────────    │                                              │
+│ User [super] │  ← only shown to is_super_admin=TRUE        │
+└──────────────┴──────────────────────────────────────────────┘
+```
+
+- **User** entry at the bottom of the sidebar is **conditionally rendered** — only visible if `GET /api/admin/me` returns `is_super_admin: true`. Clicking it routes to `/admin/users` (J31).
+- The topbar avatar menu mirrors the portal: **Profil Saya** (`/admin/profile`), **Ganti Password**, **Logout**.
+- Sidebar items route to `/admin/dashboard`, `/admin/registrations`, `/admin/invoices`, `/admin/policies`, `/admin/claims`, `/admin/inquiries`, `/admin/email-logs`, `/admin/audit-logs`, `/admin/clients`, `/admin/testimonials`, and `/admin/users` (super only).
 
 ### J18. Admin Login
 
@@ -1075,13 +1117,30 @@ Add / edit / feature / activate customer testimonials. Each has customer name, p
 
 **Path:** `http://localhost:3001/admin/email-logs`
 
-Table: recipient, `email_type` (REGISTRATION_SUCCESS, INVOICE_NOTIFICATION, PAYMENT_SUCCESS, E_POLICY_DELIVERY, PORTAL_ACTIVATION, CLAIM_RECEIVED, CLAIM_STATUS_UPDATE, INQUIRY_RESPONSE), subject, status (SENT/FAILED/QUEUED), `error_message`, `sent_at`.
+Table: recipient, `email_type` (REGISTRATION_SUCCESS, INVOICE_NOTIFICATION, PAYMENT_SUCCESS, E_POLICY_DELIVERY, PORTAL_ACTIVATION, CLAIM_RECEIVED, CLAIM_STATUS_UPDATE, INQUIRY_RESPONSE, INQUIRY_NEW, INQUIRY_CUSTOMER_REPLY, INQUIRY_AUTO_CLOSED), subject, status (SENT/FAILED/QUEUED), `error_message`, `sent_at`.
 
 Useful for debugging "did the email actually go out?" or "why did this email fail?".
+
+**Email type reference (11 total — per `services/email.rs::EmailType`):**
+
+| Type | Trigger | Recipient |
+| --- | --- | --- |
+| `REGISTRATION_SUCCESS` | Customer submits `POST /api/customer/registrations` | customer |
+| `INVOICE_NOTIFICATION` | Same trigger as above (invoice generated) | customer (with invoice PDF) |
+| `PAYMENT_SUCCESS` | Webhook flips invoice to PAID | customer |
+| `E_POLICY_DELIVERY` | Policy issued (1 for INDIVIDU, N for INSTANSI) | customer (with e-policy PDF) |
+| `PORTAL_ACTIVATION` | **First** policy issued for a customer — includes one-time set-password link | customer |
+| `CLAIM_RECEIVED` | Customer submits a claim | customer |
+| `CLAIM_STATUS_UPDATE` | Admin updates a claim status (incl. override + paid) | customer |
+| `INQUIRY_NEW` | Customer creates a new inquiry (first message) | admin |
+| `INQUIRY_RESPONSE` | Admin replies to a customer inquiry | customer |
+| `INQUIRY_CUSTOMER_REPLY` | Customer replies to an admin answer | admin |
+| `INQUIRY_AUTO_CLOSED` | Inquiry auto-closed after `INQUIRY_AUTO_CLOSE_DAYS` of inactivity | customer |
 
 **API:**
 ```
 GET /api/admin/email-logs?status=FAILED
+GET /api/admin/email-logs?email_type=INQUIRY_NEW
 ```
 
 ---
@@ -1130,6 +1189,47 @@ Audit: `admin_password_changed`.
 
 ---
 
+### J31. Manage Admin Users (Super Admin only)
+
+**Goal:** A super admin creates, edits, activates/deactivates, and resets passwords for other admin accounts. Introduced in migration 0015 via a new `admin_users.is_super_admin` boolean column.
+
+**Path:** `http://localhost:3001/admin/users` (top-level route, not in the avatar menu — discoverable from the sidebar).
+
+**Pre-condition:** the logged-in admin must have `is_super_admin = TRUE`. Non-super admins are **blocked at the page level** with a "Akses ditolak" card — the page also re-checks server-side via `RequireSuperAdmin` extractor on every endpoint, so direct API calls from a non-super token return 403.
+
+> The seed account `admin` is the only super admin by default. There is no way to demote yourself — to keep at least one super admin in the system, the backend rejects PATCH/POST/DELETE operations targeting the **current** admin's own row (helper `ensure_not_self`).
+
+**Table columns:** Username (with **Anda** badge on your own row), Nama Lengkap, Email, Role (`Super Admin` blueberry badge / `Admin` muted badge), Status (Aktif / Nonaktif), Last Login, Created, **Aksi** dropdown.
+
+**Row actions:**
+- **Edit** → modal with `full_name`, `email`, `is_super_admin` checkbox. Save → PATCH `/api/admin/users/:id`. Audit: `admin_user_updated`.
+- **Aktifkan / Nonaktifkan** → POST `/api/admin/users/:id/activate` or `/deactivate`. Disabled when target is self. Audit: `admin_user_activated` / `admin_user_deactivated`.
+- **Reset Password** → confirm modal → POST `/api/admin/users/:id/reset-password` → backend returns a fresh 16-character random password. The plaintext is shown **once** in a copy-to-clipboard modal — the user must save it before closing. Audit: `admin_user_password_reset`.
+
+**Create flow (header button "Tambah Admin"):**
+1. Click **Tambah Admin** → modal opens.
+2. Fill `username` (3–64 chars, `a-zA-Z0-9_.-`), `full_name` (1–120), `email` (optional), `password` (min 8, 1 uppercase, 1 digit), `is_super_admin` checkbox.
+3. Submit → POST `/api/admin/users`. Backend hashes the password (argon2id), inserts the row, and audits `admin_user_created`. The new admin can log in immediately.
+
+**API:**
+```
+GET    /api/admin/users                              # list (super_admin only)
+GET    /api/admin/users/:id                          # detail (super_admin only)
+POST   /api/admin/users                              # create
+PATCH  /api/admin/users/:id                          # edit (full_name, email, is_super_admin)
+POST   /api/admin/users/:id/activate                 # set is_active = TRUE
+POST   /api/admin/users/:id/deactivate               # set is_active = FALSE
+POST   /api/admin/users/:id/reset-password           # returns { new_password: "..." }
+```
+
+> All endpoints above require a JWT with `is_super_admin: true` claim.
+> GET `/api/admin/me` (used by the topbar) does **not** require super — it
+> returns the calling admin's own row including the `is_super_admin` flag,
+> which the front-end uses to conditionally render the **Manajemen User**
+> menu item and the route guard on `/admin/users`.
+
+---
+
 ## Part 5 — End-to-End Test Scripts (suggested order)
 
 If you're testing from scratch, follow this order. Each step builds on the previous.
@@ -1148,7 +1248,7 @@ docker compose logs backend | grep "listening on"
 ```
 
 > **Native local dev (no Docker):** if you're running the hybrid setup with
-> PostgreSQL 18 native on port 5432, see `document/RUNBOOK_VPS_DEV.md` for
+> PostgreSQL 18 native on port 5432, see `document/deployment/RUNBOOK_VPS_DEV.md` for
 > the alternative `dev.bat` workflow.
 
 ### Suggested test sequence
@@ -1184,7 +1284,11 @@ docker compose logs backend | grep "listening on"
 | 27 | J19–J22 Admin views | All data visible, CSV export works, PDFs downloadable. |
 | 28 | J20b Admin registration detail | For INSTANSI, see N participants in detail page. |
 | 29 | J25–J26 Admin marketing | Add a new client, see it on landing. |
-| 30 | J27–J28 Admin logs | Failed emails visible, audit trail complete (29 action types, see Quick Reference). |
+| 30 | J27–J28 Admin logs | Failed emails visible, audit trail complete (32 action types, see Quick Reference). |
+| 31 | J31 Create a 2nd admin user | Login as 2nd admin (non-super) — `/admin/users` shows "Akses ditolak". Re-login as super admin to manage. |
+| 32 | J31 Reset password for non-super admin | Generated password shown once in modal; new admin can log in with it. |
+| 33 | J31 Deactivate non-super admin | Login attempt with deactivated admin → 403. Re-activate to recover. |
+| 34 | J31 Self-protection | Try to deactivate or demote your own super-admin row → 400 "tidak bisa melakukan '...' pada akun sendiri". |
 
 ---
 
@@ -1204,13 +1308,16 @@ docker compose logs backend | grep "listening on"
 | LIFE submission rejected | Missing `beneficiary_name` | Required for LIFE on either registration form (Individu) or per-peserta in Instansi. |
 | TS red underline in `packages/*/tsconfig.json` | Stale `tsconfig.tsbuildinfo` | `rm -f packages/*/tsconfig.tsbuildinfo` then reload VS Code. |
 | `cargo build` complains about rustc version | `Cargo.lock` pulled newer AWS SDK | Bump rustc tag in `apps/backend/Dockerfile`. |
+| `/admin/users` shows "Akses ditolak" for the seed `admin` | Migration 0015 didn't run, or seed `admin` was created in a pre-0015 DB | Re-run `sqlx::migrate!` (backend startup) — it will promote `admin` to super admin via `UPDATE admin_users SET is_super_admin = TRUE WHERE username = 'admin'`. |
+| Forgot the generated reset-password from J31 | Modal closed before copy | Backend doesn't store the plaintext — re-trigger the reset from `/admin/users` and copy immediately. |
 
 ---
 
 ## See also
 
-- `Technical Specification Document Digital Insurance v1.2.pdf` — full functional spec (FS-01..FS-20), API contracts, state machines, identifier formats.
-- `DESIGN.md` — design system (colors, fonts, components, layout grid).
-- `CONTRIBUTING.md` — commit message standard, PR conventions.
+- `document/spec/Technical Specification Document Digital Insurance v1.2.pdf` — full functional spec (FS-01..FS-20), API contracts, state machines, identifier formats.
+- `document/product/DESIGN.md` — design system (colors, fonts, components, layout grid).
+- `document/contributing/CONTRIBUTING.md` — commit message standard, PR conventions.
 - `CLAUDE.md` (root) — code comment standard, monorepo structure, project conventions.
-- `document/RUNBOOK_VPS_DEV.md` — VPS dev deployment runbook (Dokploy + Traefik).
+- `document/deployment/RUNBOOK_VPS_DEV.md` — VPS dev deployment runbook (Dokploy + Traefik).
+- `MIGRATION.md` (root) — applied migrations and the rationale for each.

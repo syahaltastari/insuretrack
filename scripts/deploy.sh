@@ -18,7 +18,7 @@
 #     + docker compose up). Script ini untuk local dev & manual deploy
 #     via SSH.
 #   - Image lama TIDAK otomatis di-prune. Gunakan `docker image prune`
-#     berkala (lihat document/DEPLOYMENT.md §11).
+#     berkala (lihat document/deployment/DEPLOYMENT.md §11).
 # =============================================================================
 
 set -euo pipefail

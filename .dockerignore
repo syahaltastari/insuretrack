@@ -70,9 +70,9 @@ Thumbs.db
 document
 document/**
 README.md
-CONTRIBUTING.md
+document/contributing/CONTRIBUTING.md
 MIGRATION.md
-DESIGN.md
+document/product/DESIGN.md
 CLAUDE.md
 LICENSE
 LICENSE.md

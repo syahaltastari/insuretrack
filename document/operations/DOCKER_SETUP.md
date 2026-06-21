@@ -411,7 +411,7 @@ grep node-linker .npmrc
 | `apps/portal/next.config.ts` | Tambah `outputFileTracingRoot: path.join(__dirname, "../..")` | Standalone output konsisten host↔Docker |
 | `apps/admin/next.config.ts` | Sama | Konsistensi |
 | `apps/backend/Dockerfile` | Tambah `wget` ke runtime stage | Healthcheck reliability |
-| `document/DOCKER_SETUP.md` | **NEW** — dokumen ini | Onboarding + troubleshooting |
+| `document/operations/DOCKER_SETUP.md` | **NEW** — dokumen ini | Onboarding + troubleshooting |
 
 ---
 
@@ -454,6 +454,6 @@ Admin:   HTTP 200
 
 - **Spec full project:** `Technical Specification Document Digital Insurance v1.2.pdf`
 - **Monorepo migration notes:** `MIGRATION.md`
-- **Design system:** `DESIGN.md`
-- **OpenAPI spec:** `document/openapi.yaml`
+- **Design system:** `document/product/DESIGN.md`
+- **OpenAPI spec:** `document/api/openapi.yaml`
 - **Project memory:** `~/.claude/projects/.../memory/MEMORY.md` (per-session context)
