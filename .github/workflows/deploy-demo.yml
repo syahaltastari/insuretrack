@@ -32,10 +32,14 @@ on:
   workflow_run:
     workflows: ["Build & Push Images"]
     types: [completed]
-    # Tanpa `branches:` filter — `workflow_run` + branches tidak reliable
-    # di GitHub Actions (kadang applied, kadang ignored per workflow).
-    # Push ke branch manapun yang trigger Build akan trigger deploy ini.
-    # Branch-specific restrictions bisa ditambah via `if:` di job.
+    # `branches: [main, dev]` WAJIB eksplisit. Tanpa filter ini, GitHub
+    # Actions default-nya HANYA fire untuk run di **default branch**
+    # (= `main` di repo ini). Build di `dev` akan di-skip → deploy
+    # otomatis terputus di dev tapi jalan di main.
+    #
+    # Polling fallback di job `ci-gate` di-bawah juga akan gagal dengan
+    # pesan "Build workflow belum jalan" kalau filter ini missing.
+    branches: [main, dev]
   workflow_dispatch:
     # Manual trigger dari GitHub Actions UI — untuk rollback / redeploy manual
 

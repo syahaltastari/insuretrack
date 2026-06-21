@@ -32,10 +32,16 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    # Tanpa `branches:` filter — `workflow_run` + branches tidak reliable
-    # di GitHub Actions (kadang applied, kadang ignored per workflow).
-    # Push ke branch manapun yang trigger CI akan trigger build ini.
-    # Branch-specific restrictions bisa ditambah via `if:` di job.
+    # `branches: [main, dev]` WAJIB eksplisit. Tanpa filter ini, GitHub
+    # Actions default-nya HANYA fire untuk run di **default branch**
+    # (= `main` di repo ini). Push ke `dev` akan di-skip diam-diam —
+    # itulah sebabnya chain CI → build terputus di dev tapi jalan di main.
+    #
+    # (Catatan histori: versi sebelumnya pakai `branches: [main]` lalu
+    # dihapus karena dianggap unreliable. Tapi tanpa filter sama sekali
+    # justru lebih ketat — default-nya default-branch-only. Solusi:
+    # tulis branch list secara eksplisit.)
+    branches: [main, dev]
   workflow_dispatch:
 
 concurrency:
