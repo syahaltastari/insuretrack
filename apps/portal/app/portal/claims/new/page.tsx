@@ -66,6 +66,14 @@ function buildDescriptionTemplate(
   return `Klaim untuk polis ${policy.policy_no} (${productName}) — kejadian pada ${datePart}.`;
 }
 
+// Tanggal lokal sebagai string YYYY-MM-DD — hindari `new Date(dateOnlyString)`
+// yang di-parse sebagai UTC midnight (selisih timezone bikin "hari ini" selalu
+// terlihat di masa depan untuk user WIB).
+function todayLocalDateString(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Hanya 3 field yang user isi: polis, tanggal insiden, deskripsi (auto-fill).
 // `claim_type` & `claimed_amount` di-set server-side dari policy
 // (lihat apps/backend/src/routes/customer.rs::create_claim).
@@ -75,7 +83,10 @@ const claimSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal YYYY-MM-DD")
     .refine(
-      (s) => new Date(s) <= new Date(new Date().toDateString()),
+      // Bandingkan string YYYY-MM-DD langsung — pakai Date object di sini
+      // ke-shift timezone (UTC parse vs local "today") dan selalu menolak
+      // tanggal hari ini untuk user WIB.
+      (s) => s <= todayLocalDateString(),
       "Tanggal tidak boleh di masa depan",
     ),
   description: z

@@ -1029,7 +1029,11 @@ async fn create_claim(
             "policy not active (status: {pstatus})"
         )));
     }
-    let today = Utc::now().date_naive();
+    // WIB (UTC+7), bukan Utc::now().date_naive() — kalender UTC lag 7 jam
+    // dari WIB, jadi incident_date = hari ini bisa salah ke-reject sebagai
+    // "masa depan" antara jam 00:00-06:59 WIB.
+    let wib = chrono::FixedOffset::east_opt(7 * 3600).expect("valid offset");
+    let today = Utc::now().with_timezone(&wib).date_naive();
     if data.incident_date > today {
         return Err(AppError::Validation(
             "incident_date cannot be in the future".into(),
