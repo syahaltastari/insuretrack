@@ -1863,8 +1863,6 @@ async fn submit_insurance_application(
 
     let data_json =
         data_field.ok_or_else(|| AppError::Validation("missing 'data' field".into()))?;
-    let (ktp_name, ktp_ct, ktp_bytes) =
-        ktp_field.ok_or_else(|| AppError::Validation("missing 'id_card' file".into()))?;
     let data: RegistrationData = serde_json::from_str(&data_json)
         .map_err(|e| AppError::Validation(format!("invalid data JSON: {e}")))?;
     validate_registration(&data)?;
@@ -1875,38 +1873,81 @@ async fn submit_insurance_application(
 
     let mut tx = state.pool.begin().await?;
 
-    let ktp_ref = state
-        .storage
-        .save_ktp(customer_id, &ktp_name, &ktp_ct, &ktp_bytes)
-        .await?;
-    let ktp_path = ktp_ref.key;
+    // id_card wajib untuk INDIVIDU; opsional untuk INSTANSI (KTP per
+    // peserta belum di-upload di MVP). Parse data JSON dulu baru cek.
+    let ktp_path_opt: Option<String> = match data.applicant_type {
+        crate::dto::ApplicantType::Individu => {
+            let (ktp_name, ktp_ct, ktp_bytes) =
+                ktp_field.ok_or_else(|| AppError::Validation("missing 'id_card' file".into()))?;
+            let ktp_ref = state
+                .storage
+                .save_ktp(customer_id, &ktp_name, &ktp_ct, &ktp_bytes)
+                .await?;
+            Some(ktp_ref.key)
+        }
+        crate::dto::ApplicantType::Instansi => {
+            if let Some((ktp_name, ktp_ct, ktp_bytes)) = ktp_field {
+                let ktp_ref = state
+                    .storage
+                    .save_ktp(customer_id, &ktp_name, &ktp_ct, &ktp_bytes)
+                    .await?;
+                Some(ktp_ref.key)
+            } else {
+                None
+            }
+        }
+    };
 
-    sqlx::query(
-        r#"
-        UPDATE customers
-           SET nik = $1, birth_place = $2, birth_date = $3, gender = $4,
-               address = $5, rt_rw = $6, village = $7, district = $8,
-               city = $9, province = $10, postal_code = $11, mobile_number = $12,
-               id_card_path = $13, updated_at = now()
-         WHERE id = $14
-        "#,
-    )
-    .bind(&data.nik)
-    .bind(&data.birth_place)
-    .bind(data.birth_date)
-    .bind(&data.gender)
-    .bind(&data.address)
-    .bind(&data.rt_rw)
-    .bind(&data.village)
-    .bind(&data.district)
-    .bind(&data.city)
-    .bind(&data.province)
-    .bind(&data.postal_code)
-    .bind(&data.mobile_number)
-    .bind(&ktp_path)
-    .bind(customer_id)
-    .execute(&mut *tx)
-    .await?;
+    // UPDATE customers — INDIVIDU: update semua field personal + ktp_path.
+    // INSTANSI: hanya update NIK + mobile_number (data personal lain
+    // ada di participants; jangan overwrite dengan nilai kosong/dummy).
+    match data.applicant_type {
+        crate::dto::ApplicantType::Individu => {
+            sqlx::query(
+                r#"
+                UPDATE customers
+                   SET nik = $1, birth_place = $2, birth_date = $3, gender = $4,
+                       address = $5, rt_rw = $6, village = $7, district = $8,
+                       city = $9, province = $10, postal_code = $11, mobile_number = $12,
+                       id_card_path = $13, updated_at = now()
+                 WHERE id = $14
+                "#,
+            )
+            .bind(&data.nik)
+            .bind(&data.birth_place)
+            .bind(data.birth_date)
+            .bind(&data.gender)
+            .bind(&data.address)
+            .bind(&data.rt_rw)
+            .bind(&data.village)
+            .bind(&data.district)
+            .bind(&data.city)
+            .bind(&data.province)
+            .bind(&data.postal_code)
+            .bind(&data.mobile_number)
+            .bind(ktp_path_opt.as_deref())
+            .bind(customer_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        crate::dto::ApplicantType::Instansi => {
+            // COALESCE: pertahankan id_card_path lama kalau tidak ada upload baru.
+            sqlx::query(
+                r#"
+                UPDATE customers
+                   SET nik = $1, mobile_number = $2,
+                       id_card_path = COALESCE($3, id_card_path), updated_at = now()
+                 WHERE id = $4
+                "#,
+            )
+            .bind(&data.nik)
+            .bind(&data.mobile_number)
+            .bind(ktp_path_opt.as_deref())
+            .bind(customer_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
 
     let registration_no = next_id(&mut tx, EntityType::Registration).await?;
     let per_participant_premium = calculate_premium(plan, data.coverage_term);

@@ -19,7 +19,7 @@
  * FormError tidak dipakai (konsisten dengan pattern di Individu form).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -110,6 +110,17 @@ export function InstansiForm({
     },
     mode: "onBlur",
   });
+
+  // Auto-select plan pertama saat catalog/produk berubah (sama seperti Individu form).
+  useEffect(() => {
+    if (visiblePlans.length === 0) return;
+    const current = methods.getValues("plan_code");
+    const stillValid = visiblePlans.some((p) => p.code === current);
+    if (!stillValid) {
+      methods.setValue("plan_code", visiblePlans[0].code, { shouldValidate: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visiblePlans]);
 
   // Per-tab checkmark helpers
   const watched = methods.watch();
