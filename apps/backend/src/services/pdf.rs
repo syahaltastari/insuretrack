@@ -46,10 +46,9 @@ const C_SILVER: (u8, u8, u8) = (159, 155, 147); // --warm-silver
 // E-Policy PDF (corporate-grade)
 // ============================================================================
 
-/// Input untuk e-Policy PDF. Field `customer_*` (nama/NIK/TTL/etc)
-/// berbeda sumber tergantung applicant_type:
-///   - INDIVIDU: dari `customers` table
-///   - INSTANSI: dari `registration_participants` table
+/// Input untuk e-Policy PDF. Field `customer_*` (nama/NIK/TTL/etc) selalu
+/// dari `customers` table — untuk INSTANSI, baris `customers` milik peserta
+/// (di-resolve via `registration_members`), bukan kontak yang mendaftarkan.
 pub struct PolicyPdfInput<'a> {
     // Identifiers
     pub policy_no: &'a str,
@@ -91,9 +90,8 @@ pub struct PolicyPdfInput<'a> {
 /// header bar, two-column info card, coverage table, beneficiary box,
 /// signature line, dan footer bar. Single-page layout.
 pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
-    let (doc, page1, layer1) =
+    let (doc, page1, layer1_id) =
         PdfDocument::new("E-Policy", Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
-    let layer = doc.get_page(page1).get_layer(layer1);
 
     let bold = doc
         .add_builtin_font(BuiltinFont::HelveticaBold)
@@ -105,336 +103,649 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
         .add_builtin_font(BuiltinFont::HelveticaOblique)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("font italic: {e}")))?;
 
-    // ===== HEADER BAR (black) — y 285..262 (23mm tall) =====
-    fill_rect(&layer, 0.0, 262.0, 210.0, 285.0, C_BLACK);
-    layer.use_text("InsureTrack", 20.0, Mm(20.0), Mm(275.0), &bold);
+    // =========================================================================
+    // HALAMAN 1 — SAMPUL POLIS
+    // =========================================================================
+    let layer = doc.get_page(page1).get_layer(layer1_id);
+
+    // Header bar hitam, flush ke atas (y 275..297)
+    fill_rect(&layer, 0.0, 275.0, 210.0, 297.0, C_BLACK);
+    set_color(&layer, C_WHITE);
+    layer.use_text("InsureTrack", 18.0, Mm(15.0), Mm(287.0), &bold);
     set_color(&layer, C_CREAM);
     layer.use_text(
         "Asuransi digital, prosesnya cepat, polis langsung terbit.",
-        9.0,
-        Mm(20.0),
-        Mm(266.0),
+        8.0,
+        Mm(15.0),
+        Mm(278.5),
         &reg,
     );
-    set_color(&layer, C_WHITE);
-    layer.use_text("E-POLICY", 22.0, Mm(150.0), Mm(275.0), &bold);
     set_color(&layer, C_CREAM);
-    layer.use_text("Polis Asuransi Digital", 9.0, Mm(150.0), Mm(266.0), &reg);
+    layer.use_text("POLIS ASURANSI DIGITAL", 8.5, Mm(143.0), Mm(283.0), &bold);
 
-    // ===== TITLE + STATUS BADGE — y 252..232 (20mm) =====
+    // Badge AKTIF (matcha, top-right konten)
+    fill_rect(&layer, 148.0, 259.0, 195.0, 270.0, C_MATCHA_300);
     set_color(&layer, C_BLACK);
-    layer.use_text("Bukti Perlindungan Anda Aktif", 16.0, Mm(20.0), Mm(248.0), &bold);
+    layer.use_text("AKTIF", 10.0, Mm(163.0), Mm(262.5), &bold);
+
+    // Judul besar
+    set_color(&layer, C_BLACK);
+    layer.use_text("POLIS ASURANSI", 26.0, Mm(15.0), Mm(248.0), &bold);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(input.product_name, 13.0, Mm(15.0), Mm(235.5), &bold);
+    // Garis dekoratif pendek di bawah judul
+    fill_rect(&layer, 15.0, 229.5, 68.0, 232.0, C_BLACK);
+
+    // Nomor Polis
     set_color(&layer, C_SILVER);
-    layer.use_text(
-        "Polis ini diterbitkan secara elektronik dan sah tanpa tanda tangan basah.",
-        9.0,
-        Mm(20.0),
-        Mm(240.0),
-        &reg,
-    );
-    // Status badge "AKTIF" — matcha green box
-    fill_rect(&layer, 140.0, 242.0, 190.0, 252.0, C_MATCHA_300);
+    layer.use_text("NOMOR POLIS", 7.0, Mm(15.0), Mm(223.0), &bold);
     set_color(&layer, C_BLACK);
-    layer.use_text("AKTIF", 11.0, Mm(155.0), Mm(245.0), &bold);
+    layer.use_text(input.policy_no, 20.0, Mm(15.0), Mm(210.0), &bold);
 
-    // ===== TWO-COLUMN INFO CARD — y 222..178 (44mm tall) =====
-    fill_rect(&layer, 20.0, 178.0, 190.0, 222.0, C_CREAM);
     set_color(&layer, C_OAT_BORDER);
-    draw_line(&layer, 105.0, 178.0, 105.0, 222.0, 0.3);
+    draw_line(&layer, 15.0, 202.0, 195.0, 202.0, 0.4);
 
-    // Left column: PEMEGANG POLIS
+    // Pemegang Polis
     set_color(&layer, C_SILVER);
-    layer.use_text("PEMEGANG POLIS", 7.0, Mm(25.0), Mm(216.0), &bold);
+    layer.use_text("PEMEGANG POLIS", 7.0, Mm(15.0), Mm(195.0), &bold);
     set_color(&layer, C_BLACK);
     layer.use_text(
-        truncate(input.customer_name, 28).as_str(),
-        12.0,
-        Mm(25.0),
-        Mm(208.0),
+        truncate(input.customer_name, 34).as_str(),
+        13.0,
+        Mm(15.0),
+        Mm(184.5),
         &bold,
     );
     set_color(&layer, C_CHARCOAL);
     layer.use_text(
-        format!("NIK: {}", input.customer_nik).as_str(),
-        8.5,
-        Mm(25.0),
-        Mm(201.0),
+        format!("NIK  {}", input.customer_nik).as_str(),
+        9.0,
+        Mm(15.0),
+        Mm(176.5),
         &reg,
     );
-    let ttl = format!(
-        "TTL: {}, {}",
+    let ttl_cover = format!(
+        "TTL  {}, {}",
         input.customer_birth_place,
         format_date_id(input.customer_birth_date)
     );
-    layer.use_text(ttl.as_str(), 8.5, Mm(25.0), Mm(195.0), &reg);
+    layer.use_text(truncate(&ttl_cover, 52).as_str(), 9.0, Mm(15.0), Mm(170.0), &reg);
+
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 15.0, 163.0, 195.0, 163.0, 0.4);
+
+    // Tiga kotak info (Masa Berlaku | Uang Pertanggungan | Premi)
+    // Kotak 1: Masa Berlaku (x 15..82)
+    fill_rect(&layer, 15.0, 111.0, 82.0, 157.0, C_CREAM);
+    set_color(&layer, C_SILVER);
+    layer.use_text("MASA BERLAKU", 7.0, Mm(19.0), Mm(151.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        format_date_id(input.effective_date).as_str(),
+        9.5,
+        Mm(19.0),
+        Mm(142.0),
+        &bold,
+    );
+    set_color(&layer, C_SILVER);
+    layer.use_text("s.d.", 7.5, Mm(19.0), Mm(135.0), &italic);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        format_date_id(input.expiry_date).as_str(),
+        9.5,
+        Mm(19.0),
+        Mm(126.0),
+        &bold,
+    );
+    fill_rect(&layer, 19.0, 114.0, 58.0, 121.5, C_OAT_LIGHT);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        format!("{} Tahun", input.coverage_term_years).as_str(),
+        8.5,
+        Mm(21.0),
+        Mm(116.0),
+        &bold,
+    );
+
+    // Kotak 2: Uang Pertanggungan (x 85..151)
+    fill_rect(&layer, 85.0, 111.0, 151.0, 157.0, C_CREAM);
+    set_color(&layer, C_SILVER);
+    layer.use_text("UANG PERTANGGUNGAN", 7.0, Mm(89.0), Mm(151.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        format_idr(input.sum_assured).as_str(),
+        11.5,
+        Mm(89.0),
+        Mm(139.5),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text("Nilai Pertanggungan Polis", 7.5, Mm(89.0), Mm(129.0), &reg);
+    layer.use_text("sesuai manfaat produk", 7.5, Mm(89.0), Mm(123.5), &reg);
+
+    // Kotak 3: Premi (x 154..195)
+    fill_rect(&layer, 154.0, 111.0, 195.0, 157.0, C_CREAM);
+    set_color(&layer, C_SILVER);
+    layer.use_text("PREMI", 7.0, Mm(158.0), Mm(151.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        format_idr(input.premium).as_str(),
+        10.5,
+        Mm(158.0),
+        Mm(140.0),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text("per tahun", 8.0, Mm(158.0), Mm(130.0), &reg);
+    layer.use_text(
+        format!("{} thn", input.coverage_term_years).as_str(),
+        8.0,
+        Mm(158.0),
+        Mm(123.5),
+        &reg,
+    );
+
+    // Catatan elektronik
+    set_color(&layer, C_SILVER);
+    layer.use_text(
+        "Polis ini diterbitkan secara elektronik dan sah tanpa tanda tangan basah.",
+        7.5,
+        Mm(15.0),
+        Mm(90.0),
+        &italic,
+    );
+    layer.use_text(
+        "Lihat halaman selanjutnya untuk ikhtisar lengkap dan syarat & ketentuan.",
+        7.5,
+        Mm(15.0),
+        Mm(84.5),
+        &italic,
+    );
+
+    // Footer halaman 1
+    fill_rect(&layer, 0.0, 0.0, 210.0, 17.0, C_BLACK);
+    set_color(&layer, C_CREAM);
+    layer.use_text("InsureTrack", 8.0, Mm(15.0), Mm(9.0), &bold);
+    layer.use_text(
+        "Platform Asuransi Digital  ·  Halaman 1 dari 3",
+        7.0,
+        Mm(15.0),
+        Mm(3.5),
+        &reg,
+    );
+    layer.use_text(
+        format!("No. Polis: {}", input.policy_no).as_str(),
+        7.0,
+        Mm(140.0),
+        Mm(6.0),
+        &reg,
+    );
+
+    // =========================================================================
+    // HALAMAN 2 — IKHTISAR POLIS (Policy Schedule)
+    // =========================================================================
+    let (page2, layer2_id) = doc.add_page(Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
+    let layer = doc.get_page(page2).get_layer(layer2_id);
+
+    // Header mini (y 279..297)
+    fill_rect(&layer, 0.0, 279.0, 210.0, 297.0, C_BLACK);
+    set_color(&layer, C_WHITE);
+    layer.use_text("InsureTrack", 12.0, Mm(15.0), Mm(289.0), &bold);
+    set_color(&layer, C_CREAM);
+    layer.use_text("Platform Asuransi Digital", 7.5, Mm(15.0), Mm(282.0), &reg);
+    layer.use_text("Halaman 2 dari 3", 7.5, Mm(163.0), Mm(285.5), &reg);
+
+    // Judul seksi
+    set_color(&layer, C_BLACK);
+    layer.use_text("IKHTISAR POLIS", 13.0, Mm(15.0), Mm(268.5), &bold);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format!(
+            "No. Polis: {}   ·   Diterbitkan: {}",
+            input.policy_no,
+            format_date_id(input.effective_date)
+        )
+        .as_str(),
+        8.5,
+        Mm(15.0),
+        Mm(260.5),
+        &reg,
+    );
+    set_color(&layer, C_BLACK);
+    draw_line(&layer, 15.0, 256.5, 195.0, 256.5, 0.5);
+
+    // Dua kolom info card (y 188..253)
+    fill_rect(&layer, 15.0, 188.0, 195.0, 254.0, C_CREAM);
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 105.0, 188.0, 105.0, 254.0, 0.3);
+
+    // Kolom kiri: PEMEGANG POLIS
+    set_color(&layer, C_SILVER);
+    layer.use_text("PEMEGANG POLIS", 7.0, Mm(19.0), Mm(248.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        truncate(input.customer_name, 28).as_str(),
+        11.0,
+        Mm(19.0),
+        Mm(240.0),
+        &bold,
+    );
+
     let gender_label = match input.customer_gender {
         "MALE" => "Laki-laki",
         "FEMALE" => "Perempuan",
         other => other,
     };
-    layer.use_text(
-        format!("Jenis Kelamin: {}", gender_label).as_str(),
-        8.5,
-        Mm(25.0),
-        Mm(189.0),
-        &reg,
-    );
-    // Address (multi-line, wrap) — batasi max 2 baris
-    let addr_lines = wrap_text(input.customer_address, 38);
-    let max_addr_lines = (addr_lines.len() as f32).min(2.0_f32);
-    for (i, line) in addr_lines.iter().take(2).enumerate() {
-        let y_pos = 183.0_f32 - (i as f32) * 4.0_f32;
-        layer.use_text(line.as_str(), 8.5, Mm(25.0), Mm(y_pos), &reg);
-    }
-    // Email + HP (kalau ada) — di bawah address
-    let contact_y = 183.0_f32 - max_addr_lines * 4.0_f32 - 1.0_f32;
-    let mut contact_cursor = contact_y;
-    if contact_cursor > 181.0_f32 {
-        if !input.customer_email.is_empty() {
-            layer.use_text(
-                format!("Email: {}", input.customer_email).as_str(),
-                8.5,
-                Mm(25.0),
-                Mm(contact_cursor),
-                &reg,
-            );
-            contact_cursor -= 4.0;
+    let left_rows: Vec<(&str, String)> = vec![
+        ("NIK", input.customer_nik.to_string()),
+        ("Tempat Lahir", input.customer_birth_place.to_string()),
+        ("Tanggal Lahir", format_date_id(input.customer_birth_date)),
+        ("Jenis Kelamin", gender_label.to_string()),
+        ("Email", truncate(input.customer_email, 26)),
+        ("No. HP", input.customer_mobile.to_string()),
+    ];
+    let mut ly = 232.0_f32;
+    for (label, value) in &left_rows {
+        if ly < 192.0 {
+            break;
         }
-        if !input.customer_mobile.is_empty() && contact_cursor > 181.0_f32 {
-            layer.use_text(
-                format!("HP: {}", input.customer_mobile).as_str(),
-                8.5,
-                Mm(25.0),
-                Mm(contact_cursor),
-                &reg,
-            );
+        set_color(&layer, C_SILVER);
+        layer.use_text(*label, 7.5, Mm(19.0), Mm(ly), &reg);
+        set_color(&layer, C_BLACK);
+        layer.use_text(
+            truncate(value.as_str(), 26).as_str(),
+            8.5,
+            Mm(19.0),
+            Mm(ly - 4.5),
+            &reg,
+        );
+        ly -= 10.5;
+    }
+    // Alamat (multi baris, di bawah kolom kiri jika masih ada ruang)
+    if ly > 195.0 {
+        set_color(&layer, C_SILVER);
+        layer.use_text("Alamat", 7.5, Mm(19.0), Mm(ly), &reg);
+        let al = wrap_text(input.customer_address, 30);
+        for (i, line) in al.iter().take(2).enumerate() {
+            if ly - 4.5 - i as f32 * 4.5 > 190.0 {
+                set_color(&layer, C_BLACK);
+                layer.use_text(
+                    line.as_str(),
+                    8.5,
+                    Mm(19.0),
+                    Mm(ly - 4.5 - i as f32 * 4.5),
+                    &reg,
+                );
+            }
         }
     }
 
-    // Right column: INFORMASI POLIS
+    // Kolom kanan: DATA POLIS
     set_color(&layer, C_SILVER);
-    layer.use_text("INFORMASI POLIS", 7.0, Mm(110.0), Mm(216.0), &bold);
-    set_color(&layer, C_BLACK);
-    layer.use_text(
-        truncate(input.policy_no, 24).as_str(),
-        11.0,
-        Mm(110.0),
-        Mm(208.0),
-        &bold,
-    );
-    set_color(&layer, C_CHARCOAL);
-    layer.use_text(
-        format!("No. Reg: {}", input.registration_no).as_str(),
-        8.5,
-        Mm(110.0),
-        Mm(201.0),
-        &reg,
-    );
-    layer.use_text(
-        format!("Mulai: {}", format_date_id(input.effective_date)).as_str(),
-        8.5,
-        Mm(110.0),
-        Mm(195.0),
-        &reg,
-    );
-    layer.use_text(
-        format!("Berakhir: {}", format_date_id(input.expiry_date)).as_str(),
-        8.5,
-        Mm(110.0),
-        Mm(189.0),
-        &reg,
-    );
-    // Highlighted box untuk masa perlindungan
-    fill_rect(&layer, 108.0, 180.0, 188.0, 185.0, C_OAT_LIGHT);
-    set_color(&layer, C_BLACK);
-    layer.use_text(
-        format!("Masa Perlindungan: {} tahun", input.coverage_term_years).as_str(),
-        9.0,
-        Mm(110.0),
-        Mm(181.0),
-        &bold,
-    );
-
-    // ===== COVERAGE TABLE — y 168..130 (38mm) =====
-    set_color(&layer, C_BLACK);
-    layer.use_text("INFORMASI COVERAGE", 7.0, Mm(20.0), Mm(165.0), &bold);
-    set_color(&layer, C_OAT_BORDER);
-    draw_line(&layer, 20.0, 162.0, 190.0, 162.0, 0.3);
-
-    // Header row (oat-light bg)
-    fill_rect(&layer, 20.0, 152.0, 190.0, 160.0, C_OAT_LIGHT);
-    set_color(&layer, C_CHARCOAL);
-    layer.use_text("PRODUK", 7.0, Mm(23.0), Mm(155.0), &bold);
-    layer.use_text("SUM ASSURED", 7.0, Mm(70.0), Mm(155.0), &bold);
-    layer.use_text("PREMI", 7.0, Mm(110.0), Mm(155.0), &bold);
-    layer.use_text("PLAN", 7.0, Mm(150.0), Mm(155.0), &bold);
-    layer.use_text("TERM", 7.0, Mm(180.0), Mm(155.0), &bold);
-
-    // Data row — product name + tier
-    set_color(&layer, C_BLACK);
-    let product_label = match input.plan_tier.as_deref() {
-        Some(tier) if !tier.is_empty() => format!("{} — {}", input.product_name, tier),
-        _ => input.product_name.to_string(),
-    };
-    layer.use_text(
-        truncate(&product_label, 32).as_str(),
-        9.5,
-        Mm(23.0),
-        Mm(145.0),
-        &bold,
-    );
-    set_color(&layer, C_CHARCOAL);
-    let sum_str = format_idr(input.sum_assured);
-    layer.use_text(sum_str.as_str(), 9.5, Mm(70.0), Mm(145.0), &reg);
-    let prem_str = format_idr(input.premium);
-    layer.use_text(prem_str.as_str(), 9.5, Mm(110.0), Mm(145.0), &reg);
-    // Plan tier badge
-    if let Some(tier) = input.plan_tier.as_deref() {
-        if !tier.is_empty() {
-            fill_rect(&layer, 148.0, 142.0, 175.0, 148.0, C_OAT_LIGHT);
-            set_color(&layer, C_BLACK);
-            layer.use_text(tier, 7.0, Mm(151.0), Mm(144.0), &bold);
+    layer.use_text("DATA POLIS", 7.0, Mm(109.0), Mm(248.0), &bold);
+    let right_rows: Vec<(&str, String)> = vec![
+        ("No. Polis", input.policy_no.to_string()),
+        ("No. Registrasi", input.registration_no.to_string()),
+        ("Produk", input.product_name.to_string()),
+        (
+            "Plan / Tier",
+            input.plan_tier.as_deref().unwrap_or("-").to_string(),
+        ),
+        ("Tanggal Berlaku", format_date_id(input.effective_date)),
+        ("Tanggal Berakhir", format_date_id(input.expiry_date)),
+        (
+            "Masa Perlindungan",
+            format!("{} Tahun", input.coverage_term_years),
+        ),
+    ];
+    let mut ry = 240.0_f32;
+    for (label, value) in &right_rows {
+        if ry < 191.0 {
+            break;
         }
+        set_color(&layer, C_SILVER);
+        layer.use_text(*label, 7.5, Mm(109.0), Mm(ry), &reg);
+        set_color(&layer, C_BLACK);
+        layer.use_text(
+            truncate(value.as_str(), 22).as_str(),
+            8.5,
+            Mm(109.0),
+            Mm(ry - 4.5),
+            &bold,
+        );
+        ry -= 9.5;
     }
+
+    // Tabel Detail Coverage
+    set_color(&layer, C_BLACK);
+    layer.use_text("DETAIL COVERAGE", 8.5, Mm(15.0), Mm(179.0), &bold);
+    draw_line(&layer, 15.0, 175.5, 195.0, 175.5, 0.5);
+    // Header baris
+    fill_rect(&layer, 15.0, 163.0, 195.0, 173.0, C_OAT_LIGHT);
     set_color(&layer, C_CHARCOAL);
+    layer.use_text("JENIS MANFAAT", 7.0, Mm(18.0), Mm(167.0), &bold);
+    layer.use_text("UANG PERTANGGUNGAN", 7.0, Mm(74.0), Mm(167.0), &bold);
+    layer.use_text("PREMI / TAHUN", 7.0, Mm(129.0), Mm(167.0), &bold);
+    layer.use_text("MASA", 7.0, Mm(172.0), Mm(167.0), &bold);
+    // Baris data
+    let benefit_label = if input.product_name.contains("Life")
+        || input.product_name.contains("Jiwa")
+    {
+        "Manfaat Meninggal Dunia"
+    } else if input.product_name.contains("Accident")
+        || input.product_name.contains("Kecelakaan")
+    {
+        "Manfaat Kecelakaan"
+    } else {
+        "Manfaat Rawat Inap"
+    };
+    set_color(&layer, C_BLACK);
+    layer.use_text(benefit_label, 9.0, Mm(18.0), Mm(155.0), &bold);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format_idr(input.sum_assured).as_str(),
+        9.0,
+        Mm(74.0),
+        Mm(155.0),
+        &reg,
+    );
+    layer.use_text(
+        format_idr(input.premium).as_str(),
+        9.0,
+        Mm(129.0),
+        Mm(155.0),
+        &reg,
+    );
     layer.use_text(
         format!("{} thn", input.coverage_term_years).as_str(),
-        9.5,
-        Mm(180.0),
-        Mm(145.0),
+        9.0,
+        Mm(172.0),
+        Mm(155.0),
+        &reg,
+    );
+    draw_line(&layer, 15.0, 149.0, 195.0, 149.0, 0.2);
+    // Baris total premi polis
+    fill_rect(&layer, 15.0, 135.0, 195.0, 147.0, C_OAT_LIGHT);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text("TOTAL PREMI SELAMA POLIS", 7.5, Mm(18.0), Mm(140.0), &bold);
+    set_color(&layer, C_BLACK);
+    let total_prem = input.premium
+        * rust_decimal::Decimal::from(input.coverage_term_years);
+    layer.use_text(
+        format_idr(total_prem).as_str(),
+        10.0,
+        Mm(129.0),
+        Mm(139.5),
+        &bold,
+    );
+    layer.use_text(
+        format!("{} Tahun", input.coverage_term_years).as_str(),
+        7.5,
+        Mm(172.0),
+        Mm(140.0),
         &reg,
     );
 
-    set_color(&layer, C_OAT_BORDER);
-    draw_line(&layer, 20.0, 138.0, 190.0, 138.0, 0.2);
-
-    // ===== BENEFICIARY BOX (LIFE only) — y 130..108 (22mm) =====
-    let mut cursor_y: f32 = 130.0;
+    // Ahli waris (LIFE)
+    let mut p2_bottom = 126.0_f32;
     if let Some(beneficiary) = input.beneficiary_name.as_deref() {
         if !beneficiary.is_empty() {
-            set_color(&layer, C_OAT_BORDER);
-            draw_dashed_rect(&layer, 20.0, 108.0, 190.0, 130.0, 0.3);
+            draw_line(&layer, 15.0, p2_bottom, 195.0, p2_bottom, 0.3);
+            p2_bottom -= 4.0;
             set_color(&layer, C_SILVER);
-            layer.use_text("AHLI WARIS / PENERIMA MANFAAT", 7.0, Mm(25.0), Mm(124.0), &bold);
+            layer.use_text(
+                "AHLI WARIS / PENERIMA MANFAAT",
+                7.0,
+                Mm(15.0),
+                Mm(p2_bottom - 1.5),
+                &bold,
+            );
             set_color(&layer, C_BLACK);
-            layer.use_text(beneficiary, 11.0, Mm(25.0), Mm(114.0), &bold);
+            layer.use_text(
+                beneficiary,
+                11.0,
+                Mm(15.0),
+                Mm(p2_bottom - 11.0),
+                &bold,
+            );
             set_color(&layer, C_CHARCOAL);
             layer.use_text(
-                "Penerima manfaat polis sesuai ketentuan yang berlaku.",
+                "Penerima manfaat polis sesuai ketentuan yang berlaku dalam polis ini.",
                 8.0,
-                Mm(25.0),
-                Mm(110.0),
+                Mm(15.0),
+                Mm(p2_bottom - 19.0),
                 &italic,
             );
-            cursor_y = 100.0;
+            p2_bottom -= 27.0;
         }
     }
 
-    // ===== COMPANY INFO BOX (INSTANSI only) =====
+    // Info instansi (INSTANSI)
     if let Some(company) = input.company_name.as_deref() {
-        if !company.is_empty() {
-            let comp_y_top = cursor_y;
-            let comp_y_bottom = cursor_y - 22.0;
-            set_color(&layer, C_OAT_BORDER);
-            draw_dashed_rect(&layer, 20.0, comp_y_bottom, 190.0, comp_y_top, 0.3);
+        if !company.is_empty() && p2_bottom > 45.0 {
+            draw_line(&layer, 15.0, p2_bottom, 195.0, p2_bottom, 0.3);
+            p2_bottom -= 4.0;
             set_color(&layer, C_SILVER);
             layer.use_text(
                 "DIDAFTARKAN OLEH INSTANSI",
                 7.0,
-                Mm(25.0),
-                Mm(comp_y_top - 6.0),
+                Mm(15.0),
+                Mm(p2_bottom - 1.5),
                 &bold,
             );
             set_color(&layer, C_BLACK);
-            layer.use_text(company, 11.0, Mm(25.0), Mm(comp_y_top - 14.0), &bold);
+            layer.use_text(company, 11.0, Mm(15.0), Mm(p2_bottom - 11.0), &bold);
             set_color(&layer, C_CHARCOAL);
-            let mut info_parts: Vec<String> = Vec::new();
-            if let Some(npwp) = input.company_npwp.as_deref() {
-                if !npwp.is_empty() {
-                    info_parts.push(format!("NPWP: {}", npwp));
-                }
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(n) = input.company_npwp.as_deref().filter(|s| !s.is_empty()) {
+                parts.push(format!("NPWP: {n}"));
             }
-            if let Some(industry) = input.company_industry.as_deref() {
-                if !industry.is_empty() {
-                    info_parts.push(format!("Bidang: {}", industry));
-                }
+            if let Some(i) = input.company_industry.as_deref().filter(|s| !s.is_empty()) {
+                parts.push(format!("Bidang: {i}"));
             }
-            if !info_parts.is_empty() {
+            if !parts.is_empty() {
                 layer.use_text(
-                    info_parts.join("  •  ").as_str(),
+                    parts.join("   ·   ").as_str(),
                     8.0,
-                    Mm(25.0),
-                    Mm(comp_y_top - 20.0),
+                    Mm(15.0),
+                    Mm(p2_bottom - 19.0),
                     &reg,
                 );
             }
-            // cursor_y dilanjut ke section berikutnya (signature), tapi
-            // signature section pakai y hardcoded — placeholder untuk
-            // ekspansi layout di masa depan.
-            let _ = comp_y_bottom - 4.0;
         }
     }
 
-    // ===== SIGNATURE SECTION — y 90..50 (40mm) =====
-    // Placeholder tanggal issue: pakai effective_date. Untuk tanda
-    // tangan resmi, signer sign elektronik di portal customer.
-    let sign_y_top: f32 = 85.0;
-    let sign_y_line: f32 = 60.0;
-    let sign_y_label: f32 = 56.0;
+    // Footer halaman 2
+    fill_rect(&layer, 0.0, 0.0, 210.0, 17.0, C_BLACK);
+    set_color(&layer, C_CREAM);
+    layer.use_text("InsureTrack", 8.0, Mm(15.0), Mm(9.0), &bold);
+    layer.use_text(
+        "Platform Asuransi Digital  ·  Halaman 2 dari 3",
+        7.0,
+        Mm(15.0),
+        Mm(3.5),
+        &reg,
+    );
+    layer.use_text(
+        format!("No. Polis: {}", input.policy_no).as_str(),
+        7.0,
+        Mm(140.0),
+        Mm(6.0),
+        &reg,
+    );
+
+    // =========================================================================
+    // HALAMAN 3 — MANFAAT, SYARAT & PENGESAHAN
+    // =========================================================================
+    let (page3, layer3_id) = doc.add_page(Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
+    let layer = doc.get_page(page3).get_layer(layer3_id);
+
+    // Header mini
+    fill_rect(&layer, 0.0, 279.0, 210.0, 297.0, C_BLACK);
+    set_color(&layer, C_WHITE);
+    layer.use_text("InsureTrack", 12.0, Mm(15.0), Mm(289.0), &bold);
+    set_color(&layer, C_CREAM);
+    layer.use_text("Platform Asuransi Digital", 7.5, Mm(15.0), Mm(282.0), &reg);
+    layer.use_text("Halaman 3 dari 3", 7.5, Mm(163.0), Mm(285.5), &reg);
+
+    // Seksi Manfaat Perlindungan
+    set_color(&layer, C_BLACK);
+    layer.use_text("MANFAAT PERLINDUNGAN", 12.0, Mm(15.0), Mm(268.0), &bold);
+    draw_line(&layer, 15.0, 264.5, 195.0, 264.5, 0.4);
+
+    let benefits: Vec<(&str, &str)> = if input.product_name.contains("Life")
+        || input.product_name.contains("Jiwa")
+    {
+        vec![
+            ("Manfaat Meninggal Dunia",
+             "Pembayaran 100% Uang Pertanggungan kepada ahli waris yang ditunjuk apabila tertanggung meninggal dunia selama masa perlindungan."),
+            ("Manfaat Warisan & Perencanaan",
+             "UP dapat dimanfaatkan sebagai jaminan aset dan perencanaan keuangan keluarga sesuai ketentuan produk yang berlaku."),
+            ("Manfaat Berakhir Polis",
+             "Pada akhir masa perlindungan, nilai manfaat disesuaikan dengan ketentuan produk dan tidak terdapat nilai tunai kecuali diatur lain."),
+        ]
+    } else if input.product_name.contains("Accident")
+        || input.product_name.contains("Kecelakaan")
+    {
+        vec![
+            ("Manfaat Kematian Akibat Kecelakaan",
+             "Pembayaran 100% Uang Pertanggungan apabila tertanggung meninggal dunia akibat kecelakaan dalam masa perlindungan."),
+            ("Manfaat Cacat Tetap Total",
+             "Pembayaran penuh UP apabila tertanggung mengalami cacat tetap total akibat kecelakaan yang dibuktikan secara medis."),
+            ("Manfaat Cacat Tetap Sebagian",
+             "Pembayaran sebagian UP sesuai tabel persentase cacat yang tercantum dalam Lampiran Polis."),
+        ]
+    } else {
+        vec![
+            ("Manfaat Rawat Inap",
+             "Penggantian biaya rawat inap di rumah sakit rekanan sesuai plan yang dipilih, termasuk biaya kamar, tindakan, dan obat-obatan."),
+            ("Manfaat Rawat Jalan",
+             "Penggantian biaya konsultasi dokter umum dan spesialis, serta pemeriksaan laboratorium sesuai ketentuan plan."),
+            ("Manfaat Tindakan Medis & Operasi",
+             "Penggantian biaya operasi dan tindakan medis lainnya di fasilitas kesehatan rekanan sesuai limit plan yang berlaku."),
+        ]
+    };
+
+    let mut by = 256.0_f32;
+    for (title, desc) in &benefits {
+        if by < 215.0 {
+            break;
+        }
+        set_color(&layer, C_BLACK);
+        layer.use_text(*title, 9.0, Mm(18.0), Mm(by), &bold);
+        set_color(&layer, C_CHARCOAL);
+        let desc_lines = wrap_text(*desc, 88);
+        for (i, line) in desc_lines.iter().take(2).enumerate() {
+            layer.use_text(
+                line.as_str(),
+                8.0,
+                Mm(18.0),
+                Mm(by - 5.0 - i as f32 * 4.2),
+                &reg,
+            );
+        }
+        by -= if desc_lines.len() > 1 { 17.5 } else { 13.5 };
+    }
+
+    // Seksi Ketentuan Umum
+    set_color(&layer, C_BLACK);
+    draw_line(&layer, 15.0, by - 3.0, 195.0, by - 3.0, 0.4);
+    layer.use_text("KETENTUAN UMUM POLIS", 11.0, Mm(15.0), Mm(by - 14.0), &bold);
+
+    let terms: Vec<(&str, &str)> = vec![
+        ("Pasal 1 — Definisi",
+         "Polis ini merupakan dokumen resmi yang mengikat antara Pemegang Polis dan InsureTrack berdasarkan permohonan yang telah disetujui. Istilah mengacu pada definisi standar industri asuransi Indonesia."),
+        ("Pasal 2 — Lingkup Perlindungan",
+         "Perlindungan berlaku selama masa polis aktif. Pembayaran manfaat dilakukan setelah verifikasi klaim selesai dan seluruh dokumen yang diperlukan diterima dengan lengkap."),
+        ("Pasal 3 — Pengecualian",
+         "Tidak dijamin: (i) tindakan disengaja/bunuh diri dalam 2 tahun pertama; (ii) kondisi pra-eksisting tidak diungkapkan; (iii) perang, terorisme, nuklir; (iv) pelanggaran hukum."),
+        ("Pasal 4 — Prosedur Klaim",
+         "Klaim diajukan via portal InsureTrack dalam 30 hari sejak kejadian. Dokumen: formulir klaim, KTP, dan dokumen pendukung. InsureTrack memproses klaim dalam 14 hari kerja."),
+        ("Pasal 5 — Pembatalan & Free-Look",
+         "Pemegang Polis dapat membatalkan polis kapan saja. Premi dikembalikan penuh jika pembatalan dalam 30 hari sejak terbit (free-look period). Di luar itu, premi tidak dikembalikan."),
+    ];
+
+    let mut ty = by - 26.0_f32;
+    for (title, content) in &terms {
+        if ty < 56.0 {
+            break;
+        }
+        set_color(&layer, C_BLACK);
+        layer.use_text(*title, 8.5, Mm(15.0), Mm(ty), &bold);
+        set_color(&layer, C_CHARCOAL);
+        let clines = wrap_text(*content, 92);
+        for (i, line) in clines.iter().take(2).enumerate() {
+            let ypos = ty - 5.0 - i as f32 * 4.0;
+            if ypos > 56.0 {
+                layer.use_text(line.as_str(), 7.5, Mm(15.0), Mm(ypos), &reg);
+            }
+        }
+        ty -= if clines.len() > 1 { 15.5 } else { 12.5 };
+    }
+
+    // Seksi Pengesahan
+    draw_line(&layer, 15.0, 53.5, 195.0, 53.5, 0.5);
+    set_color(&layer, C_BLACK);
+    layer.use_text("PENGESAHAN POLIS", 10.5, Mm(15.0), Mm(47.0), &bold);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        "Polis ini diterbitkan atas dasar permohonan yang disetujui dan berlaku sah secara elektronik sesuai ketentuan hukum yang berlaku.",
+        7.5,
+        Mm(15.0),
+        Mm(40.0),
+        &reg,
+    );
+    // Dua blok tanda tangan
     set_color(&layer, C_SILVER);
-    layer.use_text("PEMEGANG POLIS", 7.0, Mm(28.0), Mm(sign_y_top), &bold);
-    layer.use_text("DITERBITKAN OLEH", 7.0, Mm(135.0), Mm(sign_y_top), &bold);
+    layer.use_text("PEMEGANG POLIS", 7.0, Mm(20.0), Mm(33.0), &bold);
+    layer.use_text("DITERBITKAN OLEH", 7.0, Mm(130.0), Mm(33.0), &bold);
+    draw_line(&layer, 20.0, 25.5, 92.0, 25.5, 0.5);
+    draw_line(&layer, 130.0, 25.5, 195.0, 25.5, 0.5);
     set_color(&layer, C_BLACK);
     layer.use_text(
-        truncate(input.customer_name, 28).as_str(),
-        9.0,
-        Mm(28.0),
-        Mm(sign_y_top - 6.0),
+        truncate(input.customer_name, 26).as_str(),
+        8.5,
+        Mm(20.0),
+        Mm(22.0),
         &reg,
     );
-    layer.use_text(
-        "InsureTrack — Platform Asuransi Digital",
-        9.0,
-        Mm(135.0),
-        Mm(sign_y_top - 6.0),
-        &reg,
-    );
-    set_color(&layer, C_OAT_BORDER);
-    draw_line(&layer, 28.0, sign_y_line, 90.0, sign_y_line, 0.5);
-    draw_line(&layer, 135.0, sign_y_line, 197.0, sign_y_line, 0.5);
+    layer.use_text("InsureTrack", 8.5, Mm(130.0), Mm(22.0), &bold);
     set_color(&layer, C_SILVER);
-    layer.use_text(
-        "Tanda tangan elektronik (e-sign)",
-        7.0,
-        Mm(28.0),
-        Mm(sign_y_label),
-        &italic,
-    );
+    layer.use_text("Tanda tangan elektronik", 6.5, Mm(20.0), Mm(18.5), &italic);
     layer.use_text(
         format!(
             "Diterbitkan: {}",
             format_date_id(input.effective_date)
         )
         .as_str(),
-        7.0,
-        Mm(135.0),
-        Mm(sign_y_label),
+        6.5,
+        Mm(130.0),
+        Mm(18.5),
         &italic,
     );
 
-    // ===== FOOTER BAR (black) — y 25..12 (13mm) =====
-    fill_rect(&layer, 0.0, 0.0, 210.0, 18.0, C_BLACK);
+    // Footer halaman 3
+    fill_rect(&layer, 0.0, 0.0, 210.0, 15.5, C_BLACK);
     set_color(&layer, C_CREAM);
-    layer.use_text("InsureTrack", 8.0, Mm(20.0), Mm(8.0), &bold);
+    layer.use_text("InsureTrack", 8.0, Mm(15.0), Mm(8.0), &bold);
     layer.use_text(
-        "Platform Asuransi Digital · contact@insuretrack.com",
+        "Platform Asuransi Digital  ·  Halaman 3 dari 3",
         7.0,
-        Mm(20.0),
+        Mm(15.0),
         Mm(3.0),
         &reg,
     );
-    layer.use_text("E-Policy Resmi · Halaman 1", 7.0, Mm(150.0), Mm(5.0), &reg);
+    layer.use_text(
+        format!("No. Polis: {}", input.policy_no).as_str(),
+        7.0,
+        Mm(140.0),
+        Mm(5.5),
+        &reg,
+    );
 
+    // =========================================================================
+    // SAVE
+    // =========================================================================
     let mut buf = BufWriter::new(Vec::<u8>::new());
     doc.save(&mut buf)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("pdf save: {e}")))?;
@@ -565,26 +876,26 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
         .add_builtin_font(BuiltinFont::Helvetica)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("font reg: {e}")))?;
 
-    // ===== HEADER BAR (black) =====
-    // y 285..262 (23mm tall)
-    fill_rect(&layer, 0.0_f32, 262.0_f32, 210.0_f32, 285.0_f32, C_BLACK);
-    layer.use_text("InsureTrack", 20.0_f32, Mm(20.0), Mm(275.0), &bold);
+    // ===== HEADER BAR (black) — y 274..297 (23mm tall, flush ke top) =====
+    fill_rect(&layer, 0.0_f32, 274.0_f32, 210.0_f32, 297.0_f32, C_BLACK);
+    set_color(&layer, C_WHITE);
+    layer.use_text("InsureTrack", 20.0_f32, Mm(20.0), Mm(287.0), &bold);
     set_color(&layer, C_CREAM);
     layer.use_text(
         "Asuransi digital, prosesnya cepat, polis langsung terbit.",
         9.0_f32,
         Mm(20.0),
-        Mm(266.0),
+        Mm(278.0),
         &reg,
     );
     set_color(&layer, C_WHITE);
-    layer.use_text("INVOICE", 22.0_f32, Mm(155.0), Mm(275.0), &bold);
+    layer.use_text("INVOICE", 22.0_f32, Mm(155.0), Mm(287.0), &bold);
     set_color(&layer, C_CREAM);
     layer.use_text(
         "Tagihan Premi Asuransi",
         9.0_f32,
         Mm(155.0),
-        Mm(266.0),
+        Mm(278.0),
         &reg,
     );
 
@@ -899,22 +1210,22 @@ pub fn render_receipt(input: &ReceiptPdfInput<'_>) -> Result<Vec<u8>, AppError> 
         .add_builtin_font(BuiltinFont::Helvetica)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("font reg: {e}")))?;
 
-    // ===== HEADER BAR (black) — y 285..262 (23mm) =====
-    fill_rect(&layer, 0.0, 262.0, 210.0, 285.0, C_BLACK);
+    // ===== HEADER BAR (black) — y 274..297 (23mm tall, flush ke top) =====
+    fill_rect(&layer, 0.0, 274.0, 210.0, 297.0, C_BLACK);
     set_color(&layer, C_WHITE);
-    layer.use_text("InsureTrack", 20.0, Mm(20.0), Mm(275.0), &bold);
+    layer.use_text("InsureTrack", 20.0, Mm(20.0), Mm(287.0), &bold);
     set_color(&layer, C_CREAM);
     layer.use_text(
         "Asuransi digital, prosesnya cepat, polis langsung terbit.",
         9.0,
         Mm(20.0),
-        Mm(266.0),
+        Mm(278.0),
         &reg,
     );
     set_color(&layer, C_WHITE);
-    layer.use_text("BUKTI PEMBAYARAN", 18.0, Mm(120.0), Mm(275.0), &bold);
+    layer.use_text("BUKTI PEMBAYARAN", 18.0, Mm(120.0), Mm(287.0), &bold);
     set_color(&layer, C_CREAM);
-    layer.use_text("Konfirmasi Penerimaan Premi", 9.0, Mm(120.0), Mm(266.0), &reg);
+    layer.use_text("Konfirmasi Penerimaan Premi", 9.0, Mm(120.0), Mm(278.0), &reg);
 
     // ===== TITLE + STATUS BADGE — y 252..232 =====
     set_color(&layer, C_BLACK);

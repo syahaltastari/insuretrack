@@ -228,22 +228,35 @@ async fn webhook_issues_exactly_n_policies_for_instansi() {
     .await
     .unwrap();
 
-    // 3 participants
+    // 3 participants — tiap peserta jadi row `customers` (email/NIK unik
+    // global sejak 0017_registration_members.sql), relasinya ke group ini
+    // disimpan di `registration_members`.
     for i in 1..=3 {
         let nik = format!("320101010101000{}", i);
-        sqlx::query(
-            r#"INSERT INTO registration_participants (
-                registration_id, nik, full_name, birth_place, birth_date, gender,
-                address, rt_rw, village, district, city, province, postal_code, mobile_number, email
+        let (member_customer_id,): (Uuid,) = sqlx::query_as(
+            r#"INSERT INTO customers (
+                nik, full_name, birth_place, birth_date, gender,
+                address, rt_rw, village, district, city, province, postal_code,
+                mobile_number, email
             ) VALUES (
-                $1, $2, $3, 'Jakarta', '1990-01-01', 'MALE',
+                $1, $2, 'Jakarta', '1990-01-01', 'MALE',
                 'Jl. Test', '001/002', 'Kel', 'Kec', 'Jakarta', 'DKI', '12345',
-                '081234567890', 'p@test.local'
-            )"#,
+                '081234567890', $3
+            )
+            RETURNING id"#,
+        )
+        .bind(&nik)
+        .bind(format!("Participant {i}"))
+        .bind(format!("participant{i}@test.local"))
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO registration_members (registration_id, customer_id) VALUES ($1, $2)",
         )
         .bind(reg_id)
-        .bind(nik)
-        .bind(format!("Participant {i}"))
+        .bind(member_customer_id)
         .execute(&mut *tx)
         .await
         .unwrap();
@@ -266,7 +279,7 @@ async fn webhook_issues_exactly_n_policies_for_instansi() {
 
     // Exactly 3 policies created, each linked to a participant.
     let policies: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM policies WHERE registration_id = $1 AND participant_id IS NOT NULL",
+        "SELECT COUNT(*) FROM policies WHERE registration_id = $1 AND member_id IS NOT NULL",
     )
     .bind(reg_id)
     .fetch_one(&app.pool)

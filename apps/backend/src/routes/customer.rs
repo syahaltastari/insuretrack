@@ -643,9 +643,11 @@ async fn change_password(
 
 // ---- /policies ----
 
-/// Subset of registration_participants yang di-include di response
+/// Subset data customer (peserta INSTANSI) yang di-include di response
 /// `GET /customer/policies` agar customer bisa lihat "polis ini untuk
-/// peserta siapa" di daftar N polis hasil 1 group registration.
+/// peserta siapa" di daftar N polis hasil 1 group registration. Shape JSON
+/// dipertahankan sama walau sumbernya sekarang `customers` (via
+/// registration_members), bukan tabel registration_participants lama.
 #[derive(Serialize, sqlx::FromRow, Clone)]
 struct ParticipantSummary {
     id: Uuid,
@@ -742,19 +744,20 @@ async fn list_policies(
     .fetch_one(&state.pool)
     .await?;
 
-    // LEFT JOIN ke registration_participants — NULL participant_id (Individu)
+    // LEFT JOIN registration_members → customers — NULL member_id (Individu)
     // tetap dapat row, participant_* fields jadi NULL.
     let raw: Vec<PolicyRowRaw> = sqlx::query_as(
         r#"
         SELECT p.id, p.policy_no, p.product, p.sum_assured, p.premium,
                p.effective_date, p.expiry_date, p.status, p.pdf_path,
-               pp.id AS participant_id_flat,
-               pp.nik AS participant_nik,
-               pp.full_name AS participant_full_name,
-               pp.birth_date AS participant_birth_date
+               pc.id AS participant_id_flat,
+               pc.nik AS participant_nik,
+               pc.full_name AS participant_full_name,
+               pc.birth_date AS participant_birth_date
           FROM policies p
           JOIN registrations r ON r.id = p.registration_id
-          LEFT JOIN registration_participants pp ON pp.id = p.participant_id
+          LEFT JOIN registration_members rm ON rm.id = p.member_id
+          LEFT JOIN customers pc ON pc.id = rm.customer_id
          WHERE r.customer_id = $1
            AND ($2 = '' OR p.status = $2)
          ORDER BY p.created_at DESC
@@ -787,13 +790,14 @@ async fn get_policy(
         r#"
         SELECT p.id, p.policy_no, p.product, p.sum_assured, p.premium,
                p.effective_date, p.expiry_date, p.status, p.pdf_path,
-               pp.id AS participant_id_flat,
-               pp.nik AS participant_nik,
-               pp.full_name AS participant_full_name,
-               pp.birth_date AS participant_birth_date
+               pc.id AS participant_id_flat,
+               pc.nik AS participant_nik,
+               pc.full_name AS participant_full_name,
+               pc.birth_date AS participant_birth_date
           FROM policies p
           JOIN registrations r ON r.id = p.registration_id
-          LEFT JOIN registration_participants pp ON pp.id = p.participant_id
+          LEFT JOIN registration_members rm ON rm.id = p.member_id
+          LEFT JOIN customers pc ON pc.id = rm.customer_id
          WHERE r.customer_id = $1 AND p.id = $2
         "#,
     )
@@ -1792,6 +1796,54 @@ async fn create_inquiry(
     ))
 }
 
+/// Resolve peserta INSTANSI ke `customers` by NIK, atau buat row baru kalau
+/// belum ada. Peserta yang dihasilkan TIDAK punya `password_hash`/`portal_status`
+/// (NULL) — sama seperti customer hasil account-creation yang belum isi
+/// formulir asuransi (lihat 0008_relax_customer_for_split.sql). Ini membuat
+/// `customers.nik UNIQUE` jadi satu-satunya penjaga dedup identitas: kalau
+/// NIK sudah pernah terdaftar (sebagai individu atau peserta instansi lain),
+/// row yang ada langsung di-reuse, tidak ada copy data baru.
+async fn resolve_or_create_member_customer(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    p: &crate::dto::ParticipantData,
+) -> AppResult<Uuid> {
+    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM customers WHERE nik = $1")
+        .bind(&p.nik)
+        .fetch_optional(&mut **tx)
+        .await?
+    {
+        return Ok(existing_id);
+    }
+
+    let new_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO customers
+          (nik, full_name, birth_place, birth_date, gender, address, rt_rw,
+           village, district, city, province, postal_code, email, mobile_number)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id
+        "#,
+    )
+    .bind(&p.nik)
+    .bind(p.full_name.trim())
+    .bind(p.birth_place.trim())
+    .bind(p.birth_date)
+    .bind(&p.gender)
+    .bind(p.address.trim())
+    .bind(p.rt_rw.trim())
+    .bind(p.village.trim())
+    .bind(p.district.trim())
+    .bind(p.city.trim())
+    .bind(p.province.trim())
+    .bind(p.postal_code.trim())
+    .bind(p.email.as_deref().map(str::trim))
+    .bind(p.mobile_number.as_deref().map(str::trim))
+    .fetch_one(&mut **tx)
+    .await?;
+
+    Ok(new_id)
+}
+
 // ---- POST /registrations (insurance application, requires customer auth) ----
 //
 // Setelah flow split, customer membuat akun via POST /api/public/customers
@@ -2013,33 +2065,23 @@ async fn submit_insurance_application(
         }
     };
 
-    // Insert participants untuk INSTANSI (batch — all-or-nothing dalam tx).
+    // Daftarkan peserta INSTANSI (batch — all-or-nothing dalam tx). Setiap
+    // peserta di-resolve ke customers by NIK dulu (reuse identitas yang
+    // sudah ada — misal orang yang sama jadi peserta di 2 instansi, atau
+    // sudah punya akun individu) sebelum bikin row baru. `customers.nik
+    // UNIQUE` jadi satu-satunya penjaga dedup identitas, bukan logic
+    // manual — lihat 0017_registration_members.sql.
     if data.applicant_type == crate::dto::ApplicantType::Instansi {
         for p in &data.participants {
+            let member_customer_id = resolve_or_create_member_customer(&mut tx, p).await?;
             sqlx::query(
                 r#"
-                INSERT INTO registration_participants
-                  (registration_id, nik, full_name, birth_place, birth_date, gender,
-                   address, rt_rw, village, district, city, province, postal_code,
-                   email, mobile_number, beneficiary_name)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                INSERT INTO registration_members (registration_id, customer_id, beneficiary_name)
+                VALUES ($1, $2, $3)
                 "#,
             )
             .bind(reg_id.0)
-            .bind(&p.nik)
-            .bind(p.full_name.trim())
-            .bind(p.birth_place.trim())
-            .bind(p.birth_date)
-            .bind(&p.gender)
-            .bind(p.address.trim())
-            .bind(p.rt_rw.trim())
-            .bind(p.village.trim())
-            .bind(p.district.trim())
-            .bind(p.city.trim())
-            .bind(p.province.trim())
-            .bind(p.postal_code.trim())
-            .bind(p.email.as_deref().map(str::trim))
-            .bind(p.mobile_number.as_deref().map(str::trim))
+            .bind(member_customer_id)
             .bind(p.beneficiary_name.as_deref().map(str::trim))
             .execute(&mut *tx)
             .await?;

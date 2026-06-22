@@ -9,8 +9,9 @@
 //!
 //! Applicant type distribution:
 //!   - INDIVIDU (80%): 1 peserta = customer (existing flow)
-//!   - INSTANSI (20%): 1 group dengan N peserta (5-20 random), data
-//!     peserta di tabel `registration_participants` (bukan customers).
+//!   - INSTANSI (20%): 1 group dengan N peserta (5-20 random); identitas
+//!     peserta jadi row `customers` (resolve-by-NIK atau dibuat baru),
+//!     relasi ke group disimpan di `registration_members`.
 //!     1 invoice per group, N policies per group (1 per peserta).
 
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
@@ -207,9 +208,13 @@ pub async fn seed_registrations(
         .fetch_one(&mut **tx)
         .await?;
 
-        // Untuk INSTANSI: generate N peserta → insert ke
-        // `registration_participants`. UNIQUE(registration_id, nik)
-        // enforced; NIK uniqueness di-handle per-group via local HashSet.
+        // Untuk INSTANSI: generate N peserta. Setiap peserta di-resolve ke
+        // `customers` by NIK (reuse kalau sudah ada — sama logic dengan
+        // resolve_or_create_member_customer di routes/customer.rs), lalu
+        // relasinya ke group ini disimpan di `registration_members`.
+        // `SeededParticipant.id` = registration_members.id (bukan
+        // customers.id) supaya policies.rs bisa langsung bind ke
+        // `policies.member_id`.
         let mut participants: Vec<SeededParticipant> = Vec::new();
         if is_group {
             let n = rng.gen_range(
@@ -222,40 +227,55 @@ pub async fn seed_registrations(
                     &mut local_used_niks,
                 );
 
-                // Insert ke registration_participants.
-                let p_id: Uuid = sqlx::query_scalar(
-                    r#"
-                    INSERT INTO registration_participants (
-                        registration_id, nik, full_name, birth_place, birth_date,
-                        gender, address, rt_rw, village, district, city, province,
-                        postal_code, email, mobile_number, beneficiary_name
+                let customer_id: Uuid = if let Some(existing) = sqlx::query_scalar::<_, Uuid>(
+                    "SELECT id FROM customers WHERE nik = $1",
+                )
+                .bind(&p_nik)
+                .fetch_optional(&mut **tx)
+                .await?
+                {
+                    existing
+                } else {
+                    sqlx::query_scalar(
+                        r#"
+                        INSERT INTO customers
+                          (nik, full_name, birth_place, birth_date, gender, address,
+                           rt_rw, village, district, city, province, postal_code)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        RETURNING id
+                        "#,
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                            $13, $14, $15, $16)
+                    .bind(&p_nik)
+                    .bind(&p_full_name)
+                    .bind("Jakarta")
+                    .bind(p_birth_date)
+                    .bind("MALE")
+                    .bind("Jl. Perusahaan No. 1")
+                    .bind("001/002")
+                    .bind("Kelurahan Karyawan")
+                    .bind("Kecamatan Pusat")
+                    .bind("Jakarta Selatan")
+                    .bind("DKI Jakarta")
+                    .bind("12345")
+                    .fetch_one(&mut **tx)
+                    .await?
+                };
+
+                let member_id: Uuid = sqlx::query_scalar(
+                    r#"
+                    INSERT INTO registration_members (registration_id, customer_id, beneficiary_name)
+                    VALUES ($1, $2, $3)
                     RETURNING id
                     "#,
                 )
                 .bind(id)
-                .bind(&p_nik)
-                .bind(&p_full_name)
-                .bind("Jakarta")
-                .bind(p_birth_date)
-                .bind("MALE")
-                .bind("Jl. Perusahaan No. 1")
-                .bind("001/002")
-                .bind("Kelurahan Karyawan")
-                .bind("Kecamatan Pusat")
-                .bind("Jakarta Selatan")
-                .bind("DKI Jakarta")
-                .bind("12345")
-                .bind(Option::<String>::None)
-                .bind(Option::<String>::None)
+                .bind(customer_id)
                 .bind(Option::<String>::None)
                 .fetch_one(&mut **tx)
                 .await?;
 
                 participants.push(SeededParticipant {
-                    id: p_id,
+                    id: member_id,
                     nik: p_nik,
                     full_name: p_full_name,
                     birth_date: p_birth_date,
@@ -285,8 +305,10 @@ pub async fn seed_registrations(
 }
 
 /// Generate 1 peserta Instansi (NIK unique dalam group, nama realistic).
-/// NIK tidak perlu globally unique — `registration_participants` UNIQUE
-/// index hanya per-registration, jadi HashSet lokal cukup.
+/// HashSet lokal cuma mencegah 2 peserta di group YANG SAMA generate NIK
+/// identik; NIK yang sama muncul lagi di group lain akan resolve ke
+/// customer yang sudah ada (lihat `customers.nik UNIQUE` + resolve-by-nik
+/// di atas), bukan error.
 fn generate_participant(
     rng: &mut StdRng,
     used_niks: &mut std::collections::HashSet<String>,

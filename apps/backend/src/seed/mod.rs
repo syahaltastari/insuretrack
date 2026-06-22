@@ -19,7 +19,7 @@ pub struct SeedReport {
     pub registrations: usize,
     /// Breakdown: jumlah registration dengan applicant_type='INSTANSI'.
     pub group_registrations: usize,
-    /// Total baris di tabel `registration_participants`. `0` untuk
+    /// Total baris di tabel `registration_members`. `0` untuk
     /// semua-INDIVIDU run.
     pub participants: usize,
     /// Jumlah registration dengan invoice EXPIRED (lewat due_date,

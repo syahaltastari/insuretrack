@@ -10,9 +10,9 @@ use sqlx::PgPool;
 
 /// Truncate semua tabel dev data (preserve `admin_users`).
 ///
-/// Order sesuai FK chain di schema 0001-0013:
+/// Order sesuai FK chain di schema 0001-0017:
 ///   claim_documents → claims → inquiries → policies → invoices
-///   → registration_participants → registrations → email_logs
+///   → registration_members → registrations → email_logs
 ///   → audit_logs → customers → id_sequences
 ///
 /// `id_sequences` di-truncate supaya identifier counter reset ke 0
@@ -28,7 +28,7 @@ pub async fn reset_dev_data(pool: &PgPool) -> anyhow::Result<()> {
         "inquiries",
         "policies",
         "invoices",
-        "registration_participants",
+        "registration_members",
         "registrations",
         "email_logs",
         "audit_logs",

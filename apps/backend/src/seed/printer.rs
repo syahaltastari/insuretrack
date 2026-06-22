@@ -105,7 +105,7 @@ pub fn print_summary(
     );
     if group_registrations > 0 {
         println!(
-            "  Participants      : {:>5}  (di registration_participants)",
+            "  Participants      : {:>5}  (di registration_members, identitas di customers)",
             participants
         );
     }

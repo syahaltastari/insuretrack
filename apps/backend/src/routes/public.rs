@@ -289,7 +289,7 @@ async fn payment_webhook(
     // publik di product-details.ts.
     let per_participant_premium = if applicant_type == "INSTANSI" {
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM registration_participants WHERE registration_id = $1",
+            "SELECT COUNT(*) FROM registration_members WHERE registration_id = $1",
         )
         .bind(registration_id)
         .fetch_one(&mut *tx)
@@ -307,9 +307,9 @@ async fn payment_webhook(
 
     // Issue policy/policies. INDIVIDU → 1 policy. INSTANSI → N policies
     // (1 per participant, masing-masing dengan policy_no sendiri & link
-    // ke participant_id).
+    // ke member_id).
     //
-    // Tuple: (policy_id, policy_no, participant_id, participant_nik,
+    // Tuple: (policy_id, policy_no, member_id, participant_nik,
     //         participant_name, participant_birth_date, participant_address,
     //         participant_birth_place, participant_gender,
     //         participant_email, participant_mobile, participant_beneficiary)
@@ -329,34 +329,37 @@ async fn payment_webhook(
     )> = Vec::new();
 
     if applicant_type == "INSTANSI" {
-        // Fetch all participants
+        // Fetch semua peserta: identitas dari customers, beneficiary dari
+        // registration_members (peserta sudah di-resolve/dibuat saat
+        // registrasi — lihat customer.rs::resolve_or_create_member_customer).
         #[derive(sqlx::FromRow)]
         struct Participant {
             id: Uuid,
-            nik: String,
+            nik: Option<String>,
             full_name: String,
-            birth_date: chrono::NaiveDate,
+            birth_date: Option<chrono::NaiveDate>,
             birth_place: Option<String>,
             gender: Option<String>,
-            address: String,
-            rt_rw: String,
-            village: String,
-            district: String,
-            city: String,
-            province: String,
-            postal_code: String,
+            address: Option<String>,
+            rt_rw: Option<String>,
+            village: Option<String>,
+            district: Option<String>,
+            city: Option<String>,
+            province: Option<String>,
+            postal_code: Option<String>,
             email: Option<String>,
             mobile_number: Option<String>,
             beneficiary_name: Option<String>,
         }
         let participants: Vec<Participant> = sqlx::query_as(
             r#"
-            SELECT id, nik, full_name, birth_date, birth_place, gender, address,
-                   rt_rw, village, district, city, province, postal_code,
-                   email, mobile_number, beneficiary_name
-              FROM registration_participants
-             WHERE registration_id = $1
-             ORDER BY created_at ASC
+            SELECT rm.id, c.nik, c.full_name, c.birth_date, c.birth_place, c.gender,
+                   c.address, c.rt_rw, c.village, c.district, c.city, c.province,
+                   c.postal_code, c.email, c.mobile_number, rm.beneficiary_name
+              FROM registration_members rm
+              JOIN customers c ON c.id = rm.customer_id
+             WHERE rm.registration_id = $1
+             ORDER BY rm.created_at ASC
             "#,
         )
         .bind(registration_id)
@@ -370,7 +373,7 @@ async fn payment_webhook(
                 r#"
                 INSERT INTO policies
                   (id, policy_no, registration_id, product, sum_assured, premium,
-                   effective_date, expiry_date, status, participant_id)
+                   effective_date, expiry_date, status, member_id)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ACTIVE',$9)
                 "#,
             )
@@ -385,23 +388,27 @@ async fn payment_webhook(
             .bind(p.id)
             .execute(&mut *tx)
             .await?;
+            // customers.* nullable secara skema (lihat 0008_relax_customer_for_split.sql),
+            // tapi peserta INSTANSI selalu dibuat dengan field ini terisi
+            // (resolve_or_create_member_customer mewajibkannya) — default
+            // kosong di sini cuma jaring pengaman, bukan jalur normal.
             let full_address = format!(
                 "{}\nRT/RW {}\n{}, {}\n{}, {} {}",
-                p.address.trim(),
-                p.rt_rw.trim(),
-                p.village.trim(),
-                p.district.trim(),
-                p.city.trim(),
-                p.province.trim(),
-                p.postal_code.trim(),
+                p.address.as_deref().unwrap_or("").trim(),
+                p.rt_rw.as_deref().unwrap_or("").trim(),
+                p.village.as_deref().unwrap_or("").trim(),
+                p.district.as_deref().unwrap_or("").trim(),
+                p.city.as_deref().unwrap_or("").trim(),
+                p.province.as_deref().unwrap_or("").trim(),
+                p.postal_code.as_deref().unwrap_or("").trim(),
             );
             issued_policies.push((
                 policy_id,
                 policy_no,
                 p.id,
-                p.nik,
+                p.nik.unwrap_or_default(),
                 p.full_name,
-                p.birth_date,
+                p.birth_date.unwrap_or_default(),
                 full_address,
                 p.birth_place,
                 p.gender,
@@ -461,7 +468,7 @@ async fn payment_webhook(
     for (
         policy_id,
         policy_no,
-        _participant_id,
+        _member_id,
         p_nik,
         p_name,
         p_birth_date,
@@ -670,9 +677,9 @@ async fn payment_webhook(
     // activation flow.
 
     // Audit: 1 entry per policy issued. Untuk INSTANSI dengan N policies,
-    // tulis N entries (each with participant_id) supaya per-participant
+    // tulis N entries (each with member_id) supaya per-participant
     // activity traceable.
-    for (policy_id, policy_no, participant_id, _, _, _, _, _, _, _, _, _) in &issued_policies {
+    for (policy_id, policy_no, member_id, _, _, _, _, _, _, _, _, _) in &issued_policies {
         audit_write(
             &state.pool,
             AuditEntry {
@@ -684,10 +691,10 @@ async fn payment_webhook(
                     "policy_no": policy_no,
                     "registration_id": registration_id,
                     "applicant_type": applicant_type,
-                    "participant_id": if participant_id.is_nil() {
+                    "member_id": if member_id.is_nil() {
                         None
                     } else {
-                        Some(participant_id.to_string())
+                        Some(member_id.to_string())
                     },
                 })),
                 ip_address: None,

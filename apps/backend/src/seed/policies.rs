@@ -108,7 +108,7 @@ pub async fn seed_policies(
                     INSERT INTO policies (
                         policy_no, registration_id, product, sum_assured, premium,
                         effective_date, expiry_date, status, pdf_path, created_at,
-                        participant_id
+                        member_id
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, $10)
                     RETURNING id
