@@ -236,7 +236,7 @@ async fn payment_webhook(
         SELECT r.registration_no,
                r.product,
                r.sum_assured,
-               i.premium_amount,
+               i.premium_amount AS premium,
                r.coverage_term,
                c.full_name,
                c.nik,

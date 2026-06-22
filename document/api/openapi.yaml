@@ -511,21 +511,40 @@ paths:
   /customer/registrations:
     post:
       tags: [Customer Insurance]
-      summary: Submit insurance application
+      summary: Submit insurance application (Individu or Instansi)
       description: |
         Multipart upload. The `data` field is a JSON string (not a
-        file); `id_card` is the KTP/JPG/PNG/PDF (max 5 MB).
+        file). Flow is determined by `applicant_type` inside the JSON:
+
+        **INDIVIDU** (single participant):
+        - `id_card` (KTP, JPG/PNG/PDF, max 5 MB) **wajib**.
+        - Root fields (`nik`, `birth_place`, `address`, etc.) adalah data
+          peserta sekaligus representative.
+        - `participants[]` dikosongkan / tidak dikirim.
+        - Total premium = plan monthly_premium × 12 × coverage_term.
+
+        **INSTANSI** (group — 1–500 peserta):
+        - `id_card` **opsional** — KTP per peserta belum di-upload di MVP.
+        - Root fields (`nik`, `full_name`, `email`, `mobile_number`) adalah
+          data representative (yang login & submit). Field personal lain
+          (`birth_place`, `address`, dll.) diabaikan — tidak overwrite data
+          customer yang sudah ada di DB.
+        - `company_name` wajib; `participants[]` wajib ≥ 1 row (max 500).
+        - Tiap peserta butuh `nik`, `full_name`, `birth_place`, `birth_date`,
+          `gender`, `address`, `rt_rw`, `village`, `district`, `city`,
+          `province`, `postal_code`. `beneficiary_name` wajib untuk produk LIFE.
+        - Total premium = plan monthly_premium × 12 × coverage_term × N peserta.
 
         **Side effects (in one DB transaction):**
-        1. Updates the customer row with insurance-specific fields
-           (NIK, address, KTP path, etc.).
-        2. Creates a `registrations` row with `status = 'PENDING'`.
-        3. Creates an `invoices` row with `status = 'UNPAID'`.
-        4. Commits the transaction.
-        5. Renders the invoice PDF and saves it to storage.
-        6. Updates `invoices.pdf_path`.
-        7. Sends two emails: `REGISTRATION_SUCCESS` (text) and
-           `INVOICE_NOTIFICATION` (with PDF attachment).
+        1. Updates customer row: INDIVIDU → semua field personal + KTP path;
+           INSTANSI → hanya `nik` + `mobile_number`.
+        2. Inserts `registrations` row (`status = 'PENDING'`).
+        3. INSTANSI: batch inserts `registration_participants` rows.
+        4. Inserts `invoices` row (`status = 'UNPAID'`).
+        5. Commits the transaction.
+        6. Renders invoice PDF → saves to storage → updates `invoices.pdf_path`.
+        7. Sends two emails: `REGISTRATION_SUCCESS` and `INVOICE_NOTIFICATION`
+           (PDF attachment).
         8. Audit events: `registration_created`, `invoice_generated`.
       operationId: submitInsuranceApplication
       requestBody:
@@ -542,8 +561,23 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SubmitRegistrationResponse" }
+              examples:
+                individu:
+                  summary: "INDIVIDU — berhasil"
+                  value:
+                    registration_no: "REG-202606-000001"
+                    invoice_no: "INV-202606-000001"
+                    status: "PENDING"
+                instansi:
+                  summary: "INSTANSI — berhasil (5 peserta)"
+                  value:
+                    registration_no: "REG-202606-000002"
+                    invoice_no: "INV-202606-000002"
+                    status: "PENDING"
         "403":
-          description: Account not activated yet.
+          description: |
+            Account not activated yet (`portal_status = 'PENDING'`).
+            Error code: `EMAIL_NOT_ACTIVATED`.
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -2206,19 +2240,21 @@ components:
 
     SubmitRegistrationMultipart:
       type: object
-      required: [data, id_card]
+      required: [data]
       properties:
         data:
           type: string
           description: |
-            JSON string with the registration payload. Schema: `RegistrationDataPayload`.
-            Pilih `applicant_type: "INDIVIDU"` atau `"INSTANSI"` (lihat FS-21).
+            JSON string dengan payload registrasi. Schema: `RegistrationDataPayload`.
+            `applicant_type` ("INDIVIDU" | "INSTANSI") menentukan flow yang dipakai.
+            Lihat deskripsi endpoint `POST /customer/registrations` untuk detail tiap flow.
         id_card:
           type: string
           format: binary
           description: |
-            KTP image (JPG/PNG/PDF, max 5 MB). Required untuk INDIVIDU.
-            Untuk INSTANSI, opsional (bisa ditambah per-peserta di iterasi berikut).
+            File KTP (JPG/PNG/PDF, max 5 MB).
+            **INDIVIDU**: wajib — validasi MIME + size dilakukan server-side.
+            **INSTANSI**: opsional — KTP per peserta belum di-upload di MVP.
 
     SubmitRegistrationResponse:
       type: object

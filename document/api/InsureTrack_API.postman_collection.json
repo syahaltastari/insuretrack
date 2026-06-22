@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "InsureTrack API",
-    "description": "Complete API collection for the InsureTrack digital insurance platform.\n\n**Import instructions:**\n1. Open Postman → File → Import → select this file.\n2. After import, edit the `base_url` variable to point to your backend (default `http://localhost:8080/api`).\n3. Hit **Customer → Login** to populate `customer_token`, then **Admin → Login** for `admin_token`. Tokens auto-save via the test scripts.\n\n**Folder layout:**\n- `01 — Public` (no auth): products, registration, payment webhook, marketing content.\n- `02 — Customer` (Bearer): activate, login, profile, policies, invoices, claims, inquiries (with thread messages + close).\n- `03 — Admin` (Bearer): dashboard, registrations, invoices, policies, claims, inquiries (with thread messages + close), marketing CRUD, email/audit logs, **Admin — User Management (super_admin only)** sub-folder.\n- `04 — Webhook`: payment webhook (X-Webhook-Secret header).\n\n**Variables:**\n- `base_url` — backend base (e.g., `http://localhost:8080/api`)\n- `customer_token` — auto-populated by Customer/Login\n- `admin_token` — auto-populated by Admin/Login\n- `webhook_secret` — must match `PAYMENT_WEBHOOK_SECRET` in backend `.env`\n- `customer_id` / `policy_id` / `invoice_id` / etc. — sample UUIDs to override in requests that need path params",
+    "description": "Complete API collection for the InsureTrack digital insurance platform.\n\n**Import instructions:**\n1. Open Postman → File → Import → select this file.\n2. After import, edit the `base_url` variable to point to your backend (default `http://localhost:8080/api`).\n3. Hit **Customer → Login** to populate `customer_token`, then **Admin → Login** for `admin_token`. Tokens auto-save via the test scripts.\n\n**Folder layout:**\n- `01 — Public` (no auth): products, registration status, marketing content.\n- `02 — Customer` (Bearer): activate, login, profile, **Submit Insurance (Individu & Instansi)**, policies, invoices, claims, inquiries (with thread messages + close).\n- `03 — Admin` (Bearer): dashboard, registrations, invoices, policies, claims, inquiries (with thread messages + close), marketing CRUD, email/audit logs, **Admin — User Management (super_admin only)** sub-folder.\n- `04 — Webhook`: payment webhook (X-Webhook-Secret header).\n\n**Insurance Registration — 2 request variants:**\n- `Submit Insurance Application — Individu`: `applicant_type=INDIVIDU`, `id_card` file wajib, semua field personal di root.\n- `Submit Insurance Application — Instansi`: `applicant_type=INSTANSI`, `id_card` opsional, root = data representative, `company_name` + `participants[]` wajib.\n\nKedua request menyimpan `registration_no` dan `invoice_no` ke collection variables. Gunakan `invoice_no` di **04 — Webhook** untuk men-trigger penerbitan polis.\n\n**Variables:**\n- `base_url` — backend base (e.g., `http://localhost:8080/api`)\n- `customer_token` — auto-populated by Customer/Login\n- `admin_token` — auto-populated by Admin/Login\n- `webhook_secret` — must match `PAYMENT_WEBHOOK_SECRET` in backend `.env`\n- `registration_no` / `invoice_no` — auto-populated by Submit Insurance requests\n- `customer_id` / `policy_id` / `invoice_id` / etc. — sample UUIDs to override in requests that need path params",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -290,23 +290,26 @@
           }
         },
         {
-          "name": "Submit Insurance Application",
-          "description": "Multipart upload. The `data` field is a JSON string; `id_card` is the KTP file (JPG/PNG/PDF, max 5 MB).",
+          "name": "Submit Insurance Application — Individu",
+          "description": "Pendaftaran asuransi untuk 1 peserta (Individu). `data` adalah JSON string; `id_card` adalah file KTP (JPG/PNG/PDF, max 5 MB, **wajib** untuk flow ini). Bearer token customer wajib. Setelah berhasil, `registration_no` dan `invoice_no` disimpan ke collection variables untuk dipakai di request lain.",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
             "body": {
               "mode": "formdata",
               "formdata": [
                 {
                   "key": "data",
                   "type": "text",
-                  "value": "{\n  \"nik\": \"3201234567890001\",\n  \"full_name\": \"Test User\",\n  \"birth_place\": \"Jakarta\",\n  \"birth_date\": \"1990-01-15\",\n  \"gender\": \"MALE\",\n  \"address\": \"Jl. Sudirman No. 1\",\n  \"rt_rw\": \"001/002\",\n  \"village\": \"Karet\",\n  \"district\": \"Setiabudi\",\n  \"city\": \"Jakarta Selatan\",\n  \"province\": \"DKI Jakarta\",\n  \"postal_code\": \"12920\",\n  \"email\": \"test@example.com\",\n  \"mobile_number\": \"081234567890\",\n  \"product\": \"LIFE\",\n  \"sum_assured\": \"100000000\",\n  \"coverage_term\": 10\n}"
+                  "value": "{\n  \"applicant_type\": \"INDIVIDU\",\n  \"nik\": \"3201234567890001\",\n  \"full_name\": \"Test User\",\n  \"birth_place\": \"Jakarta\",\n  \"birth_date\": \"1990-01-15\",\n  \"gender\": \"MALE\",\n  \"address\": \"Jl. Sudirman No. 1\",\n  \"rt_rw\": \"001/002\",\n  \"village\": \"Karet\",\n  \"district\": \"Setiabudi\",\n  \"city\": \"Jakarta Selatan\",\n  \"province\": \"DKI Jakarta\",\n  \"postal_code\": \"12920\",\n  \"email\": \"test@example.com\",\n  \"mobile_number\": \"081234567890\",\n  \"plan_code\": \"LIFE_BASIC\",\n  \"coverage_term\": 10,\n  \"beneficiary_name\": \"Nama Ahli Waris\"\n}"
                 },
                 {
                   "key": "id_card",
                   "type": "file",
-                  "src": "/path/to/ktp.jpg"
+                  "src": "/path/to/ktp.jpg",
+                  "description": "Wajib untuk INDIVIDU. JPG/PNG/PDF, max 5 MB."
                 }
               ]
             },
@@ -315,7 +318,58 @@
               "host": ["{{base_url}}"],
               "path": ["customer", "registrations"]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.registration_no) { pm.collectionVariables.set('registration_no', j.registration_no); }",
+                  "if (j.invoice_no) { pm.collectionVariables.set('invoice_no', j.invoice_no); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit Insurance Application — Instansi",
+          "description": "Pendaftaran asuransi kolektif (Instansi). `data` adalah JSON string dengan `company_name` + `participants[]`. Tidak perlu `id_card` untuk flow ini (opsional di MVP). Bearer token customer wajib. `participants` contoh di bawah pakai 2 peserta — tambah/kurangi sesuai kebutuhan (max 500). Setelah berhasil, `registration_no` dan `invoice_no` disimpan ke collection variables.",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customer_token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "data",
+                  "type": "text",
+                  "value": "{\n  \"applicant_type\": \"INSTANSI\",\n  \"nik\": \"3201234567890001\",\n  \"full_name\": \"HR Manager\",\n  \"birth_place\": \"\",\n  \"birth_date\": \"1970-01-01\",\n  \"gender\": \"MALE\",\n  \"address\": \"\",\n  \"rt_rw\": \"\",\n  \"village\": \"\",\n  \"district\": \"\",\n  \"city\": \"\",\n  \"province\": \"\",\n  \"postal_code\": \"\",\n  \"email\": \"hr@company.com\",\n  \"mobile_number\": \"081234567890\",\n  \"company_name\": \"PT Contoh Indonesia\",\n  \"company_npwp\": \"01.234.567.8-901.000\",\n  \"company_industry\": \"Manufaktur\",\n  \"plan_code\": \"HEALTH_STANDARD\",\n  \"coverage_term\": 1,\n  \"participants\": [\n    {\n      \"nik\": \"3201234567890002\",\n      \"full_name\": \"Budi Santoso\",\n      \"birth_place\": \"Bandung\",\n      \"birth_date\": \"1985-03-20\",\n      \"gender\": \"MALE\",\n      \"address\": \"Jl. Braga No. 5\",\n      \"rt_rw\": \"003/004\",\n      \"village\": \"Braga\",\n      \"district\": \"Sumur Bandung\",\n      \"city\": \"Bandung\",\n      \"province\": \"Jawa Barat\",\n      \"postal_code\": \"40111\",\n      \"email\": \"budi@company.com\",\n      \"mobile_number\": \"081298765432\"\n    },\n    {\n      \"nik\": \"3201234567890003\",\n      \"full_name\": \"Siti Rahayu\",\n      \"birth_place\": \"Surabaya\",\n      \"birth_date\": \"1992-07-10\",\n      \"gender\": \"FEMALE\",\n      \"address\": \"Jl. Pemuda No. 10\",\n      \"rt_rw\": \"002/001\",\n      \"village\": \"Genteng\",\n      \"district\": \"Genteng\",\n      \"city\": \"Surabaya\",\n      \"province\": \"Jawa Timur\",\n      \"postal_code\": \"60271\",\n      \"email\": \"siti@company.com\",\n      \"mobile_number\": \"081387654321\"\n    }\n  ]\n}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/registrations",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "registrations"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.registration_no) { pm.collectionVariables.set('registration_no', j.registration_no); }",
+                  "if (j.invoice_no) { pm.collectionVariables.set('invoice_no', j.invoice_no); }"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "List My Policies",

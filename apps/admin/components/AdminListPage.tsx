@@ -71,6 +71,7 @@ export function AdminListPage<T extends { id: string }>({
   statusOptionsLabel,
   detailBasePath,
   pdfDownloadPath,
+  receiptDownloadPath,
   actions,
   headerActions,
   formSlot,
@@ -99,6 +100,8 @@ export function AdminListPage<T extends { id: string }>({
   statusOptionsLabel?: string;
   detailBasePath?: string;
   pdfDownloadPath?: (row: T) => string | null;
+  /** Path untuk download Bukti Pembayaran (receipt). Hanya tampil kalau non-null. */
+  receiptDownloadPath?: (row: T) => string | null;
   /** Per-row action buttons (Edit, Hapus, etc.) rendered in a trailing "Aksi" column. */
   actions?: (row: T) => ReactNode;
   /** Extra controls shown in the page header right side (e.g. "+ Tambah"). */
@@ -411,7 +414,7 @@ export function AdminListPage<T extends { id: string }>({
   ]);
 
   // ----- Render -----
-  const showActionsCol = Boolean(actions) || Boolean(pdfDownloadPath);
+  const showActionsCol = Boolean(actions) || Boolean(pdfDownloadPath) || Boolean(receiptDownloadPath);
   const colCount = columns.length + (showActionsCol ? 1 : 0);
 
   return (
@@ -685,7 +688,7 @@ export function AdminListPage<T extends { id: string }>({
                         </th>
                       );
                     })}
-                    {showActionsCol && <th style={{ width: 160 }}>Aksi</th>}
+                    {showActionsCol && <th style={{ width: 200, minWidth: 180 }}>Aksi</th>}
                   </tr>
                 ))}
               </thead>
@@ -746,41 +749,31 @@ export function AdminListPage<T extends { id: string }>({
                     })}
                     {showActionsCol && (
                       <td>
-                        <div
-                          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-                        >
-                          {pdfDownloadPath &&
-                            (() => {
-                              const path = pdfDownloadPath(row.original);
-                              if (!path) return null;
-                              const token = getAdminToken();
-                              return (
-                                <button
-                                  className="clay-button ghost size-small"
-                                  onClick={async (e) => {
-                                    e.preventDefault();
-                                    const r = await fetch(
-                                      `${API_BASE}${path}`,
-                                      {
-                                        headers: {
-                                          Authorization: `Bearer ${token}`,
-                                        },
-                                      },
-                                    );
-                                    if (!r.ok) return toast.error("Gagal download PDF");
-                                    const blob = await r.blob();
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url;
-                                    a.download = `policy-${row.original.id}.pdf`;
-                                    a.click();
-                                    URL.revokeObjectURL(url);
-                                  }}
-                                >
-                                  📄 PDF
-                                </button>
-                              );
-                            })()}
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {pdfDownloadPath && (() => {
+                            const path = pdfDownloadPath(row.original);
+                            if (!path) return null;
+                            return (
+                              <AdminDownloadButton
+                                key="pdf"
+                                path={path}
+                                label="📄 Invoice"
+                                title="Download invoice PDF"
+                              />
+                            );
+                          })()}
+                          {receiptDownloadPath && (() => {
+                            const path = receiptDownloadPath(row.original);
+                            if (!path) return null;
+                            return (
+                              <AdminDownloadButton
+                                key="receipt"
+                                path={path}
+                                label="🧾 Bukti Bayar"
+                                title="Download bukti pembayaran PDF"
+                              />
+                            );
+                          })()}
                           {actions && actions(row.original)}
                         </div>
                       </td>
@@ -799,6 +792,69 @@ export function AdminListPage<T extends { id: string }>({
         </>
       )}
     </>
+  );
+}
+
+// ----- AdminDownloadButton -----
+//
+// Tombol download PDF generik untuk actions column. Fetch dengan Bearer
+// token admin, lalu trigger download via blob URL. Filename diambil dari
+// Content-Disposition header backend (backend set filename berupa invoice_no
+// / policy_no / receipt-invoice_no supaya file di folder Download bermakna).
+function AdminDownloadButton({
+  path,
+  label,
+  title,
+}: {
+  path: string;
+  label: string;
+  title?: string;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (loading) return;
+    const token = getAdminToken();
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) {
+        toast.error("Gagal download: " + (r.status === 404 ? "file belum tersedia" : `HTTP ${r.status}`));
+        return;
+      }
+      // Ambil filename dari Content-Disposition header kalau ada,
+      // fallback ke nama generik agar file tetap bisa di-save.
+      const disposition = r.headers.get("content-disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match?.[1] ?? path.split("/").pop() ?? "download.pdf";
+
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Gagal download PDF");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      className="clay-button ghost size-small"
+      onClick={handleClick}
+      disabled={loading}
+      title={title}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+    >
+      {loading ? "Mengunduh..." : label}
+    </button>
   );
 }
 

@@ -36,6 +36,7 @@ export default function PortalInvoicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<StatusFilter>("ALL");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null);
 
   useEffect(() => {
     const token = getCustomerToken();
@@ -76,32 +77,48 @@ export default function PortalInvoicesPage() {
     return new Date(inv.due_date) < new Date(new Date().toDateString());
   };
 
-  const downloadPdf = async (inv: Invoice) => {
+  const downloadFile = async (
+    url: string,
+    filename: string,
+    setLoading: (id: string | null) => void,
+    id: string,
+  ) => {
     const token = getCustomerToken();
     if (!token) return;
-    setDownloadingId(inv.id);
+    setLoading(id);
     try {
-      const r = await fetch(`${API_BASE}/customer/invoices/${inv.id}/pdf`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
+      const href = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      // Pakai invoice_no sebagai filename — backend juga set header ini
-      // (Content-Disposition: attachment; filename="{invoice_no}.pdf"),
-      // tapi overwrite di client supaya pasti match.
-      a.download = `${inv.invoice_no}.pdf`;
+      a.href = href;
+      a.download = filename;
       a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`Invoice ${inv.invoice_no} terdownload`);
-    } catch (e) {
+      URL.revokeObjectURL(href);
+      toast.success(`${filename} terdownload`);
+    } catch {
       toast.error("Gagal download PDF");
     } finally {
-      setDownloadingId(null);
+      setLoading(null);
     }
   };
+
+  const downloadPdf = (inv: Invoice) =>
+    downloadFile(
+      `${API_BASE}/customer/invoices/${inv.id}/pdf`,
+      `${inv.invoice_no}.pdf`,
+      setDownloadingId,
+      inv.id,
+    );
+
+  const downloadReceipt = (inv: Invoice) =>
+    downloadFile(
+      `${API_BASE}/customer/invoices/${inv.id}/receipt`,
+      `receipt-${inv.invoice_no}.pdf`,
+      setDownloadingReceiptId,
+      inv.id,
+    );
 
   return (
     <>
@@ -249,7 +266,7 @@ export default function PortalInvoicesPage() {
                 <th style={{ textAlign: "right" }}>Premi</th>
                 <th>Jatuh Tempo</th>
                 <th>Status</th>
-                <th style={{ textAlign: "right" }}>Aksi</th>
+                <th style={{ textAlign: "right", minWidth: 160 }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -284,23 +301,33 @@ export default function PortalInvoicesPage() {
                     <StatusBadge status={inv.status} />
                   </td>
                   <td style={{ textAlign: "right" }}>
-                    {inv.pdf_path ? (
-                      <button
-                        onClick={() => downloadPdf(inv)}
-                        disabled={downloadingId === inv.id}
-                        className="clay-button ghost size-small"
-                        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                      >
-                        {downloadingId === inv.id ? "Mengunduh..." : "📄 PDF"}
-                      </button>
-                    ) : (
-                      <span
-                        className="caption"
-                        style={{ color: "var(--warm-silver)" }}
-                      >
-                        —
-                      </span>
-                    )}
+                    <div style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {inv.pdf_path ? (
+                        <button
+                          onClick={() => downloadPdf(inv)}
+                          disabled={downloadingId === inv.id}
+                          className="clay-button ghost size-small"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                          title="Download invoice PDF"
+                        >
+                          {downloadingId === inv.id ? "Mengunduh..." : "📄 Invoice"}
+                        </button>
+                      ) : null}
+                      {inv.status === "PAID" ? (
+                        <button
+                          onClick={() => downloadReceipt(inv)}
+                          disabled={downloadingReceiptId === inv.id}
+                          className="clay-button ghost size-small"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                          title="Download bukti pembayaran PDF"
+                        >
+                          {downloadingReceiptId === inv.id ? "Mengunduh..." : "🧾 Bukti Bayar"}
+                        </button>
+                      ) : null}
+                      {!inv.pdf_path && inv.status !== "PAID" && (
+                        <span className="caption" style={{ color: "var(--warm-silver)" }}>—</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

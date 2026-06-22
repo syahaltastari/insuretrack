@@ -30,6 +30,7 @@ export default function Page() {
       statusOptions={["UNPAID", "PAID", "EXPIRED", "CANCELLED"]}
       statusFilterLabel="Status invoice"
       pdfDownloadPath={(r) => (r.pdf_path ? `/admin/invoices/${r.id}/pdf` : null)}
+      receiptDownloadPath={(r) => (r.status === "PAID" ? `/admin/invoices/${r.id}/receipt` : null)}
       // Date filter: kolom yang paling sering ditanya admin
       // (created_at = "kapan invoice dibuat", due_date = "jatuh tempo",
       // paid_at = "kapan dibayar").
