@@ -1807,10 +1807,11 @@ async fn resolve_or_create_member_customer(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     p: &crate::dto::ParticipantData,
 ) -> AppResult<Uuid> {
-    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM customers WHERE nik = $1")
-        .bind(&p.nik)
-        .fetch_optional(&mut **tx)
-        .await?
+    if let Some(existing_id) =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM customers WHERE nik = $1")
+            .bind(&p.nik)
+            .fetch_optional(&mut **tx)
+            .await?
     {
         return Ok(existing_id);
     }
@@ -2423,8 +2424,9 @@ async fn download_invoice_receipt(
     .fetch_optional(&state.pool)
     .await?;
     let (receipt_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
-    let receipt_path =
-        receipt_path_opt.ok_or(AppError::NotFound("payment receipt (belum ada — invoice mungkin belum dibayar)".into()))?;
+    let receipt_path = receipt_path_opt.ok_or(AppError::NotFound(
+        "payment receipt (belum ada — invoice mungkin belum dibayar)".into(),
+    ))?;
 
     let bytes = state.storage.read_bytes(&receipt_path).await?;
     let body = Body::from(bytes);

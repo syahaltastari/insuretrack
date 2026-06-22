@@ -43,8 +43,8 @@ struct Cli {
     customers: usize,
 
     /// Jumlah customer yang punya akses portal + password (mode Demo saja).
-/// Default 4: 3 akun sukses (mixed/Individu/Instansi) + 1 akun
-/// dengan registration EXPIRED untuk demo skenario gagal.
+    /// Default 4: 3 akun sukses (mixed/Individu/Instansi) + 1 akun
+    /// dengan registration EXPIRED untuk demo skenario gagal.
     #[arg(long, default_value_t = 4)]
     customers_with_portal: usize,
 

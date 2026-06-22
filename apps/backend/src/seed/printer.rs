@@ -13,9 +13,9 @@ pub fn print_plan(cfg: &SeedConfig) {
     };
 
     // Estimasi peserta & group registrations.
-    let expected_group = (cfg.counts.registrations as f32 * cfg.counts.group_ratio).round() as usize;
-    let avg_participants =
-        (cfg.counts.min_participants + cfg.counts.max_participants) as f32 / 2.0;
+    let expected_group =
+        (cfg.counts.registrations as f32 * cfg.counts.group_ratio).round() as usize;
+    let avg_participants = (cfg.counts.min_participants + cfg.counts.max_participants) as f32 / 2.0;
     let expected_participants = (expected_group as f32 * avg_participants).round() as usize;
     let expected_policies = (cfg.counts.registrations - expected_group) + expected_participants;
 
@@ -109,7 +109,10 @@ pub fn print_summary(
             participants
         );
     }
-    println!("  Invoices          : {:>5}  ({} EXPIRED)", invoices, expired_invoices);
+    println!(
+        "  Invoices          : {:>5}  ({} EXPIRED)",
+        invoices, expired_invoices
+    );
     println!("  Policies          : {:>5}", policies);
     println!("  Claims            : {:>5}", claims);
     println!("  Inquiries         : {:>5}", inquiries);

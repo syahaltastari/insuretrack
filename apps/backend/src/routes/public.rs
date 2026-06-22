@@ -33,7 +33,10 @@ use crate::{
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
-        pdf::{render as render_pdf, render_receipt as render_receipt_pdf, PolicyPdfInput, ReceiptPdfInput},
+        pdf::{
+            render as render_pdf, render_receipt as render_receipt_pdf, PolicyPdfInput,
+            ReceiptPdfInput,
+        },
     },
     state::AppState,
 };
@@ -732,7 +735,9 @@ pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
 /// Indonesia — akan ditampilkan ke user via ResultDialog.
 fn validate_individu(d: &RegistrationData, plan: &ProductPlan) -> Result<(), AppError> {
     if !is_16_digits(&d.nik) {
-        return Err(AppError::Validation("NIK harus tepat 16 digit angka".into()));
+        return Err(AppError::Validation(
+            "NIK harus tepat 16 digit angka".into(),
+        ));
     }
     if d.full_name.trim().is_empty() {
         return Err(AppError::Validation("Nama lengkap wajib diisi".into()));
@@ -761,7 +766,9 @@ fn validate_individu(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
         ));
     }
     if d.coverage_term < 1 {
-        return Err(AppError::Validation("Masa perlindungan minimal 1 tahun".into()));
+        return Err(AppError::Validation(
+            "Masa perlindungan minimal 1 tahun".into(),
+        ));
     }
     // Beneficiary wajib untuk produk LIFE (sesuai benefit list "Ahli Waris
     // Fleksibel" di product-details.ts). PA & HEALTH tidak butuh.
@@ -820,7 +827,9 @@ fn validate_instansi(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
         ));
     }
     if d.coverage_term < 1 {
-        return Err(AppError::Validation("Masa perlindungan minimal 1 tahun".into()));
+        return Err(AppError::Validation(
+            "Masa perlindungan minimal 1 tahun".into(),
+        ));
     }
     // Minimal 1 peserta
     if d.participants.is_empty() {

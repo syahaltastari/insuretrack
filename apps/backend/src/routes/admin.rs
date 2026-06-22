@@ -881,8 +881,9 @@ async fn download_invoice_receipt(
             .fetch_optional(&state.pool)
             .await?;
     let (receipt_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
-    let receipt_path =
-        receipt_path_opt.ok_or(AppError::NotFound("payment receipt (invoice belum dibayar)".into()))?;
+    let receipt_path = receipt_path_opt.ok_or(AppError::NotFound(
+        "payment receipt (invoice belum dibayar)".into(),
+    ))?;
 
     let bytes = state.storage.read_bytes(&receipt_path).await?;
     let body = Body::from(bytes);

@@ -213,14 +213,15 @@ pub async fn seed_customers(
         // Tujuan: tag CLI output punya 3 variasi supaya onboarding
         // bisa demo ke klien 3 skenario berbeda (lihat
         // `print_portal_credentials` di printer.rs).
-        let eligible_applicant_types: Vec<&'static str> = if i == 1 && cfg.counts.customers_with_portal >= 2 {
-            vec!["INDIVIDU"]
-        } else if i == 2 && cfg.counts.customers_with_portal >= 3 {
-            vec!["INSTANSI"]
-        } else {
-            // i=0 (mixed portal) atau non-portal → eligible dua-duanya.
-            vec!["INDIVIDU", "INSTANSI"]
-        };
+        let eligible_applicant_types: Vec<&'static str> =
+            if i == 1 && cfg.counts.customers_with_portal >= 2 {
+                vec!["INDIVIDU"]
+            } else if i == 2 && cfg.counts.customers_with_portal >= 3 {
+                vec!["INSTANSI"]
+            } else {
+                // i=0 (mixed portal) atau non-portal → eligible dua-duanya.
+                vec!["INDIVIDU", "INSTANSI"]
+            };
 
         // Outcome per customer untuk demo flow yang konsisten:
         //   i=0..2 (3 portal customer sukses)  → RegistrationOutcome::Success

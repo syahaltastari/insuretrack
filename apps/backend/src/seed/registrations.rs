@@ -152,8 +152,7 @@ pub async fn seed_registrations(
                 _ => "ISSUED".to_string(),   // 15/20 = 75%
             },
         };
-        let force_expired_invoice =
-            outcome == crate::seed::customers::RegistrationOutcome::Expired;
+        let force_expired_invoice = outcome == crate::seed::customers::RegistrationOutcome::Expired;
 
         // Company info: NULL untuk INDIVIDU, random untuk INSTANSI.
         let (company_name, company_npwp, company_industry) = if is_group {
@@ -217,22 +216,17 @@ pub async fn seed_registrations(
         // `policies.member_id`.
         let mut participants: Vec<SeededParticipant> = Vec::new();
         if is_group {
-            let n = rng.gen_range(
-                cfg.counts.min_participants..=cfg.counts.max_participants,
-            );
+            let n = rng.gen_range(cfg.counts.min_participants..=cfg.counts.max_participants);
             let mut local_used_niks = std::collections::HashSet::new();
             for _ in 0..n {
-                let (p_nik, p_full_name, p_birth_date) = generate_participant(
-                    &mut rng,
-                    &mut local_used_niks,
-                );
+                let (p_nik, p_full_name, p_birth_date) =
+                    generate_participant(&mut rng, &mut local_used_niks);
 
-                let customer_id: Uuid = if let Some(existing) = sqlx::query_scalar::<_, Uuid>(
-                    "SELECT id FROM customers WHERE nik = $1",
-                )
-                .bind(&p_nik)
-                .fetch_optional(&mut **tx)
-                .await?
+                let customer_id: Uuid = if let Some(existing) =
+                    sqlx::query_scalar::<_, Uuid>("SELECT id FROM customers WHERE nik = $1")
+                        .bind(&p_nik)
+                        .fetch_optional(&mut **tx)
+                        .await?
                 {
                     existing
                 } else {

@@ -169,7 +169,13 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
         input.customer_birth_place,
         format_date_id(input.customer_birth_date)
     );
-    layer.use_text(truncate(&ttl_cover, 52).as_str(), 9.0, Mm(15.0), Mm(170.0), &reg);
+    layer.use_text(
+        truncate(&ttl_cover, 52).as_str(),
+        9.0,
+        Mm(15.0),
+        Mm(170.0),
+        &reg,
+    );
 
     set_color(&layer, C_OAT_BORDER);
     draw_line(&layer, 15.0, 163.0, 195.0, 163.0, 0.4);
@@ -432,9 +438,7 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
         || input.product_name.contains("Jiwa")
     {
         "Manfaat Meninggal Dunia"
-    } else if input.product_name.contains("Accident")
-        || input.product_name.contains("Kecelakaan")
-    {
+    } else if input.product_name.contains("Accident") || input.product_name.contains("Kecelakaan") {
         "Manfaat Kecelakaan"
     } else {
         "Manfaat Rawat Inap"
@@ -469,8 +473,7 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
     set_color(&layer, C_CHARCOAL);
     layer.use_text("TOTAL PREMI SELAMA POLIS", 7.5, Mm(18.0), Mm(140.0), &bold);
     set_color(&layer, C_BLACK);
-    let total_prem = input.premium
-        * rust_decimal::Decimal::from(input.coverage_term_years);
+    let total_prem = input.premium * rust_decimal::Decimal::from(input.coverage_term_years);
     layer.use_text(
         format_idr(total_prem).as_str(),
         10.0,
@@ -501,13 +504,7 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
                 &bold,
             );
             set_color(&layer, C_BLACK);
-            layer.use_text(
-                beneficiary,
-                11.0,
-                Mm(15.0),
-                Mm(p2_bottom - 11.0),
-                &bold,
-            );
+            layer.use_text(beneficiary, 11.0, Mm(15.0), Mm(p2_bottom - 11.0), &bold);
             set_color(&layer, C_CHARCOAL);
             layer.use_text(
                 "Penerima manfaat polis sesuai ketentuan yang berlaku dalam polis ini.",
@@ -604,9 +601,7 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
             ("Manfaat Berakhir Polis",
              "Pada akhir masa perlindungan, nilai manfaat disesuaikan dengan ketentuan produk dan tidak terdapat nilai tunai kecuali diatur lain."),
         ]
-    } else if input.product_name.contains("Accident")
-        || input.product_name.contains("Kecelakaan")
-    {
+    } else if input.product_name.contains("Accident") || input.product_name.contains("Kecelakaan") {
         vec![
             ("Manfaat Kematian Akibat Kecelakaan",
              "Pembayaran 100% Uang Pertanggungan apabila tertanggung meninggal dunia akibat kecelakaan dalam masa perlindungan."),
@@ -713,11 +708,7 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
     set_color(&layer, C_SILVER);
     layer.use_text("Tanda tangan elektronik", 6.5, Mm(20.0), Mm(18.5), &italic);
     layer.use_text(
-        format!(
-            "Diterbitkan: {}",
-            format_date_id(input.effective_date)
-        )
-        .as_str(),
+        format!("Diterbitkan: {}", format_date_id(input.effective_date)).as_str(),
         6.5,
         Mm(130.0),
         Mm(18.5),
@@ -1225,7 +1216,13 @@ pub fn render_receipt(input: &ReceiptPdfInput<'_>) -> Result<Vec<u8>, AppError> 
     set_color(&layer, C_WHITE);
     layer.use_text("BUKTI PEMBAYARAN", 18.0, Mm(120.0), Mm(287.0), &bold);
     set_color(&layer, C_CREAM);
-    layer.use_text("Konfirmasi Penerimaan Premi", 9.0, Mm(120.0), Mm(278.0), &reg);
+    layer.use_text(
+        "Konfirmasi Penerimaan Premi",
+        9.0,
+        Mm(120.0),
+        Mm(278.0),
+        &reg,
+    );
 
     // ===== TITLE + STATUS BADGE — y 252..232 =====
     set_color(&layer, C_BLACK);
@@ -1465,14 +1462,7 @@ fn draw_line(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, thic
 /// karena visual priority rendah, pakai 4 garis tipis solid sebagai
 /// pendekatan pragmatis. Box dengan border solid tipis ini acceptable
 /// untuk beneficiary/company info card.
-fn draw_dashed_rect(
-    layer: &PdfLayerReference,
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
-    thickness: f32,
-) {
+fn draw_dashed_rect(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32) {
     // Top, bottom, left, right
     let gap: f32 = 2.0;
     let mut x = x1;
