@@ -17,6 +17,15 @@ pub struct SeedReport {
     pub customers: usize,
     pub portal_customers: usize,
     pub registrations: usize,
+    /// Breakdown: jumlah registration dengan applicant_type='INSTANSI'.
+    pub group_registrations: usize,
+    /// Total baris di tabel `registration_participants`. `0` untuk
+    /// semua-INDIVIDU run.
+    pub participants: usize,
+    /// Jumlah registration dengan invoice EXPIRED (lewat due_date,
+    /// registration PENDING, tidak ada policy). Termasuk RegistrationOutcome::Expired
+    /// customer (1 portal customer ke-4) + variasi random PENDING + idx%6==0.
+    pub expired_invoices: usize,
     pub invoices: usize,
     pub policies: usize,
     pub claims: usize,
@@ -110,6 +119,18 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
         customers: seeded_customers.len(),
         portal_customers: portal_count,
         registrations: seeded_registrations.len(),
+        group_registrations: seeded_registrations
+            .iter()
+            .filter(|r| r.applicant_type == "INSTANSI")
+            .count(),
+        participants: seeded_registrations
+            .iter()
+            .map(|r| r.participants.len())
+            .sum(),
+        expired_invoices: seeded_invoices
+            .iter()
+            .filter(|i| i.status == "EXPIRED")
+            .count(),
         invoices: seeded_invoices.len(),
         policies: seeded_policies.len(),
         claims: seeded_claims.len(),
@@ -131,6 +152,9 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
         report.customers,
         report.portal_customers,
         report.registrations,
+        report.group_registrations,
+        report.participants,
+        report.expired_invoices,
         report.invoices,
         report.policies,
         report.claims,
@@ -142,12 +166,32 @@ pub async fn run(cfg: SeedConfig, pool: &PgPool) -> anyhow::Result<SeedReport> {
     );
 
     // Print portal credentials untuk customer dengan akses portal.
-    let portal_creds: Vec<(String, String, String)> = seeded_customers
+    // Tiap customer di-tag dengan applicant_type dari registration dia:
+    //   - "individu": ada registration INDIVIDU
+    //   - "instansi": ada registration INSTANSI (sebagai representative)
+    // Customer bisa punya keduanya (multiple registrations). Distinct
+    // sort supaya output stabil antar run.
+    use std::collections::BTreeSet;
+    let portal_creds: Vec<printer::PortalCredWithTags> = seeded_customers
         .iter()
         .filter_map(|c| {
-            c.portal_password
-                .as_ref()
-                .map(|pw| (c.email.clone(), pw.clone(), c.full_name.clone()))
+            c.portal_password.as_ref().map(|pw| {
+                // Kumpulkan distinct applicant_type dari registrations
+                // yang customer ini buat. Urutkan deterministik (BTreeSet
+                // → alphabetical) supaya output stabil.
+                let mut tags = BTreeSet::new();
+                for reg in &seeded_registrations {
+                    if reg.customer_id == c.id {
+                        tags.insert(reg.applicant_type.to_lowercase());
+                    }
+                }
+                printer::PortalCredWithTags {
+                    email: c.email.clone(),
+                    password: pw.clone(),
+                    full_name: c.full_name.clone(),
+                    tags: tags.into_iter().collect(),
+                }
+            })
         })
         .collect();
     printer::print_portal_credentials(&portal_creds);

@@ -73,6 +73,13 @@ pub trait Storage: Send + Sync {
     async fn save_invoice_pdf(&self, invoice_id: Uuid, bytes: &[u8])
         -> Result<StoredRef, AppError>;
 
+    /// Bukti Pembayaran (receipt) PDF — di-render di payment_webhook
+    /// setelah invoice bertransisi UNPAID → PAID. Key: `receipts/{invoice_id}.pdf`.
+    /// 1:1 dengan invoice (satu invoice = satu receipt); regenerate
+    /// saat ini belum disupport — lihat TODO(M-receipt) di payment_webhook.
+    async fn save_receipt_pdf(&self, invoice_id: Uuid, bytes: &[u8])
+        -> Result<StoredRef, AppError>;
+
     /// Fetch raw bytes (untuk email attachment, download endpoint, dll).
     async fn read_bytes(&self, key: &str) -> Result<Vec<u8>, AppError>;
 
@@ -184,6 +191,27 @@ impl Storage for LocalStorage {
         bytes: &[u8],
     ) -> Result<StoredRef, AppError> {
         let key = format!("invoices/{invoice_id}.pdf");
+        let absolute = self.absolute(&key);
+        if let Some(parent) = absolute.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("create_dir: {e}")))?;
+        }
+        fs::write(&absolute, bytes)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("write pdf: {e}")))?;
+        Ok(StoredRef {
+            key,
+            backend: "local",
+        })
+    }
+
+    async fn save_receipt_pdf(
+        &self,
+        invoice_id: Uuid,
+        bytes: &[u8],
+    ) -> Result<StoredRef, AppError> {
+        let key = format!("receipts/{invoice_id}.pdf");
         let absolute = self.absolute(&key);
         if let Some(parent) = absolute.parent() {
             fs::create_dir_all(parent)
@@ -355,6 +383,16 @@ impl Storage for R2Storage {
         bytes: &[u8],
     ) -> Result<StoredRef, AppError> {
         let key = format!("invoices/{invoice_id}.pdf");
+        self.put(&key, bytes.to_vec(), "application/pdf").await?;
+        Ok(StoredRef { key, backend: "r2" })
+    }
+
+    async fn save_receipt_pdf(
+        &self,
+        invoice_id: Uuid,
+        bytes: &[u8],
+    ) -> Result<StoredRef, AppError> {
+        let key = format!("receipts/{invoice_id}.pdf");
         self.put(&key, bytes.to_vec(), "application/pdf").await?;
         Ok(StoredRef { key, backend: "r2" })
     }

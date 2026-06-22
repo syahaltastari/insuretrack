@@ -1,14 +1,25 @@
 //! Render PDF: e-Policy (spec FS-08) dan Invoice.
 //!
-//! Sections untuk e-Policy per spec:
-//!   - Policy Information: policy_no, registration_no, effective_date, expiry_date
-//!   - Customer Information: NIK, name, birth date, address
-//!   - Coverage Information: product, sum assured, premium
+//! Sections untuk e-Policy (corporate-grade layout):
+//!   - Header bar (brand + "E-POLICY")
+//!   - Title + status badge "AKTIF"
+//!   - Two-column info card (PEMEGANG POLIS | INFORMASI POLIS)
+//!   - Coverage table (produk + sum assured + premi + tier + term)
+//!   - Beneficiary box (LIFE only)
+//!   - Company info box (INSTANSI only)
+//!   - Signature section (Pemegang Polis | Issued by InsureTrack)
+//!   - Footer bar (brand + support + page)
 //!
 //! Sections untuk Invoice:
-//!   - Invoice Information: invoice_no, registration_no, status, created_at
-//!   - Bill To: NIK, name, birth date, address
-//!   - Coverage & Payment: product, sum assured, premium, due_date
+//!   - Header bar (brand + "INVOICE")
+//!   - Title + status badge
+//!   - Two-column info card (DITAGIHKAN KEPADA | INVOICE info)
+//!   - Coverage & Payment table
+//!   - Total box + payment instructions
+//!   - Footer bar
+//!
+//! Helper functions (color, format, drawing primitives) di module scope
+//! supaya reusable oleh kedua render functions.
 
 use chrono::{Datelike, NaiveDate};
 use printpdf::path::PaintMode;
@@ -18,20 +29,67 @@ use std::io::BufWriter;
 
 use crate::error::AppError;
 
+// ---- Brand colors (di-copy dari packages/ui/src/styles/globals.css) ---------
+// Hex → RGB tuple. printpdf butuh (u8, u8, u8) untuk Color::Rgb.
+const C_BLACK: (u8, u8, u8) = (0, 0, 0);
+const C_WHITE: (u8, u8, u8) = (255, 255, 255);
+const C_CREAM: (u8, u8, u8) = (250, 249, 247); // --warm-cream
+const C_OAT_LIGHT: (u8, u8, u8) = (238, 233, 223); // --oat-light
+const C_OAT_BORDER: (u8, u8, u8) = (218, 212, 200); // --oat-border
+const C_MATCHA_300: (u8, u8, u8) = (132, 231, 165);
+const C_POMEGRANATE: (u8, u8, u8) = (252, 121, 129);
+const C_LEMON_400: (u8, u8, u8) = (248, 204, 101);
+const C_CHARCOAL: (u8, u8, u8) = (85, 83, 78); // --warm-charcoal
+const C_SILVER: (u8, u8, u8) = (159, 155, 147); // --warm-silver
+
+// ============================================================================
+// E-Policy PDF (corporate-grade)
+// ============================================================================
+
+/// Input untuk e-Policy PDF. Field `customer_*` (nama/NIK/TTL/etc)
+/// berbeda sumber tergantung applicant_type:
+///   - INDIVIDU: dari `customers` table
+///   - INSTANSI: dari `registration_participants` table
 pub struct PolicyPdfInput<'a> {
+    // Identifiers
     pub policy_no: &'a str,
     pub registration_no: &'a str,
     pub effective_date: NaiveDate,
     pub expiry_date: NaiveDate,
+
+    // Customer / participant identity
     pub customer_nik: &'a str,
     pub customer_name: &'a str,
+    pub customer_birth_place: &'a str,
     pub customer_birth_date: NaiveDate,
+    pub customer_gender: &'a str, // "MALE" | "FEMALE"
     pub customer_address: &'a str,
+
+    // Contact (boleh empty string kalau tidak tersedia)
+    pub customer_email: &'a str,
+    pub customer_mobile: &'a str,
+
+    // Coverage
     pub product_name: &'a str,
+    /// Tier label ("BASIC" / "STANDARD" / "PREMIUM") — None/empty →
+    /// tampilkan product_name saja tanpa tier.
+    pub plan_tier: Option<String>,
     pub sum_assured: Decimal,
     pub premium: Decimal,
+    pub coverage_term_years: i32,
+
+    // Beneficiary (LIFE only) — None untuk PA/HEALTH
+    pub beneficiary_name: Option<String>,
+
+    // Company (INSTANSI only) — None untuk INDIVIDU
+    pub company_name: Option<String>,
+    pub company_npwp: Option<String>,
+    pub company_industry: Option<String>,
 }
 
+/// Render e-Policy PDF corporate-grade — A4 portrait dengan branded
+/// header bar, two-column info card, coverage table, beneficiary box,
+/// signature line, dan footer bar. Single-page layout.
 pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
     let (doc, page1, layer1) =
         PdfDocument::new("E-Policy", Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
@@ -43,83 +101,339 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
     let reg = doc
         .add_builtin_font(BuiltinFont::Helvetica)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("font reg: {e}")))?;
+    let italic = doc
+        .add_builtin_font(BuiltinFont::HelveticaOblique)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("font italic: {e}")))?;
 
-    // printpdf 0.7's Mm wraps f32, not f64. Use f32 throughout.
-    let mut y: f32 = 280.0;
-    layer.use_text("E-POLICY", 22.0_f32, Mm(20.0_f32), Mm(y), &bold);
-    y -= 12.0;
+    // ===== HEADER BAR (black) — y 285..262 (23mm tall) =====
+    fill_rect(&layer, 0.0, 262.0, 210.0, 285.0, C_BLACK);
+    layer.use_text("InsureTrack", 20.0, Mm(20.0), Mm(275.0), &bold);
+    set_color(&layer, C_CREAM);
     layer.use_text(
-        "Digital Insurance Platform",
-        10.0_f32,
-        Mm(20.0_f32),
-        Mm(y),
+        "Asuransi digital, prosesnya cepat, polis langsung terbit.",
+        9.0,
+        Mm(20.0),
+        Mm(266.0),
         &reg,
     );
-    y -= 14.0;
+    set_color(&layer, C_WHITE);
+    layer.use_text("E-POLICY", 22.0, Mm(150.0), Mm(275.0), &bold);
+    set_color(&layer, C_CREAM);
+    layer.use_text("Polis Asuransi Digital", 9.0, Mm(150.0), Mm(266.0), &reg);
 
-    draw_section(&layer, &bold, &reg, "Policy Information", &mut y);
-    draw_kv(&layer, &reg, "Policy No", input.policy_no, &mut y);
-    draw_kv(
-        &layer,
-        &reg,
-        "Registration No",
-        input.registration_no,
-        &mut y,
-    );
-    draw_kv(
-        &layer,
-        &reg,
-        "Effective Date",
-        &input.effective_date.to_string(),
-        &mut y,
-    );
-    draw_kv(
-        &layer,
-        &reg,
-        "Expiry Date",
-        &input.expiry_date.to_string(),
-        &mut y,
-    );
-    y -= 6.0;
-
-    draw_section(&layer, &bold, &reg, "Customer Information", &mut y);
-    draw_kv(&layer, &reg, "NIK", input.customer_nik, &mut y);
-    draw_kv(&layer, &reg, "Name", input.customer_name, &mut y);
-    draw_kv(
-        &layer,
-        &reg,
-        "Birth Date",
-        &input.customer_birth_date.to_string(),
-        &mut y,
-    );
-    draw_kv(&layer, &reg, "Address", input.customer_address, &mut y);
-    y -= 6.0;
-
-    draw_section(&layer, &bold, &reg, "Coverage Information", &mut y);
-    draw_kv(&layer, &reg, "Product", input.product_name, &mut y);
-    draw_kv(
-        &layer,
-        &reg,
-        "Sum Assured",
-        &format!("Rp {}", input.sum_assured),
-        &mut y,
-    );
-    draw_kv(
-        &layer,
-        &reg,
-        "Premium",
-        &format!("Rp {}", input.premium),
-        &mut y,
-    );
-
-    y -= 12.0;
+    // ===== TITLE + STATUS BADGE — y 252..232 (20mm) =====
+    set_color(&layer, C_BLACK);
+    layer.use_text("Bukti Perlindungan Anda Aktif", 16.0, Mm(20.0), Mm(248.0), &bold);
+    set_color(&layer, C_SILVER);
     layer.use_text(
-        "This document is a valid electronic insurance policy.",
-        8.0_f32,
-        Mm(20.0_f32),
-        Mm(y),
+        "Polis ini diterbitkan secara elektronik dan sah tanpa tanda tangan basah.",
+        9.0,
+        Mm(20.0),
+        Mm(240.0),
         &reg,
     );
+    // Status badge "AKTIF" — matcha green box
+    fill_rect(&layer, 140.0, 242.0, 190.0, 252.0, C_MATCHA_300);
+    set_color(&layer, C_BLACK);
+    layer.use_text("AKTIF", 11.0, Mm(155.0), Mm(245.0), &bold);
+
+    // ===== TWO-COLUMN INFO CARD — y 222..178 (44mm tall) =====
+    fill_rect(&layer, 20.0, 178.0, 190.0, 222.0, C_CREAM);
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 105.0, 178.0, 105.0, 222.0, 0.3);
+
+    // Left column: PEMEGANG POLIS
+    set_color(&layer, C_SILVER);
+    layer.use_text("PEMEGANG POLIS", 7.0, Mm(25.0), Mm(216.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        truncate(input.customer_name, 28).as_str(),
+        12.0,
+        Mm(25.0),
+        Mm(208.0),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format!("NIK: {}", input.customer_nik).as_str(),
+        8.5,
+        Mm(25.0),
+        Mm(201.0),
+        &reg,
+    );
+    let ttl = format!(
+        "TTL: {}, {}",
+        input.customer_birth_place,
+        format_date_id(input.customer_birth_date)
+    );
+    layer.use_text(ttl.as_str(), 8.5, Mm(25.0), Mm(195.0), &reg);
+    let gender_label = match input.customer_gender {
+        "MALE" => "Laki-laki",
+        "FEMALE" => "Perempuan",
+        other => other,
+    };
+    layer.use_text(
+        format!("Jenis Kelamin: {}", gender_label).as_str(),
+        8.5,
+        Mm(25.0),
+        Mm(189.0),
+        &reg,
+    );
+    // Address (multi-line, wrap) — batasi max 2 baris
+    let addr_lines = wrap_text(input.customer_address, 38);
+    let max_addr_lines = (addr_lines.len() as f32).min(2.0_f32);
+    for (i, line) in addr_lines.iter().take(2).enumerate() {
+        let y_pos = 183.0_f32 - (i as f32) * 4.0_f32;
+        layer.use_text(line.as_str(), 8.5, Mm(25.0), Mm(y_pos), &reg);
+    }
+    // Email + HP (kalau ada) — di bawah address
+    let contact_y = 183.0_f32 - max_addr_lines * 4.0_f32 - 1.0_f32;
+    let mut contact_cursor = contact_y;
+    if contact_cursor > 181.0_f32 {
+        if !input.customer_email.is_empty() {
+            layer.use_text(
+                format!("Email: {}", input.customer_email).as_str(),
+                8.5,
+                Mm(25.0),
+                Mm(contact_cursor),
+                &reg,
+            );
+            contact_cursor -= 4.0;
+        }
+        if !input.customer_mobile.is_empty() && contact_cursor > 181.0_f32 {
+            layer.use_text(
+                format!("HP: {}", input.customer_mobile).as_str(),
+                8.5,
+                Mm(25.0),
+                Mm(contact_cursor),
+                &reg,
+            );
+        }
+    }
+
+    // Right column: INFORMASI POLIS
+    set_color(&layer, C_SILVER);
+    layer.use_text("INFORMASI POLIS", 7.0, Mm(110.0), Mm(216.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        truncate(input.policy_no, 24).as_str(),
+        11.0,
+        Mm(110.0),
+        Mm(208.0),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format!("No. Reg: {}", input.registration_no).as_str(),
+        8.5,
+        Mm(110.0),
+        Mm(201.0),
+        &reg,
+    );
+    layer.use_text(
+        format!("Mulai: {}", format_date_id(input.effective_date)).as_str(),
+        8.5,
+        Mm(110.0),
+        Mm(195.0),
+        &reg,
+    );
+    layer.use_text(
+        format!("Berakhir: {}", format_date_id(input.expiry_date)).as_str(),
+        8.5,
+        Mm(110.0),
+        Mm(189.0),
+        &reg,
+    );
+    // Highlighted box untuk masa perlindungan
+    fill_rect(&layer, 108.0, 180.0, 188.0, 185.0, C_OAT_LIGHT);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        format!("Masa Perlindungan: {} tahun", input.coverage_term_years).as_str(),
+        9.0,
+        Mm(110.0),
+        Mm(181.0),
+        &bold,
+    );
+
+    // ===== COVERAGE TABLE — y 168..130 (38mm) =====
+    set_color(&layer, C_BLACK);
+    layer.use_text("INFORMASI COVERAGE", 7.0, Mm(20.0), Mm(165.0), &bold);
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 20.0, 162.0, 190.0, 162.0, 0.3);
+
+    // Header row (oat-light bg)
+    fill_rect(&layer, 20.0, 152.0, 190.0, 160.0, C_OAT_LIGHT);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text("PRODUK", 7.0, Mm(23.0), Mm(155.0), &bold);
+    layer.use_text("SUM ASSURED", 7.0, Mm(70.0), Mm(155.0), &bold);
+    layer.use_text("PREMI", 7.0, Mm(110.0), Mm(155.0), &bold);
+    layer.use_text("PLAN", 7.0, Mm(150.0), Mm(155.0), &bold);
+    layer.use_text("TERM", 7.0, Mm(180.0), Mm(155.0), &bold);
+
+    // Data row — product name + tier
+    set_color(&layer, C_BLACK);
+    let product_label = match input.plan_tier.as_deref() {
+        Some(tier) if !tier.is_empty() => format!("{} — {}", input.product_name, tier),
+        _ => input.product_name.to_string(),
+    };
+    layer.use_text(
+        truncate(&product_label, 32).as_str(),
+        9.5,
+        Mm(23.0),
+        Mm(145.0),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    let sum_str = format_idr(input.sum_assured);
+    layer.use_text(sum_str.as_str(), 9.5, Mm(70.0), Mm(145.0), &reg);
+    let prem_str = format_idr(input.premium);
+    layer.use_text(prem_str.as_str(), 9.5, Mm(110.0), Mm(145.0), &reg);
+    // Plan tier badge
+    if let Some(tier) = input.plan_tier.as_deref() {
+        if !tier.is_empty() {
+            fill_rect(&layer, 148.0, 142.0, 175.0, 148.0, C_OAT_LIGHT);
+            set_color(&layer, C_BLACK);
+            layer.use_text(tier, 7.0, Mm(151.0), Mm(144.0), &bold);
+        }
+    }
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format!("{} thn", input.coverage_term_years).as_str(),
+        9.5,
+        Mm(180.0),
+        Mm(145.0),
+        &reg,
+    );
+
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 20.0, 138.0, 190.0, 138.0, 0.2);
+
+    // ===== BENEFICIARY BOX (LIFE only) — y 130..108 (22mm) =====
+    let mut cursor_y: f32 = 130.0;
+    if let Some(beneficiary) = input.beneficiary_name.as_deref() {
+        if !beneficiary.is_empty() {
+            set_color(&layer, C_OAT_BORDER);
+            draw_dashed_rect(&layer, 20.0, 108.0, 190.0, 130.0, 0.3);
+            set_color(&layer, C_SILVER);
+            layer.use_text("AHLI WARIS / PENERIMA MANFAAT", 7.0, Mm(25.0), Mm(124.0), &bold);
+            set_color(&layer, C_BLACK);
+            layer.use_text(beneficiary, 11.0, Mm(25.0), Mm(114.0), &bold);
+            set_color(&layer, C_CHARCOAL);
+            layer.use_text(
+                "Penerima manfaat polis sesuai ketentuan yang berlaku.",
+                8.0,
+                Mm(25.0),
+                Mm(110.0),
+                &italic,
+            );
+            cursor_y = 100.0;
+        }
+    }
+
+    // ===== COMPANY INFO BOX (INSTANSI only) =====
+    if let Some(company) = input.company_name.as_deref() {
+        if !company.is_empty() {
+            let comp_y_top = cursor_y;
+            let comp_y_bottom = cursor_y - 22.0;
+            set_color(&layer, C_OAT_BORDER);
+            draw_dashed_rect(&layer, 20.0, comp_y_bottom, 190.0, comp_y_top, 0.3);
+            set_color(&layer, C_SILVER);
+            layer.use_text(
+                "DIDAFTARKAN OLEH INSTANSI",
+                7.0,
+                Mm(25.0),
+                Mm(comp_y_top - 6.0),
+                &bold,
+            );
+            set_color(&layer, C_BLACK);
+            layer.use_text(company, 11.0, Mm(25.0), Mm(comp_y_top - 14.0), &bold);
+            set_color(&layer, C_CHARCOAL);
+            let mut info_parts: Vec<String> = Vec::new();
+            if let Some(npwp) = input.company_npwp.as_deref() {
+                if !npwp.is_empty() {
+                    info_parts.push(format!("NPWP: {}", npwp));
+                }
+            }
+            if let Some(industry) = input.company_industry.as_deref() {
+                if !industry.is_empty() {
+                    info_parts.push(format!("Bidang: {}", industry));
+                }
+            }
+            if !info_parts.is_empty() {
+                layer.use_text(
+                    info_parts.join("  •  ").as_str(),
+                    8.0,
+                    Mm(25.0),
+                    Mm(comp_y_top - 20.0),
+                    &reg,
+                );
+            }
+            // cursor_y dilanjut ke section berikutnya (signature), tapi
+            // signature section pakai y hardcoded — placeholder untuk
+            // ekspansi layout di masa depan.
+            let _ = comp_y_bottom - 4.0;
+        }
+    }
+
+    // ===== SIGNATURE SECTION — y 90..50 (40mm) =====
+    // Placeholder tanggal issue: pakai effective_date. Untuk tanda
+    // tangan resmi, signer sign elektronik di portal customer.
+    let sign_y_top: f32 = 85.0;
+    let sign_y_line: f32 = 60.0;
+    let sign_y_label: f32 = 56.0;
+    set_color(&layer, C_SILVER);
+    layer.use_text("PEMEGANG POLIS", 7.0, Mm(28.0), Mm(sign_y_top), &bold);
+    layer.use_text("DITERBITKAN OLEH", 7.0, Mm(135.0), Mm(sign_y_top), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        truncate(input.customer_name, 28).as_str(),
+        9.0,
+        Mm(28.0),
+        Mm(sign_y_top - 6.0),
+        &reg,
+    );
+    layer.use_text(
+        "InsureTrack — Platform Asuransi Digital",
+        9.0,
+        Mm(135.0),
+        Mm(sign_y_top - 6.0),
+        &reg,
+    );
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 28.0, sign_y_line, 90.0, sign_y_line, 0.5);
+    draw_line(&layer, 135.0, sign_y_line, 197.0, sign_y_line, 0.5);
+    set_color(&layer, C_SILVER);
+    layer.use_text(
+        "Tanda tangan elektronik (e-sign)",
+        7.0,
+        Mm(28.0),
+        Mm(sign_y_label),
+        &italic,
+    );
+    layer.use_text(
+        format!(
+            "Diterbitkan: {}",
+            format_date_id(input.effective_date)
+        )
+        .as_str(),
+        7.0,
+        Mm(135.0),
+        Mm(sign_y_label),
+        &italic,
+    );
+
+    // ===== FOOTER BAR (black) — y 25..12 (13mm) =====
+    fill_rect(&layer, 0.0, 0.0, 210.0, 18.0, C_BLACK);
+    set_color(&layer, C_CREAM);
+    layer.use_text("InsureTrack", 8.0, Mm(20.0), Mm(8.0), &bold);
+    layer.use_text(
+        "Platform Asuransi Digital · contact@insuretrack.com",
+        7.0,
+        Mm(20.0),
+        Mm(3.0),
+        &reg,
+    );
+    layer.use_text("E-Policy Resmi · Halaman 1", 7.0, Mm(150.0), Mm(5.0), &reg);
 
     let mut buf = BufWriter::new(Vec::<u8>::new());
     doc.save(&mut buf)
@@ -128,37 +442,6 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
         .into_inner()
         .map_err(|e| AppError::Internal(anyhow::anyhow!("pdf buffer: {e}")))?;
     Ok(bytes)
-}
-
-fn draw_section(
-    layer: &printpdf::PdfLayerReference,
-    bold: &printpdf::IndirectFontRef,
-    reg: &printpdf::IndirectFontRef,
-    title: &str,
-    y: &mut f32,
-) {
-    layer.use_text(title, 13.0_f32, Mm(20.0_f32), Mm(*y), bold);
-    *y -= 7.0;
-    layer.use_text(
-        "---------------------------------------------",
-        8.0_f32,
-        Mm(20.0_f32),
-        Mm(*y),
-        reg,
-    );
-    *y -= 7.0;
-}
-
-fn draw_kv(
-    layer: &printpdf::PdfLayerReference,
-    reg: &printpdf::IndirectFontRef,
-    key: &str,
-    value: &str,
-    y: &mut f32,
-) {
-    let line = format!("{key:<20}: {value}");
-    layer.use_text(line, 10.0_f32, Mm(20.0_f32), Mm(*y), reg);
-    *y -= 6.0;
 }
 
 // ============================================================================
@@ -172,7 +455,6 @@ fn draw_kv(
 //   │                                               │
 //   │   INVOICE                            UNPAID  │   y 252..232
 //   │   Tagihan Premi Asuransi                     │
-//   │                                               │
 //   │   ┌──────────────┐    ┌──────────────────┐   │
 //   │   │ Ditagihkan ke │    │ No. Invoice  ... │   │   y 222..178
 //   │   │ ...           │    │ No. Reg      ... │   │
@@ -185,12 +467,10 @@ fn draw_kv(
 //   │   │ ITEM  │ SUM      │ TERM │ SUBTOTAL   │  │
 //   │   │ ...   │ ...      │ ...  │ ...        │  │
 //   │   └───────┴──────────┴──────┴────────────┘  │
-//   │                                               │
 //   │   ┌──────────────┐  Total:  Rp ...         │   y 126..98
 //   │   │ Notes        │                           │
 //   │   │ ...          │                           │
 //   │   └──────────────┘                           │
-//   │                                               │
 //   ├──────────────────────────────────────────────┤
 //   │ [BLACK FOOTER BAR — brand + page]            │   y 25..12
 //   └──────────────────────────────────────────────┘
@@ -215,19 +495,6 @@ pub struct InvoicePdfInput<'a> {
     pub status: &'a str,
     pub created_at: NaiveDate,
 }
-
-// ---- Brand colors (di-copy dari packages/ui/src/styles/globals.css) ---------
-// Hex → RGB tuple. printpdf butuh (u8, u8, u8) untuk Color::Rgb.
-const C_BLACK: (u8, u8, u8) = (0, 0, 0);
-const C_WHITE: (u8, u8, u8) = (255, 255, 255);
-const C_CREAM: (u8, u8, u8) = (250, 249, 247); // --warm-cream
-const C_OAT_LIGHT: (u8, u8, u8) = (238, 233, 223); // --oat-light
-const C_OAT_BORDER: (u8, u8, u8) = (218, 212, 200); // --oat-border
-const C_MATCHA_300: (u8, u8, u8) = (132, 231, 165);
-const C_POMEGRANATE: (u8, u8, u8) = (252, 121, 129);
-const C_LEMON_400: (u8, u8, u8) = (248, 204, 101);
-const C_CHARCOAL: (u8, u8, u8) = (85, 83, 78); // --warm-charcoal
-const C_SILVER: (u8, u8, u8) = (159, 155, 147); // --warm-silver
 
 fn set_color(layer: &PdfLayerReference, c: (u8, u8, u8)) {
     // printpdf 0.7's Rgb::new expects f32 dalam 0.0..1.0, bukan u8 (0-255).
@@ -562,6 +829,297 @@ pub fn render_invoice(input: &InvoicePdfInput<'_>) -> Result<Vec<u8>, AppError> 
     Ok(bytes)
 }
 
+// ============================================================================
+// Payment Receipt PDF (Bukti Pembayaran)
+// ============================================================================
+//
+// Dokumen terpisah dari Invoice. Invoice = tagihan (immutable setelah dikirim);
+// Receipt = bukti resmi bahwa pembayaran telah diterima. Diterbitkan sekali
+// saat payment webhook masuk dengan status PAID.
+//
+// Layout (A4 portrait, 210×297mm):
+//   ┌──────────────────────────────────────────────┐
+//   │ [BLACK HEADER BAR — brand + BUKTI PEMBAYARAN]│   y 285..262
+//   ├──────────────────────────────────────────────┤
+//   │                                               │
+//   │   Pembayaran Premi Berhasil          LUNAS   │   y 252..232
+//   │   ┌──────────────┐    ┌──────────────────┐   │
+//   │   │ DIBAYAR OLEH │    │ DETAIL TRANSAKSI │   │   y 228..178
+//   │   │ Nama ...     │    │ No. Invoice  ... │   │
+//   │   │ NIK: ...     │    │ No. Reg      ... │   │
+//   │   │ Email: ...   │    │ Tanggal      ... │   │
+//   │   │              │    │ Channel      ... │   │
+//   │   │              │    │ Ref          ... │   │
+//   │   └──────────────┘    └──────────────────┘   │
+//   │                                               │
+//   │   RINCIAN PEMBAYARAN                          │   y 168..128
+//   │   ┌──────────────────────────────────────┐   │
+//   │   │ PRODUK  UANG PERTANGGUNGAN   TERM     │   │
+//   │   │ ...     Rp ...               N thn    │   │
+//   │   └──────────────────────────────────────┘   │
+//   │   ┌──────────────────────────────────────┐   │
+//   │   │  TOTAL DIBAYAR                        │   │   y 122..88
+//   │   │  Rp X.XXX.XXX  (22pt bold, cream bg) │   │
+//   │   └──────────────────────────────────────┘   │
+//   │   CATATAN: Simpan dokumen ini ...             │   y 82..66
+//   ├──────────────────────────────────────────────┤
+//   │ [BLACK FOOTER BAR]                           │   y 18..0
+//   └──────────────────────────────────────────────┘
+
+pub struct ReceiptPdfInput<'a> {
+    pub invoice_no: &'a str,
+    pub registration_no: &'a str,
+    pub customer_name: &'a str,
+    pub customer_nik: &'a str,
+    pub customer_email: &'a str,
+    pub product_name: &'a str,
+    pub coverage_term_years: i32,
+    pub sum_assured: Decimal,
+    pub paid_amount: Decimal,
+    pub payment_date: NaiveDate,
+    /// Channel pembayaran dari gateway (mis. VIRTUAL_ACCOUNT_BCA, QRIS). None = tidak diketahui.
+    pub payment_channel: Option<&'a str>,
+    /// ID transaksi / nomor referensi dari payment gateway. None = tidak dikirim gateway.
+    pub payment_reference: Option<&'a str>,
+}
+
+/// Render Bukti Pembayaran PDF — dokumen resmi bahwa premi telah diterima.
+/// Invoice tetap tidak berubah setelah diterbitkan (immutable billing doc);
+/// receipt adalah dokumen kedua yang di-create sekali saat payment webhook
+/// masuk. Layout A4 portrait, single-page.
+pub fn render_receipt(input: &ReceiptPdfInput<'_>) -> Result<Vec<u8>, AppError> {
+    let (doc, page1, layer1) =
+        PdfDocument::new("Bukti Pembayaran", Mm(210.0_f32), Mm(297.0_f32), "Layer 1");
+    let layer = doc.get_page(page1).get_layer(layer1);
+
+    let bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("font bold: {e}")))?;
+    let reg = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("font reg: {e}")))?;
+
+    // ===== HEADER BAR (black) — y 285..262 (23mm) =====
+    fill_rect(&layer, 0.0, 262.0, 210.0, 285.0, C_BLACK);
+    set_color(&layer, C_WHITE);
+    layer.use_text("InsureTrack", 20.0, Mm(20.0), Mm(275.0), &bold);
+    set_color(&layer, C_CREAM);
+    layer.use_text(
+        "Asuransi digital, prosesnya cepat, polis langsung terbit.",
+        9.0,
+        Mm(20.0),
+        Mm(266.0),
+        &reg,
+    );
+    set_color(&layer, C_WHITE);
+    layer.use_text("BUKTI PEMBAYARAN", 18.0, Mm(120.0), Mm(275.0), &bold);
+    set_color(&layer, C_CREAM);
+    layer.use_text("Konfirmasi Penerimaan Premi", 9.0, Mm(120.0), Mm(266.0), &reg);
+
+    // ===== TITLE + STATUS BADGE — y 252..232 =====
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        "Pembayaran Premi Berhasil Diterima",
+        16.0,
+        Mm(20.0),
+        Mm(248.0),
+        &bold,
+    );
+    set_color(&layer, C_SILVER);
+    layer.use_text(
+        "Dokumen ini merupakan bukti resmi penerimaan pembayaran premi asuransi.",
+        9.0,
+        Mm(20.0),
+        Mm(240.0),
+        &reg,
+    );
+    // Badge "LUNAS" — matcha green, konsisten dengan status badge di invoice/policy
+    fill_rect(&layer, 140.0, 242.0, 190.0, 252.0, C_MATCHA_300);
+    set_color(&layer, C_BLACK);
+    layer.use_text("LUNAS", 11.0, Mm(157.0), Mm(245.0), &bold);
+
+    // ===== TWO-COLUMN INFO CARD — y 228..178 (50mm) =====
+    fill_rect(&layer, 20.0, 178.0, 190.0, 228.0, C_CREAM);
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 105.0, 178.0, 105.0, 228.0, 0.3);
+
+    // Left column: DIBAYAR OLEH
+    set_color(&layer, C_SILVER);
+    layer.use_text("DIBAYAR OLEH", 7.0, Mm(25.0), Mm(222.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        truncate(input.customer_name, 28).as_str(),
+        12.0,
+        Mm(25.0),
+        Mm(214.0),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format!("NIK: {}", input.customer_nik).as_str(),
+        8.5,
+        Mm(25.0),
+        Mm(207.0),
+        &reg,
+    );
+    if !input.customer_email.is_empty() {
+        layer.use_text(
+            format!("Email: {}", truncate(input.customer_email, 30)).as_str(),
+            8.5,
+            Mm(25.0),
+            Mm(201.0),
+            &reg,
+        );
+    }
+
+    // Right column: DETAIL TRANSAKSI
+    set_color(&layer, C_SILVER);
+    layer.use_text("DETAIL TRANSAKSI", 7.0, Mm(110.0), Mm(222.0), &bold);
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        truncate(input.invoice_no, 22).as_str(),
+        11.0,
+        Mm(110.0),
+        Mm(214.0),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format!("No. Reg: {}", input.registration_no).as_str(),
+        8.5,
+        Mm(110.0),
+        Mm(207.0),
+        &reg,
+    );
+    layer.use_text(
+        format!("Tanggal: {}", format_date_id(input.payment_date)).as_str(),
+        8.5,
+        Mm(110.0),
+        Mm(201.0),
+        &reg,
+    );
+    let mut detail_y = 195.0_f32;
+    if let Some(ch) = input.payment_channel.filter(|s| !s.is_empty()) {
+        layer.use_text(
+            format!("Channel: {ch}").as_str(),
+            8.5,
+            Mm(110.0),
+            Mm(detail_y),
+            &reg,
+        );
+        detail_y -= 6.0;
+    }
+    if let Some(rf) = input.payment_reference.filter(|s| !s.is_empty()) {
+        layer.use_text(
+            format!("Ref: {}", truncate(rf, 22)).as_str(),
+            8.5,
+            Mm(110.0),
+            Mm(detail_y),
+            &reg,
+        );
+    }
+
+    // ===== COVERAGE TABLE — y 168..128 =====
+    set_color(&layer, C_BLACK);
+    layer.use_text("RINCIAN PEMBAYARAN", 7.0, Mm(20.0), Mm(160.0), &bold);
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 20.0, 157.0, 190.0, 157.0, 0.3);
+    fill_rect(&layer, 20.0, 147.0, 190.0, 155.0, C_OAT_LIGHT);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text("PRODUK", 7.0, Mm(23.0), Mm(150.0), &bold);
+    layer.use_text("UANG PERTANGGUNGAN", 7.0, Mm(80.0), Mm(150.0), &bold);
+    layer.use_text("TERM", 7.0, Mm(160.0), Mm(150.0), &bold);
+
+    set_color(&layer, C_BLACK);
+    layer.use_text(
+        truncate(input.product_name, 28).as_str(),
+        10.0,
+        Mm(23.0),
+        Mm(140.0),
+        &bold,
+    );
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        format_idr(input.sum_assured).as_str(),
+        10.0,
+        Mm(80.0),
+        Mm(140.0),
+        &reg,
+    );
+    layer.use_text(
+        format!("{} thn", input.coverage_term_years).as_str(),
+        10.0,
+        Mm(160.0),
+        Mm(140.0),
+        &reg,
+    );
+    set_color(&layer, C_OAT_BORDER);
+    draw_line(&layer, 20.0, 132.0, 190.0, 132.0, 0.2);
+
+    // ===== TOTAL BOX (matcha border, cream interior) — y 88..122 =====
+    fill_rect(&layer, 20.0, 88.0, 190.0, 122.0, C_MATCHA_300);
+    fill_rect(&layer, 22.0, 90.0, 188.0, 120.0, C_CREAM);
+    set_color(&layer, C_SILVER);
+    layer.use_text("TOTAL DIBAYAR", 8.0, Mm(25.0), Mm(114.0), &bold);
+    set_color(&layer, C_BLACK);
+    let total_str = format_idr(input.paid_amount);
+    layer.use_text(total_str.as_str(), 22.0, Mm(25.0), Mm(100.0), &bold);
+    set_color(&layer, C_SILVER);
+    layer.use_text(
+        format!("Invoice {}", input.invoice_no).as_str(),
+        8.0,
+        Mm(25.0),
+        Mm(94.0),
+        &reg,
+    );
+
+    // ===== CATATAN — y 66..82 =====
+    set_color(&layer, C_SILVER);
+    layer.use_text("CATATAN", 7.0, Mm(20.0), Mm(82.0), &bold);
+    set_color(&layer, C_CHARCOAL);
+    layer.use_text(
+        "Simpan dokumen ini sebagai bukti pembayaran premi asuransi Anda. Polis akan diterbitkan",
+        8.0,
+        Mm(20.0),
+        Mm(76.0),
+        &reg,
+    );
+    layer.use_text(
+        "setelah pembayaran terverifikasi dan dapat diunduh dari portal customer InsureTrack.",
+        8.0,
+        Mm(20.0),
+        Mm(70.0),
+        &reg,
+    );
+
+    // ===== FOOTER BAR =====
+    fill_rect(&layer, 0.0, 0.0, 210.0, 18.0, C_BLACK);
+    set_color(&layer, C_CREAM);
+    layer.use_text("InsureTrack", 8.0, Mm(20.0), Mm(8.0), &bold);
+    layer.use_text(
+        "Platform Asuransi Digital · support@insuretrack.example",
+        7.0,
+        Mm(20.0),
+        Mm(3.0),
+        &reg,
+    );
+    layer.use_text(
+        "Bukti Pembayaran Resmi · Halaman 1",
+        7.0,
+        Mm(145.0),
+        Mm(5.0),
+        &reg,
+    );
+
+    let mut buf = BufWriter::new(Vec::<u8>::new());
+    doc.save(&mut buf)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("pdf save: {e}")))?;
+    let bytes = buf
+        .into_inner()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("pdf buffer: {e}")))?;
+    Ok(bytes)
+}
+
 // ---- Drawing helpers ---------------------------------------------------------
 
 /// Fill rectangle. Coords: bottom-left (x1, y1) and top-right (x2, y2) in mm.
@@ -588,6 +1146,38 @@ fn draw_line(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, thic
         is_closed: false,
     };
     layer.add_line(line);
+}
+
+/// Draw a dashed rectangle frame (4 sides, dashed style). Implementasi
+/// sederhana: gambar 4 garis solid tipis — printpdf tidak punya helper
+/// dashed built-in. Untuk efek dashed, alternating gap pattern. Tapi
+/// karena visual priority rendah, pakai 4 garis tipis solid sebagai
+/// pendekatan pragmatis. Box dengan border solid tipis ini acceptable
+/// untuk beneficiary/company info card.
+fn draw_dashed_rect(
+    layer: &PdfLayerReference,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    thickness: f32,
+) {
+    // Top, bottom, left, right
+    let gap: f32 = 2.0;
+    let mut x = x1;
+    while x < x2 {
+        let x_end = (x + gap * 2.0).min(x2);
+        draw_line(layer, x, y2, x_end, y2, thickness); // top
+        draw_line(layer, x, y1, x_end, y1, thickness); // bottom
+        x = x_end + gap;
+    }
+    let mut y = y1;
+    while y < y2 {
+        let y_end = (y + gap * 2.0).min(y2);
+        draw_line(layer, x1, y, x1, y_end, thickness); // left
+        draw_line(layer, x2, y, x2, y_end, thickness); // right
+        y = y_end + gap;
+    }
 }
 
 /// Truncate string dengan ellipsis kalau lebih panjang dari max_len.
@@ -630,6 +1220,7 @@ fn wrap_text(s: &str, max_chars: usize) -> Vec<String> {
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use rust_decimal::Decimal;
 
     fn sample_input() -> PolicyPdfInput<'static> {
         PolicyPdfInput {
@@ -639,11 +1230,21 @@ mod tests {
             expiry_date: NaiveDate::from_ymd_opt(2036, 6, 1).unwrap(),
             customer_nik: "3201010101010001",
             customer_name: "Budi Santoso",
+            customer_birth_place: "Bandung",
             customer_birth_date: NaiveDate::from_ymd_opt(1990, 1, 1).unwrap(),
+            customer_gender: "MALE",
             customer_address: "Jl. Merdeka No. 17, Bandung",
-            product_name: "Life Insurance — Basic",
+            customer_email: "budi@example.com",
+            customer_mobile: "081234567890",
+            product_name: "Life Insurance",
+            plan_tier: Some("STANDARD".to_string()),
             sum_assured: Decimal::from(100_000_000),
             premium: Decimal::from(900_000),
+            coverage_term_years: 10,
+            beneficiary_name: Some("Siti Aminah (istri)".to_string()),
+            company_name: None,
+            company_npwp: None,
+            company_industry: None,
         }
     }
 
@@ -665,7 +1266,7 @@ mod tests {
         let bytes = render(&sample_input()).unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(
-            bytes.len() > 2_000,
+            bytes.len() > 5_000,
             "PDF suspiciously small: {} bytes — section mungkin tidak di-render",
             bytes.len()
         );
@@ -675,6 +1276,29 @@ mod tests {
             tail.windows(5).any(|w| w == b"%%EOF"),
             "PDF missing %%EOF marker"
         );
+    }
+
+    #[test]
+    fn render_handles_optional_beneficiary_and_company() {
+        // PA/HEALTH flow — no beneficiary.
+        let mut input = sample_input();
+        input.beneficiary_name = None;
+        let bytes = render(&input).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert!(bytes.len() > 5_000);
+    }
+
+    #[test]
+    fn render_handles_instansi_with_company_info() {
+        // INSTANSI flow — company info set, no beneficiary.
+        let mut input = sample_input();
+        input.beneficiary_name = None;
+        input.company_name = Some("PT ABC Indonesia".to_string());
+        input.company_npwp = Some("01.234.567.8-901.000".to_string());
+        input.company_industry = Some("Manufaktur".to_string());
+        let bytes = render(&input).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert!(bytes.len() > 5_000);
     }
 
     // ---- wrap_text (pure helper) ----

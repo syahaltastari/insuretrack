@@ -264,82 +264,89 @@ export function ParticipantImport({ onImport }: ParticipantImportProps) {
 /** Sample data untuk CSV template. 3 baris peserta valid dengan data
  *  realistis (nama Indonesia, alamat, NIK format). Semua untuk produk
  *  Jiwa — Ahli Waris diisi di kolom terakhir. Untuk produk PA/HEALTH,
- *  kolom Ahli Waris boleh dikosongkan. */
+ *  kolom Ahli Waris boleh dikosongkan.
+ *
+ *  Penting: keys pakai UNDERSCORE (bukan spasi) — lihat `columns` di
+ *  downloadSampleCsv() dan `validateRow()` normalize step. Konsistensi
+ *  ini yang sebelumnya bug (header CSV pakai spasi, alias pakai
+ *  underscore → 7 dari 15 kolom gagal di-map). */
 const SAMPLE_ROWS: Array<Record<string, string>> = [
   {
     NIK: "3174012508900001",
-    "Nama Lengkap": "Budi Santoso",
-    "Tempat Lahir": "Jakarta",
-    "Tanggal Lahir": "1990-08-25",
-    "Jenis Kelamin": "MALE",
+    Nama_Lengkap: "Budi Santoso",
+    Tempat_Lahir: "Jakarta",
+    Tanggal_Lahir: "1990-08-25",
+    Jenis_Kelamin: "MALE",
     Alamat: "Jalan Merdeka No. 17",
-    "RT/RW": "001/002",
+    RT_RW: "001/002",
     Kelurahan: "Gambir",
     Kecamatan: "Gambir",
     Kota: "Jakarta Pusat",
     Provinsi: "DKI Jakarta",
-    "Kode Pos": "10110",
+    Kode_Pos: "10110",
     Email: "budi.santoso@example.com",
-    "No HP": "081234567890",
-    "Ahli Waris": "Siti Aminah (istri)",
+    No_HP: "081234567890",
+    Ahli_Waris: "Siti Aminah (istri)",
   },
   {
     NIK: "3578015503920002",
-    "Nama Lengkap": "Siti Aminah",
-    "Tempat Lahir": "Surabaya",
-    "Tanggal Lahir": "1992-03-15",
-    "Jenis Kelamin": "FEMALE",
+    Nama_Lengkap: "Siti Aminah",
+    Tempat_Lahir: "Surabaya",
+    Tanggal_Lahir: "1992-03-15",
+    Jenis_Kelamin: "FEMALE",
     Alamat: "Jalan Pahlawan No. 5",
-    "RT/RW": "003/004",
+    RT_RW: "003/004",
     Kelurahan: "Krembangan Selatan",
     Kecamatan: "Krembangan",
     Kota: "Surabaya",
     Provinsi: "Jawa Timur",
-    "Kode Pos": "60175",
+    Kode_Pos: "60175",
     Email: "siti.aminah@example.com",
-    "No HP": "082345678901",
-    "Ahli Waris": "Budi Santoso (suami)",
+    No_HP: "082345678901",
+    Ahli_Waris: "Budi Santoso (suami)",
   },
   {
     NIK: "3273011505950003",
-    "Nama Lengkap": "Ahmad Fauzi",
-    "Tempat Lahir": "Bandung",
-    "Tanggal Lahir": "1995-05-15",
-    "Jenis Kelamin": "MALE",
+    Nama_Lengkap: "Ahmad Fauzi",
+    Tempat_Lahir: "Bandung",
+    Tanggal_Lahir: "1995-05-15",
+    Jenis_Kelamin: "MALE",
     Alamat: "Jalan Sudirman Kavling 21",
-    "RT/RW": "002/005",
+    RT_RW: "002/005",
     Kelurahan: "Cikawao",
     Kecamatan: "Lengkong",
     Kota: "Bandung",
     Provinsi: "Jawa Barat",
-    "Kode Pos": "40261",
+    Kode_Pos: "40261",
     Email: "",
-    "No HP": "083456789012",
-    "Ahli Waris": "Dewi Lestari (ibu)",
+    No_HP: "083456789012",
+    Ahli_Waris: "Dewi Lestari (ibu)",
   },
 ];
 
 /** Trigger browser download untuk sample CSV. Pakai papaparse unparse
- *  (handles quoting, escaping) lalu Blob URL + anchor click. */
+ *  (handles quoting, escaping) lalu Blob URL + anchor click.
+ *
+ *  Column order fixed & pakai UNDERSCORE di header supaya match dengan
+ *  COLUMN_ALIASES (validateRow normalisasi spasi → underscore, jadi
+ *  user yang terlanjur download template versi lama juga masih works). */
 function downloadSampleCsv() {
-  // Column order — fixed untuk konsistensi. Pakai nama header utama
-  // (bukan alias) supaya user langsung tahu format yang diharapkan.
   const columns = [
     "NIK",
-    "Nama Lengkap",
-    "Tempat Lahir",
-    "Tanggal Lahir",
-    "Jenis Kelamin",
+    "Nama_Lengkap",
+    "Tempat_Lahir",
+    "Tanggal_Lahir",
+    "Jenis_Kelamin",
     "Alamat",
-    "RT/RW",
+    "RT_RW",
     "Kelurahan",
     "Kecamatan",
     "Kota",
     "Provinsi",
-    "Kode Pos",
+    "Kode_Pos",
     "Email",
-    "No HP",
-    "Ahli Waris",
+    "No_HP",
+    "Ahli_Waris",
   ];
   const csv = Papa.unparse(
     { fields: columns, data: SAMPLE_ROWS.map((row) => columns.map((c) => row[c] ?? "")) },
@@ -421,10 +428,13 @@ async function parseExcel(file: File): Promise<Record<string, unknown>[]> {
 
 /** Map raw row ke ParticipantData, validate per field. */
 function validateRow(raw: Record<string, unknown>, index: number): ParsedRow {
-  // Lowercase + strip whitespace semua keys untuk matching
+  // Lowercase + trim + replace spasi dengan underscore supaya match ke
+  // COLUMN_ALIASES (yang pakai underscore: "nama_lengkap", "tempat_lahir",
+  // dll.). Header seperti "Nama Lengkap" (dengan spasi) tetap di-resolve.
   const normalized: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw)) {
-    normalized[k.toLowerCase().trim()] = String(v ?? "").trim();
+    const key = k.toLowerCase().trim().replace(/\s+/g, "_");
+    normalized[key] = String(v ?? "").trim();
   }
   const data: Partial<ParticipantData> = {};
   const errors: Array<{ field: string; message: string }> = [];

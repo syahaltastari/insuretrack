@@ -27,6 +27,13 @@ pub struct Counts {
     pub customers: usize,
     pub registrations: usize,
     pub customers_with_portal: usize,
+    /// Proporsi registration yang berupa Instansi (group). 0.0..=1.0.
+    /// Default 0.2 (20% Instansi, 80% Individu).
+    pub group_ratio: f32,
+    /// Minimum peserta per Instansi registration (inclusive).
+    pub min_participants: usize,
+    /// Maximum peserta per Instansi registration (inclusive).
+    pub max_participants: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +53,9 @@ pub struct SeedConfig {
 /// `UPLOAD_DIR`; kalau None, pakai env var, fallback ke `./uploads`.
 /// Penting karena `.env` lokal set `UPLOAD_DIR=/var/uploads` (path
 /// Linux container) yang tidak valid di Windows native dev.
+///
+/// Validate: `min_participants <= max_participants` (panic kalau
+/// terbalik), `0.0 <= group_ratio <= 1.0` (clamp di luar range).
 #[allow(clippy::too_many_arguments)]
 pub fn build_config(
     mode: SeedMode,
@@ -54,20 +64,39 @@ pub fn build_config(
     customers: usize,
     registrations: usize,
     customers_with_portal: usize,
+    group_ratio: f32,
+    min_participants: usize,
+    max_participants: usize,
     months_back: i32,
     claims_ratio: f32,
     upload_dir_override: Option<String>,
 ) -> SeedConfig {
+    if min_participants > max_participants {
+        panic!(
+            "--min-participants ({min_participants}) must be <= --max-participants ({max_participants})"
+        );
+    }
+    // Clamp group_ratio ke [0.0, 1.0] — silent karena user mungkin
+    // eksperimen dengan nilai out-of-range untuk lihat efeknya.
+    let group_ratio = group_ratio.clamp(0.0, 1.0);
+
     let counts = match mode {
         SeedMode::Demo => Counts {
             customers,
             registrations,
             customers_with_portal: customers_with_portal.min(customers),
+            group_ratio,
+            min_participants,
+            max_participants,
         },
         SeedMode::Load => Counts {
             customers: 600,
             registrations: 1000,
             customers_with_portal: 5,
+            // Load mode pakai nilai yang sama — distribusi tetap representatif.
+            group_ratio,
+            min_participants,
+            max_participants,
         },
     };
 

@@ -33,7 +33,7 @@ use crate::{
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
-        pdf::{render as render_pdf, PolicyPdfInput},
+        pdf::{render as render_pdf, render_receipt as render_receipt_pdf, PolicyPdfInput, ReceiptPdfInput},
     },
     state::AppState,
 };
@@ -121,6 +121,15 @@ struct WebhookBody {
     payment_status: String,
     #[serde(default)]
     payment_date: Option<chrono::NaiveDate>,
+    /// Channel pembayaran dari gateway (mis. VIRTUAL_ACCOUNT_BCA, QRIS, EWALLET_OVO).
+    #[serde(default)]
+    payment_channel: Option<String>,
+    /// ID transaksi / nomor referensi dari payment gateway.
+    #[serde(default)]
+    payment_reference: Option<String>,
+    /// Nominal yang benar-benar dibayar. None → fallback ke invoice.premium_amount.
+    #[serde(default)]
+    paid_amount: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize)]
@@ -171,11 +180,24 @@ async fn payment_webhook(
     // Pipeline: invoice→PAID, reg→PAID, issue policy, render PDF, save, queue emails, audit.
     let mut tx = state.pool.begin().await?;
 
-    // Update invoice
+    // Update invoice — simpan payment metadata atomically bersama status transition.
+    // paid_amount COALESCE ke premium_amount supaya kolom selalu terisi (tidak NULL
+    // untuk gateway yang tidak kirim field ini).
     sqlx::query(
-        "UPDATE invoices SET status = 'PAID', paid_at = now() WHERE id = $1 AND status = 'UNPAID'",
+        r#"
+        UPDATE invoices
+           SET status            = 'PAID',
+               paid_at           = now(),
+               payment_channel   = $2,
+               payment_reference = $3,
+               paid_amount       = COALESCE($4, premium_amount)
+         WHERE id = $1 AND status = 'UNPAID'
+        "#,
     )
     .bind(invoice_id)
+    .bind(&body.payment_channel)
+    .bind(&body.payment_reference)
+    .bind(body.paid_amount)
     .execute(&mut *tx)
     .await?;
 
@@ -185,20 +207,31 @@ async fn payment_webhook(
         .execute(&mut *tx)
         .await?;
 
-    // Read registration + customer info to render PDF
-    let reg_row: (
-        String,
-        String,
-        Decimal,
-        Decimal,
-        i32,
-        String,
-        String,
-        String,
-        chrono::NaiveDate,
-        String,
-        String,
-    ) = sqlx::query_as(
+    // Read registration + customer info to render PDF. Pakai struct
+    // dengan FromRow derive (lebih reliable dari tuple besar — sqlx
+    // tuple impl terbatas).
+    #[derive(sqlx::FromRow)]
+    struct RegAndCustomer {
+        registration_no: String,
+        product: String,
+        sum_assured: Decimal,
+        premium: Decimal,
+        coverage_term: i32,
+        full_name: String,
+        nik: String,
+        address: String,
+        birth_date: chrono::NaiveDate,
+        email: String,
+        applicant_type: String,
+        birth_place: Option<String>,
+        gender: Option<String>,
+        mobile_number: Option<String>,
+        beneficiary_name: Option<String>,
+        company_name: Option<String>,
+        company_npwp: Option<String>,
+        company_industry: Option<String>,
+    }
+    let reg_row: RegAndCustomer = sqlx::query_as(
         r#"
         SELECT r.registration_no,
                r.product,
@@ -210,7 +243,14 @@ async fn payment_webhook(
                c.address,
                c.birth_date,
                c.email,
-               r.applicant_type
+               r.applicant_type,
+               c.birth_place,
+               c.gender,
+               c.mobile_number,
+               r.beneficiary_name,
+               r.company_name,
+               r.company_npwp,
+               r.company_industry
           FROM registrations r
           JOIN invoices i ON i.registration_id = r.id
           JOIN customers c ON c.id = r.customer_id
@@ -221,31 +261,24 @@ async fn payment_webhook(
     .fetch_one(&mut *tx)
     .await?;
 
-    let (
-        registration_no,
-        product,
-        sum_assured,
-        premium,
-        coverage_term,
-        full_name,
-        nik,
-        address,
-        birth_date,
-        email,
-        applicant_type,
-    ): (
-        String,
-        String,
-        Decimal,
-        Decimal,
-        i32,
-        String,
-        String,
-        String,
-        chrono::NaiveDate,
-        String,
-        String,
-    ) = reg_row;
+    let registration_no = reg_row.registration_no;
+    let product = reg_row.product;
+    let sum_assured = reg_row.sum_assured;
+    let premium = reg_row.premium;
+    let coverage_term = reg_row.coverage_term;
+    let full_name = reg_row.full_name;
+    let nik = reg_row.nik;
+    let address = reg_row.address;
+    let birth_date = reg_row.birth_date;
+    let email = reg_row.email;
+    let applicant_type = reg_row.applicant_type;
+    let birth_place = reg_row.birth_place;
+    let gender = reg_row.gender;
+    let mobile_number = reg_row.mobile_number;
+    let beneficiary_name_reg = reg_row.beneficiary_name;
+    let company_name = reg_row.company_name;
+    let company_npwp = reg_row.company_npwp;
+    let company_industry = reg_row.company_industry;
 
     let effective_date = body.payment_date.unwrap_or_else(|| Utc::now().date_naive());
     let expiry_date = effective_date + Duration::days(365 * coverage_term as i64);
@@ -275,6 +308,11 @@ async fn payment_webhook(
     // Issue policy/policies. INDIVIDU → 1 policy. INSTANSI → N policies
     // (1 per participant, masing-masing dengan policy_no sendiri & link
     // ke participant_id).
+    //
+    // Tuple: (policy_id, policy_no, participant_id, participant_nik,
+    //         participant_name, participant_birth_date, participant_address,
+    //         participant_birth_place, participant_gender,
+    //         participant_email, participant_mobile, participant_beneficiary)
     let mut issued_policies: Vec<(
         Uuid,
         String,
@@ -283,7 +321,12 @@ async fn payment_webhook(
         String,
         chrono::NaiveDate,
         String,
-    )> = Vec::new(); // (policy_id, policy_no, participant_id, participant_nik, participant_name, participant_birth_date, participant_address)
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = Vec::new();
 
     if applicant_type == "INSTANSI" {
         // Fetch all participants
@@ -293,6 +336,8 @@ async fn payment_webhook(
             nik: String,
             full_name: String,
             birth_date: chrono::NaiveDate,
+            birth_place: Option<String>,
+            gender: Option<String>,
             address: String,
             rt_rw: String,
             village: String,
@@ -300,11 +345,15 @@ async fn payment_webhook(
             city: String,
             province: String,
             postal_code: String,
+            email: Option<String>,
+            mobile_number: Option<String>,
+            beneficiary_name: Option<String>,
         }
         let participants: Vec<Participant> = sqlx::query_as(
             r#"
-            SELECT id, nik, full_name, birth_date, address, rt_rw, village,
-                   district, city, province, postal_code
+            SELECT id, nik, full_name, birth_date, birth_place, gender, address,
+                   rt_rw, village, district, city, province, postal_code,
+                   email, mobile_number, beneficiary_name
               FROM registration_participants
              WHERE registration_id = $1
              ORDER BY created_at ASC
@@ -354,6 +403,11 @@ async fn payment_webhook(
                 p.full_name,
                 p.birth_date,
                 full_address,
+                p.birth_place,
+                p.gender,
+                p.email,
+                p.mobile_number,
+                p.beneficiary_name,
             ));
         }
     } else {
@@ -386,6 +440,11 @@ async fn payment_webhook(
             full_name.clone(),
             birth_date,
             address.clone(),
+            birth_place.clone(),
+            gender.clone(),
+            Some(mobile_number.clone().unwrap_or_default()),
+            Some(email.clone()),
+            beneficiary_name_reg.clone(),
         ));
     }
 
@@ -399,9 +458,27 @@ async fn payment_webhook(
 
     // Render PDFs + save (di luar tx — mirror pattern invoice PDF).
     let product_name = product_name_from_code(&product);
-    for (policy_id, policy_no, _participant_id, p_nik, p_name, p_birth_date, p_address) in
-        &issued_policies
+    for (
+        policy_id,
+        policy_no,
+        _participant_id,
+        p_nik,
+        p_name,
+        p_birth_date,
+        p_address,
+        p_birth_place,
+        p_gender,
+        p_email,
+        p_mobile,
+        p_beneficiary,
+    ) in &issued_policies
     {
+        // Tampilkan beneficiary HANYA untuk produk LIFE.
+        let beneficiary_for_pdf = if product == "LIFE" {
+            p_beneficiary.clone()
+        } else {
+            None
+        };
         let pdf_bytes = render_pdf(&PolicyPdfInput {
             policy_no,
             registration_no: &registration_no,
@@ -409,15 +486,25 @@ async fn payment_webhook(
             expiry_date,
             customer_nik: p_nik,
             customer_name: p_name,
+            customer_birth_place: p_birth_place.as_deref().unwrap_or(""),
             customer_birth_date: *p_birth_date,
+            customer_gender: p_gender.as_deref().unwrap_or(""),
             customer_address: p_address,
+            customer_email: p_email.as_deref().unwrap_or(""),
+            customer_mobile: p_mobile.as_deref().unwrap_or(""),
             product_name,
+            plan_tier: None, // TODO: derive from product+sum_assured lookup
             sum_assured,
             premium: if applicant_type == "INSTANSI" {
                 per_participant_premium
             } else {
                 premium
             },
+            coverage_term_years: coverage_term,
+            beneficiary_name: beneficiary_for_pdf,
+            company_name: company_name.clone(),
+            company_npwp: company_npwp.clone(),
+            company_industry: company_industry.clone(),
         })?;
         let pdf_ref = state
             .storage
@@ -431,6 +518,34 @@ async fn payment_webhook(
             .execute(&state.pool)
             .await?;
     }
+
+    // Render receipt PDF (Bukti Pembayaran) — dokumen terpisah dari invoice.
+    // Invoice adalah tagihan (immutable post-issue); receipt adalah bukti resmi
+    // bahwa pembayaran telah diterima, di-create sekali saat webhook PAID masuk.
+    let receipt_paid_amount = body.paid_amount.unwrap_or(premium);
+    let receipt_bytes = render_receipt_pdf(&ReceiptPdfInput {
+        invoice_no: &body.invoice_no,
+        registration_no: &registration_no,
+        customer_name: &full_name,
+        customer_nik: &nik,
+        customer_email: &email,
+        product_name,
+        coverage_term_years: coverage_term,
+        sum_assured,
+        paid_amount: receipt_paid_amount,
+        payment_date: effective_date,
+        payment_channel: body.payment_channel.as_deref(),
+        payment_reference: body.payment_reference.as_deref(),
+    })?;
+    let receipt_ref = state
+        .storage
+        .save_receipt_pdf(invoice_id, &receipt_bytes)
+        .await?;
+    sqlx::query("UPDATE invoices SET receipt_pdf_path = $1 WHERE id = $2")
+        .bind(&receipt_ref.key)
+        .bind(invoice_id)
+        .execute(&state.pool)
+        .await?;
 
     // Email konfirmasi ke representative. Untuk INSTANSI, 1 email summary
     // (tidak attach N PDF — N bisa besar). Untuk INDIVIDU, 1 email +
@@ -471,7 +586,7 @@ async fn payment_webhook(
             cta_url: None,
             related_entity_type: Some("policy"),
             related_entity_id: Some(issued_policies[0].0),
-            attachment_path: None,
+            attachment_path: Some(receipt_ref.key.clone()),
         },
     )
     .await?;
@@ -514,7 +629,7 @@ async fn payment_webhook(
         .await?;
     } else {
         // INDIVIDU: 1 email dengan PDF attached
-        let (policy_id, policy_no, _, _, _, _, _) = &issued_policies[0];
+        let (policy_id, policy_no, _, _, _, _, _, _, _, _, _, _) = &issued_policies[0];
         // Re-fetch pdf_path for this single policy
         let pdf_path: String = sqlx::query_scalar("SELECT pdf_path FROM policies WHERE id = $1")
             .bind(policy_id)
@@ -557,7 +672,7 @@ async fn payment_webhook(
     // Audit: 1 entry per policy issued. Untuk INSTANSI dengan N policies,
     // tulis N entries (each with participant_id) supaya per-participant
     // activity traceable.
-    for (policy_id, policy_no, participant_id, _, _, _, _) in &issued_policies {
+    for (policy_id, policy_no, participant_id, _, _, _, _, _, _, _, _, _) in &issued_policies {
         audit_write(
             &state.pool,
             AuditEntry {
@@ -606,24 +721,27 @@ pub fn validate_registration(d: &RegistrationData) -> Result<(), AppError> {
 }
 
 /// Validasi bagian single-participant (Individu flow). Field di root
-/// struct dipakai sebagai data peserta.
+/// struct dipakai sebagai data peserta. Pesan error dalam Bahasa
+/// Indonesia — akan ditampilkan ke user via ResultDialog.
 fn validate_individu(d: &RegistrationData, plan: &ProductPlan) -> Result<(), AppError> {
     if !is_16_digits(&d.nik) {
-        return Err(AppError::Validation("nik must be exactly 16 digits".into()));
+        return Err(AppError::Validation("NIK harus tepat 16 digit angka".into()));
     }
     if d.full_name.trim().is_empty() {
-        return Err(AppError::Validation("full_name required".into()));
+        return Err(AppError::Validation("Nama lengkap wajib diisi".into()));
     }
     if d.birth_date > Utc::now().date_naive() {
         return Err(AppError::Validation(
-            "birth_date cannot be in the future".into(),
+            "Tanggal lahir tidak boleh di masa depan".into(),
         ));
     }
     if !matches!(d.gender.as_str(), "MALE" | "FEMALE") {
-        return Err(AppError::Validation("gender must be MALE or FEMALE".into()));
+        return Err(AppError::Validation(
+            "Jenis kelamin harus Laki-laki atau Perempuan".into(),
+        ));
     }
     if !is_email_valid(&d.email) {
-        return Err(AppError::Validation("email format invalid".into()));
+        return Err(AppError::Validation("Format email tidak valid".into()));
     }
     let digit_count = d
         .mobile_number
@@ -632,11 +750,11 @@ fn validate_individu(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
         .count();
     if !(10..=15).contains(&digit_count) || d.mobile_number.chars().any(|c| !c.is_ascii_digit()) {
         return Err(AppError::Validation(
-            "mobile_number must be 10-15 digits, digits only".into(),
+            "Nomor HP harus 10-15 digit, hanya angka".into(),
         ));
     }
     if d.coverage_term < 1 {
-        return Err(AppError::Validation("coverage_term must be >= 1".into()));
+        return Err(AppError::Validation("Masa perlindungan minimal 1 tahun".into()));
     }
     // Beneficiary wajib untuk produk LIFE (sesuai benefit list "Ahli Waris
     // Fleksibel" di product-details.ts). PA & HEALTH tidak butuh.
@@ -695,7 +813,7 @@ fn validate_instansi(d: &RegistrationData, plan: &ProductPlan) -> Result<(), App
         ));
     }
     if d.coverage_term < 1 {
-        return Err(AppError::Validation("coverage_term must be >= 1".into()));
+        return Err(AppError::Validation("Masa perlindungan minimal 1 tahun".into()));
     }
     // Minimal 1 peserta
     if d.participants.is_empty() {

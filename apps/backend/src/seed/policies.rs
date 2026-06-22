@@ -1,11 +1,17 @@
-//! Generator policies — 1:1 dengan registration PAID/ISSUED.
+//! Generator policies.
+//!
+//! Ratio ke registration:
+//!   - INDIVIDU: 1:1 (1 policy per registration)
+//!   - INSTANSI: 1:N (1 policy per participant dalam group)
 //!
 //! Status distribution (spec §10.3):
 //!   90% ACTIVE    — polis baru atau polis berjalan normal
 //!   5% LAPSED     — polis yang lapse karena premium telat (eff_date recent)
-//!   5% EXPIRED    — polis yang sudah melewati coverage_term (eff_date = sekarang - coverage_term + 1 day)
+//!   5% EXPIRED    — polis yang sudah melewati coverage_term
 //!
-//! PDF di-render hanya di demo mode.
+//! PDF di-render hanya di demo mode. Untuk Instansi: render 1 sample
+//! per group (participant pertama) supaya demo PDF tetap informatif
+//! tanpa membebani disk + wall time.
 
 use chrono::{DateTime, Datelike, Duration, TimeZone, Utc};
 use rust_decimal::Decimal;
@@ -47,7 +53,7 @@ pub async fn seed_policies(
             continue;
         }
 
-        // effective_date = paid_at atau created_at (untuk ISSUED reg).
+        // Effective_date = paid_at atau created_at (untuk ISSUED reg).
         // Untuk EXPIRED/LAPSED, kita override effective_date di bawah.
         let paid_at: DateTime<Utc> = reg.created_at + Duration::days(2);
         let mut effective = paid_at;
@@ -76,70 +82,160 @@ pub async fn seed_policies(
             .checked_add_signed(chrono::Duration::days(365 * reg.coverage_term as i64))
             .expect("expiry date overflow");
 
-        // Identifier untuk bulan effective.
-        let year_month = format!("{:04}{:02}", effective.year(), effective.month());
-        let policy_no = next_id_with_year_month(tx, IdEntity::Policy, &year_month).await?;
-
-        let id: Uuid = sqlx::query_scalar(
-            r#"
-            INSERT INTO policies (
-                policy_no, registration_id, product, sum_assured, premium,
-                effective_date, expiry_date, status, pdf_path, created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9)
-            RETURNING id
-            "#,
-        )
-        .bind(&policy_no)
-        .bind(reg.id)
-        .bind(&reg.product)
-        .bind(reg.sum_assured)
-        .bind(invoice_premium[idx])
-        .bind(effective_date)
-        .bind(expiry_date)
-        .bind(status)
-        .bind(Utc.from_utc_datetime(&effective.naive_utc()))
-        .fetch_one(&mut **tx)
-        .await?;
-
-        // PDF rendering (demo mode).
-        let pdf_path = if cfg.mode == crate::seed::config::SeedMode::Demo {
-            Some(
-                pdf_writer::write_policy_pdf(
-                    &cfg.upload_dir,
-                    id,
-                    &policy_no,
-                    &policy_for_pdf(reg, invoice_premium[idx], effective_date, expiry_date),
-                )
-                .await?,
-            )
+        // Premium per policy:
+        //   - INDIVIDU: total premium = premium per orang (1 orang)
+        //   - INSTANSI: total premium / N peserta (split sama rata — semua
+        //     peserta punya plan yang sama, jadi nilai per policy sama)
+        let total_premium = invoice_premium[idx];
+        let premium_per_policy = if reg.participant_count > 0 {
+            total_premium / Decimal::from(reg.participant_count as u64)
         } else {
-            None
+            total_premium
         };
 
-        if let Some(p) = &pdf_path {
-            sqlx::query("UPDATE policies SET pdf_path = $1 WHERE id = $2")
-                .bind(p)
-                .bind(id)
-                .execute(&mut **tx)
+        // Generate policy(s) sesuai applicant_type.
+        if reg.applicant_type == "INSTANSI" && !reg.participants.is_empty() {
+            // 1 policy per participant. Render PDF hanya untuk
+            // participant pertama (sample) supaya demo masih punya
+            // file e-policy representatif tanpa 100+ file di disk.
+            for (p_idx, participant) in reg.participants.iter().enumerate() {
+                let year_month = format!("{:04}{:02}", effective.year(), effective.month());
+                let policy_no =
+                    next_id_with_year_month(tx, IdEntity::Policy, &year_month).await?;
+
+                let id: Uuid = sqlx::query_scalar(
+                    r#"
+                    INSERT INTO policies (
+                        policy_no, registration_id, product, sum_assured, premium,
+                        effective_date, expiry_date, status, pdf_path, created_at,
+                        participant_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, $10)
+                    RETURNING id
+                    "#,
+                )
+                .bind(&policy_no)
+                .bind(reg.id)
+                .bind(&reg.product)
+                .bind(reg.sum_assured)
+                .bind(premium_per_policy)
+                .bind(effective_date)
+                .bind(expiry_date)
+                .bind(status)
+                .bind(Utc.from_utc_datetime(&effective.naive_utc()))
+                .bind(participant.id)
+                .fetch_one(&mut **tx)
                 .await?;
+
+                // PDF: render hanya untuk participant pertama (sample).
+                // Alasan: 1 group bisa punya 5-20 peserta → render
+                // PDF per peserta = 5-20× lebih banyak file + wall
+                // time. Sample 1 PDF per group cukup untuk demo &
+                // verifier (validate render logic tanpa membebani).
+                let pdf_path = if cfg.mode == crate::seed::config::SeedMode::Demo && p_idx == 0 {
+                    Some(
+                        pdf_writer::write_policy_pdf(
+                            &cfg.upload_dir,
+                            id,
+                            &policy_no,
+                            &policy_for_pdf(reg, premium_per_policy, effective_date, expiry_date),
+                        )
+                        .await?,
+                    )
+                } else {
+                    None
+                };
+
+                if let Some(p) = &pdf_path {
+                    sqlx::query("UPDATE policies SET pdf_path = $1 WHERE id = $2")
+                        .bind(p)
+                        .bind(id)
+                        .execute(&mut **tx)
+                        .await?;
+                }
+
+                out.push(SeededPolicy {
+                    id,
+                    policy_no,
+                    registration_id: reg.id,
+                    customer_id: reg.customer_id,
+                    product: reg.product.clone(),
+                    sum_assured: reg.sum_assured,
+                    premium: premium_per_policy,
+                    effective_date,
+                    expiry_date,
+                    status: status.to_string(),
+                    pdf_path,
+                });
+
+                policy_idx += 1;
+            }
+        } else {
+            // INDIVIDU: 1 policy per registration (existing behavior).
+            let year_month = format!("{:04}{:02}", effective.year(), effective.month());
+            let policy_no = next_id_with_year_month(tx, IdEntity::Policy, &year_month).await?;
+
+            let id: Uuid = sqlx::query_scalar(
+                r#"
+                INSERT INTO policies (
+                    policy_no, registration_id, product, sum_assured, premium,
+                    effective_date, expiry_date, status, pdf_path, created_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9)
+                RETURNING id
+                "#,
+            )
+            .bind(&policy_no)
+            .bind(reg.id)
+            .bind(&reg.product)
+            .bind(reg.sum_assured)
+            .bind(premium_per_policy)
+            .bind(effective_date)
+            .bind(expiry_date)
+            .bind(status)
+            .bind(Utc.from_utc_datetime(&effective.naive_utc()))
+            .fetch_one(&mut **tx)
+            .await?;
+
+            // PDF rendering (demo mode).
+            let pdf_path = if cfg.mode == crate::seed::config::SeedMode::Demo {
+                Some(
+                    pdf_writer::write_policy_pdf(
+                        &cfg.upload_dir,
+                        id,
+                        &policy_no,
+                        &policy_for_pdf(reg, premium_per_policy, effective_date, expiry_date),
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            };
+
+            if let Some(p) = &pdf_path {
+                sqlx::query("UPDATE policies SET pdf_path = $1 WHERE id = $2")
+                    .bind(p)
+                    .bind(id)
+                    .execute(&mut **tx)
+                    .await?;
+            }
+
+            out.push(SeededPolicy {
+                id,
+                policy_no,
+                registration_id: reg.id,
+                customer_id: reg.customer_id,
+                product: reg.product.clone(),
+                sum_assured: reg.sum_assured,
+                premium: premium_per_policy,
+                effective_date,
+                expiry_date,
+                status: status.to_string(),
+                pdf_path,
+            });
+
+            policy_idx += 1;
         }
-
-        out.push(SeededPolicy {
-            id,
-            policy_no,
-            registration_id: reg.id,
-            customer_id: reg.customer_id,
-            product: reg.product.clone(),
-            sum_assured: reg.sum_assured,
-            premium: invoice_premium[idx],
-            effective_date,
-            expiry_date,
-            status: status.to_string(),
-            pdf_path,
-        });
-
-        policy_idx += 1;
     }
 
     Ok(out)

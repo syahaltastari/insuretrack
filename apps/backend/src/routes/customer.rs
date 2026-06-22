@@ -64,6 +64,7 @@ pub fn router() -> Router<AppState> {
         .route("/invoices", get(list_invoices))
         .route("/invoices/:id", get(get_invoice))
         .route("/invoices/:id/pdf", get(download_invoice_pdf))
+        .route("/invoices/:id/receipt", get(download_invoice_receipt))
         .route("/claims", get(list_claims).post(create_claim))
         .route("/claims/:id", get(get_claim))
         .route("/inquiries", get(list_inquiries).post(create_inquiry))
@@ -82,6 +83,7 @@ pub fn router() -> Router<AppState> {
 struct CustomerCredRow {
     id: Uuid,
     email: String,
+    full_name: String,
     password_hash: Option<String>,
     portal_status: Option<String>,
 }
@@ -111,7 +113,7 @@ async fn activate(
         UPDATE customers
            SET portal_status = 'ACTIVE', updated_at = now()
          WHERE id = $1 AND portal_status = 'PENDING'
-         RETURNING id, email, password_hash, portal_status
+         RETURNING id, email, full_name, password_hash, portal_status
         "#,
     )
     .bind(customer_id)
@@ -145,7 +147,7 @@ async fn login(
 ) -> AppResult<Json<LoginResponse>> {
     let row: Option<CustomerCredRow> = sqlx::query_as(
         r#"
-        SELECT id, email, password_hash, portal_status
+        SELECT id, email, full_name, password_hash, portal_status
           FROM customers WHERE email = $1
         "#,
     )
@@ -204,15 +206,20 @@ async fn password_reset(
     Json(req): Json<PasswordResetRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
     let row: Option<CustomerCredRow> = sqlx::query_as(
-        "SELECT id, email, password_hash, portal_status FROM customers WHERE email = $1",
+        "SELECT id, email, full_name, password_hash, portal_status FROM customers WHERE email = $1",
     )
-    .bind(&req.email)
+    .bind(req.email.trim().to_lowercase())
     .fetch_optional(&state.pool)
     .await?;
 
-    let customer = row.ok_or(AppError::NotFound("email not registered".into()))?;
+    // Anti-enumeration: SELALU return ok:true supaya attacker tidak bisa
+    // membedakan "email tidak ada" vs "email ada". Email & PENDING cases
+    // skip kirim email tapi response tetap sama.
+    let Some(customer) = row else {
+        return Ok(Json(serde_json::json!({ "ok": true })));
+    };
     if customer.portal_status.as_deref() != Some("ACTIVE") {
-        return Err(AppError::Forbidden);
+        return Ok(Json(serde_json::json!({ "ok": true })));
     }
 
     let reset_token = state.tokens.issue(
@@ -222,15 +229,43 @@ async fn password_reset(
         false,
         60 * 30,
     )?;
+    let reset_url = format!(
+        "{}/portal/reset?token={}",
+        state.config.app_base_url.trim_end_matches('/'),
+        reset_token
+    );
 
-    Ok(Json(serde_json::json!({
-        "ok": true,
-        "reset_token": reset_token,
-        "reset_url": format!(
-            "{}/portal/reset?token={}",
-            state.config.app_base_url, reset_token
-        ),
-    })))
+    let body = format!(
+        "Halo {},\n\n\
+         Kami menerima permintaan untuk mengatur ulang password akun InsureTrack Anda. \
+         Klik tombol di bawah untuk membuat password baru. Link ini berlaku selama 30 menit.\n\n\
+         Jika Anda tidak merasa meminta reset password, abaikan email ini — \
+         akun Anda tetap aman.\n\n\
+         Salam,\n\
+         Tim InsureTrack",
+        customer.full_name.trim()
+    );
+    // Fire-and-forget — failure to send email TIDAK gagalkan response,
+    // konsisten dengan activation email flow di register_customer.
+    let _ = send_email(
+        &state.pool,
+        &*state.storage,
+        &*state.email,
+        Email {
+            email_type: EmailType::PasswordReset,
+            recipient: &customer.email,
+            subject: "Reset Password InsureTrack Portal",
+            body: &body,
+            cta_text: Some("Reset Password Saya →"),
+            cta_url: Some(&reset_url),
+            related_entity_type: Some("customer"),
+            related_entity_id: Some(customer.id),
+            attachment_path: None,
+        },
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 async fn password_reset_consume(
@@ -254,7 +289,7 @@ async fn password_reset_consume(
         UPDATE customers
            SET password_hash = $1, updated_at = now()
          WHERE id = $2
-        RETURNING id, email, password_hash, portal_status
+        RETURNING id, email, full_name, password_hash, portal_status
         "#,
     )
     .bind(&new_hash)
@@ -2272,6 +2307,47 @@ async fn download_invoice_pdf(
     // Gunakan filename dinamis `{invoice_no}.pdf` — lebih mudah ditemukan
     // di folder Download customer dibanding UUID.
     let disp = format!("attachment; filename=\"{invoice_no}.pdf\"");
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&disp)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}")))?,
+    );
+    Ok((StatusCode::OK, headers, body).into_response())
+}
+
+// ---- GET /invoices/:id/receipt ----
+
+async fn download_invoice_receipt(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let customer_id = customer_id_from(&claims)?;
+    let row: Option<(Option<String>, String)> = sqlx::query_as(
+        r#"
+        SELECT i.receipt_pdf_path, i.invoice_no
+          FROM invoices i
+          JOIN registrations r ON r.id = i.registration_id
+         WHERE r.customer_id = $1 AND i.id = $2
+        "#,
+    )
+    .bind(customer_id)
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (receipt_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
+    let receipt_path =
+        receipt_path_opt.ok_or(AppError::NotFound("payment receipt (belum ada — invoice mungkin belum dibayar)".into()))?;
+
+    let bytes = state.storage.read_bytes(&receipt_path).await?;
+    let body = Body::from(bytes);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/pdf"),
+    );
+    let disp = format!("attachment; filename=\"receipt-{invoice_no}.pdf\"");
     headers.insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_str(&disp)

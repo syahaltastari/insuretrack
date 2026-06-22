@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "InsureTrack API",
-    "description": "Complete API collection for the InsureTrack digital insurance platform.\n\n**Import instructions:**\n1. Open Postman → File → Import → select this file.\n2. After import, edit the `base_url` variable to point to your backend (default `http://localhost:8080/api`).\n3. Hit **Customer → Login** to populate `customer_token`, then **Admin → Login** for `admin_token`. Tokens auto-save via the test scripts.\n\n**Folder layout:**\n- `01 — Public` (no auth): products, registration, payment webhook, marketing content.\n- `02 — Customer` (Bearer): activate, login, profile, policies, invoices, claims, inquiries.\n- `03 — Admin` (Bearer): dashboard, registrations, invoices, policies, claims, inquiries, marketing CRUD, email/audit logs.\n- `04 — Webhook`: payment webhook (X-Webhook-Secret header).\n\n**Variables:**\n- `base_url` — backend base (e.g., `http://localhost:8080/api`)\n- `customer_token` — auto-populated by Customer/Login\n- `admin_token` — auto-populated by Admin/Login\n- `webhook_secret` — must match `PAYMENT_WEBHOOK_SECRET` in backend `.env`\n- `customer_id` / `policy_id` / `invoice_id` / etc. — sample UUIDs to override in requests that need path params",
+    "description": "Complete API collection for the InsureTrack digital insurance platform.\n\n**Import instructions:**\n1. Open Postman → File → Import → select this file.\n2. After import, edit the `base_url` variable to point to your backend (default `http://localhost:8080/api`).\n3. Hit **Customer → Login** to populate `customer_token`, then **Admin → Login** for `admin_token`. Tokens auto-save via the test scripts.\n\n**Folder layout:**\n- `01 — Public` (no auth): products, registration, payment webhook, marketing content.\n- `02 — Customer` (Bearer): activate, login, profile, policies, invoices, claims, inquiries (with thread messages + close).\n- `03 — Admin` (Bearer): dashboard, registrations, invoices, policies, claims, inquiries (with thread messages + close), marketing CRUD, email/audit logs, **Admin — User Management (super_admin only)** sub-folder.\n- `04 — Webhook`: payment webhook (X-Webhook-Secret header).\n\n**Variables:**\n- `base_url` — backend base (e.g., `http://localhost:8080/api`)\n- `customer_token` — auto-populated by Customer/Login\n- `admin_token` — auto-populated by Admin/Login\n- `webhook_secret` — must match `PAYMENT_WEBHOOK_SECRET` in backend `.env`\n- `customer_id` / `policy_id` / `invoice_id` / etc. — sample UUIDs to override in requests that need path params",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -18,8 +18,11 @@
     { "key": "inquiry_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
     { "key": "client_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
     { "key": "testimonial_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
+    { "key": "admin_user_id", "value": "00000000-0000-0000-0000-000000000000", "type": "string" },
     { "key": "activation_token", "value": "", "type": "string" },
-    { "key": "reset_token", "value": "", "type": "string" }
+    { "key": "reset_token", "value": "", "type": "string" },
+    { "key": "generated_user_password", "value": "", "type": "string" },
+    { "key": "webhook_last_replayed", "value": "false", "type": "string" }
   ],
   "item": [
     {
@@ -215,8 +218,9 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
-                  "if (json.reset_token) { pm.collectionVariables.set('reset_token', json.reset_token); }"
+                  "pm.expect(json.ok).to.eql(true);"
                 ]
               }
             }
@@ -517,12 +521,85 @@
               "path": ["customer", "inquiries"]
             }
           }
+        },
+        {
+          "name": "Reply to Inquiry (Customer Message)",
+          "description": "Append a customer message to the inquiry thread. Flips status back to OPEN (regardless of previous status) and notifies admin staff via email. Refused if inquiry is already CLOSED.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Tolong info lebih lanjut dokumen apa saja yang perlu disiapkan.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/inquiries/:id/messages",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "inquiries", ":id", "messages"],
+              "variable": [
+                { "key": "id", "value": "{{inquiry_id}}", "type": "string" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('customer reply flips status to OPEN', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property('status', 'OPEN');",
+                  "  pm.expect(j).to.have.property('last_sender_type', 'CUSTOMER');",
+                  "  pm.expect(j.messages.length).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Inquiry (Customer-Initiated)",
+          "description": "Customer-initiated close. Sets status=CLOSED and closed_at=now(). Only allowed if the inquiry is not already CLOSED. Optional `note` is recorded in the audit log.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Sudah selesai, terima kasih.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/customer/inquiries/:id/close",
+              "host": ["{{base_url}}"],
+              "path": ["customer", "inquiries", ":id", "close"],
+              "variable": [
+                { "key": "id", "value": "{{inquiry_id}}", "type": "string" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('inquiry closed by customer', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property('status', 'CLOSED');",
+                  "  pm.expect(j).to.have.property('closed_at');",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
       "name": "03 — Admin",
-      "description": "Endpoints that require an admin JWT (Bearer token from POST /admin/login).",
+      "description": "Endpoints that require an admin JWT (Bearer token from POST /admin/login). Includes nested folders: Marketing — Clients, Marketing — Testimonials, and Admin — User Management (super_admin only).",
       "auth": {
         "type": "bearer",
         "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
@@ -782,13 +859,13 @@
         },
         {
           "name": "Update Claim Status",
-          "description": "Valid transitions: SUBMITTED → UNDER_REVIEW → APPROVED → PAID, or to REJECTED at any point before APPROVED.",
+          "description": "Valid transitions: SUBMITTED → UNDER_REVIEW → APPROVED → PAID, or to REJECTED at any point before APPROVED. Use `claim_type` to override the system-determined type when needed (e.g. LIFE policy where the claim is MATURITY or SURRENDER, not DEATH).",
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"APPROVED\",\n  \"decision_note\": \"Dokumen lengkap, klaim disetujui.\"\n}",
+              "raw": "{\n  \"status\": \"APPROVED\",\n  \"decision_note\": \"Dokumen lengkap, klaim disetujui.\",\n  \"claim_type\": \"DEATH\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -799,7 +876,65 @@
                 { "key": "id", "value": "{{claim_id}}", "type": "string" }
               ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('claim status updated', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property('status');",
+                  "  pm.expect(['UNDER_REVIEW', 'APPROVED', 'REJECTED', 'PAID']).to.include(j.status);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Payment Proof (Claim)",
+          "description": "Multipart upload. The `proof` file (JPG/PNG/PDF, max 5 MB) is stored at `payment_proofs/{claim_id}/<filename>`. After upload, transition the claim to PAID via Update Claim Status. The returned `payment_proof_path` is recorded in the audit log (`claim_payment_proof_uploaded`).",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "proof",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPG/PNG/PDF, max 5 MB"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/claims/:id/payment-proof",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "claims", ":id", "payment-proof"],
+              "variable": [
+                { "key": "id", "value": "{{claim_id}}", "type": "string" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('payment proof uploaded', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property('payment_proof_path');",
+                  "  pm.expect(j.payment_proof_path).to.be.a('string');",
+                  "  pm.expect(j.payment_proof_path.length).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "List Inquiries (Admin)",
@@ -820,25 +955,78 @@
           }
         },
         {
-          "name": "Respond to Inquiry",
-          "description": "Set `close: true` to set status to CLOSED (instead of ANSWERED).",
+          "name": "Reply to Inquiry (Admin Message)",
+          "description": "Append an admin message to the inquiry thread. Flips status to ANSWERED, sets last_sender_type=ADMIN, and sends an INQUIRY_RESPONSE email to the customer. Refused if inquiry is CLOSED.",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"Terima kasih atas pertanyaannya. Berikut jawaban tim kami...\",\n  \"close\": false\n}",
+              "raw": "{\n  \"message\": \"Terima kasih atas pertanyaannya. Untuk klaim medis, mohon lampirkan surat keterangan dokter dan resume medis terbaru.\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/admin/inquiries/:id/respond",
+              "raw": "{{base_url}}/admin/inquiries/:id/messages",
               "host": ["{{base_url}}"],
-              "path": ["admin", "inquiries", ":id", "respond"],
+              "path": ["admin", "inquiries", ":id", "messages"],
               "variable": [
                 { "key": "id", "value": "{{inquiry_id}}", "type": "string" }
               ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('inquiry answered', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property('status', 'ANSWERED');",
+                  "  pm.expect(j).to.have.property('messages');",
+                  "  pm.expect(j.messages.length).to.be.greaterThan(0);",
+                  "  pm.expect(j).to.have.property('last_sender_type', 'ADMIN');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Inquiry (Admin-Initiated)",
+          "description": "Admin-initiated close. Optional `note` is appended as a final admin message and recorded in the audit log. Refused if already CLOSED.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Sudah selesai, ditutup dari sisi admin.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/inquiries/:id/close",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "inquiries", ":id", "close"],
+              "variable": [
+                { "key": "id", "value": "{{inquiry_id}}", "type": "string" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('inquiry closed', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property('status', 'CLOSED');",
+                  "  pm.expect(j).to.have.property('closed_at');",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "List Email Logs",
@@ -1065,6 +1253,155 @@
               }
             }
           ]
+        },
+        {
+          "name": "Admin — User Management",
+          "description": "Manage admin accounts. **Super-admin only** — non-super_admin gets 403 on every endpoint here. Self-protection: cannot deactivate, demote, or reset password on your own account via these endpoints; use `Change My Admin Password` for self-service.",
+          "auth": {
+            "type": "bearer",
+            "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+          },
+          "item": [
+            {
+              "name": "List Users",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/users?page=1&page_size=20&q=&status=",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "users"],
+                  "query": [
+                    { "key": "page", "value": "1", "disabled": true },
+                    { "key": "page_size", "value": "20", "disabled": true },
+                    { "key": "q", "value": "", "disabled": true },
+                    { "key": "status", "value": "", "disabled": true, "description": "Filter by is_active. Empty = all. Use 'true' or 'false'." }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get User",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/users/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "users", ":id"],
+                  "variable": [{ "key": "id", "value": "{{admin_user_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Create User",
+              "description": "Hashes `password` server-side (argon2id). Returns 409 if `username` or `email` is already taken.",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"operator1\",\n  \"full_name\": \"Operator Satu\",\n  \"email\": \"operator1@insuretrack.example\",\n  \"password\": \"OperatorPass123\",\n  \"is_super_admin\": false\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/users",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "users"]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const j = pm.response.json();",
+                      "if (j.id) { pm.collectionVariables.set('admin_user_id', j.id); }"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update User",
+              "description": "All fields optional. Setting `is_super_admin: false` on your own account returns 422. The audit log records which fields were changed.",
+              "request": {
+                "method": "PATCH",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"full_name\": \"Operator Satu (updated)\",\n  \"email\": \"operator1-new@insuretrack.example\",\n  \"is_super_admin\": false\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{base_url}}/admin/users/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "users", ":id"],
+                  "variable": [{ "key": "id", "value": "{{admin_user_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Activate User",
+              "description": "Sets `is_active = true`. Idempotent (re-running on an already-active user still returns 204).",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/users/:id/activate",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "users", ":id", "activate"],
+                  "variable": [{ "key": "id", "value": "{{admin_user_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Deactivate User",
+              "description": "Sets `is_active = false`. Refuses to deactivate self (422). Audit: `admin_user_deactivated`.",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/users/:id/deactivate",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "users", ":id", "deactivate"],
+                  "variable": [{ "key": "id", "value": "{{admin_user_id}}", "type": "string" }]
+                }
+              }
+            },
+            {
+              "name": "Reset User Password",
+              "description": "Generates a 16-char random password and returns the plaintext **once** in `new_password`. The `generated_user_password` collection variable is auto-populated so you can copy it. The plaintext is NOT stored anywhere; only its hash is.",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/users/:id/reset-password",
+                  "host": ["{{base_url}}"],
+                  "path": ["admin", "users", ":id", "reset-password"],
+                  "variable": [{ "key": "id", "value": "{{admin_user_id}}", "type": "string" }]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('reset password returns plaintext', () => {",
+                      "  const j = pm.response.json();",
+                      "  pm.expect(j).to.have.property('new_password');",
+                      "  pm.expect(j.new_password).to.be.a('string');",
+                      "  pm.expect(j.new_password.length).to.be.at.least(8);",
+                      "  if (j.new_password) { pm.collectionVariables.set('generated_user_password', j.new_password); }",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -1074,7 +1411,7 @@
       "item": [
         {
           "name": "Payment Webhook (Mark Invoice as PAID)",
-          "description": "Called by the payment gateway when an invoice is paid. Triggers: invoice → PAID, registration → ISSUED, policy creation, e-policy PDF render, 2 emails (PaymentSuccess + EPolicyDelivery). **Idempotent**: replaying with same `invoice_no` returns success without re-creating the policy or re-sending emails.",
+          "description": "Called by the payment gateway when an invoice is paid. Triggers: invoice → PAID, registration → ISSUED, policy creation, e-policy PDF render, 2 emails (PaymentSuccess + EPolicyDelivery). **Idempotent**: replaying with the same `invoice_no` returns `replayed: true` without re-creating the policy or re-sending emails. Run this twice in a row to verify the idempotency contract.",
           "request": {
             "method": "POST",
             "header": [
@@ -1091,7 +1428,29 @@
               "host": ["{{base_url}}"],
               "path": ["public", "payment", "webhook"]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('webhook returns ok + replayed flag', () => {",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j).to.have.property('ok');",
+                  "  pm.expect(j.ok).to.equal(true);",
+                  "  pm.expect(j).to.have.property('replayed');",
+                  "  pm.expect(j.replayed).to.be.a('boolean');",
+                  "  if (!j.replayed) {",
+                  "    pm.expect(j).to.have.property('policy_no');",
+                  "    pm.expect(j.policy_no).to.be.a('string');",
+                  "  }",
+                  "  pm.collectionVariables.set('webhook_last_replayed', j.replayed);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

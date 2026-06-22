@@ -43,12 +43,29 @@ struct Cli {
     customers: usize,
 
     /// Jumlah customer yang punya akses portal + password (mode Demo saja).
-    #[arg(long, default_value_t = 3)]
+/// Default 4: 3 akun sukses (mixed/Individu/Instansi) + 1 akun
+/// dengan registration EXPIRED untuk demo skenario gagal.
+    #[arg(long, default_value_t = 4)]
     customers_with_portal: usize,
 
     /// Berapa bulan ke belakang data di-spread (untuk identifier prefix).
     #[arg(long, default_value_t = 4)]
     months_back: i32,
+
+    /// Proporsi registration yang berupa Instansi (group), 0.0..=1.0.
+    /// Default 0.2 (20%). Clamped ke range jika di luar [0.0, 1.0].
+    #[arg(long, default_value_t = 0.2)]
+    group_ratio: f32,
+
+    /// Minimum peserta per Instansi registration (inclusive).
+    /// Default 5. Harus <= --max-participants.
+    #[arg(long, default_value_t = 5)]
+    min_participants: usize,
+
+    /// Maximum peserta per Instansi registration (inclusive).
+    /// Default 20.
+    #[arg(long, default_value_t = 20)]
+    max_participants: usize,
 
     /// Rasio policy yang punya minimal 1 claim (0.0..=1.0).
     #[arg(long, default_value_t = 0.4)]
@@ -99,6 +116,9 @@ async fn main() -> anyhow::Result<()> {
         cli.customers,
         cli.registrations,
         cli.customers_with_portal,
+        cli.group_ratio,
+        cli.min_participants,
+        cli.max_participants,
         cli.months_back,
         cli.claims_ratio,
         cli.upload_dir,

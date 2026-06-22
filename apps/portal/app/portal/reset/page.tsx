@@ -53,19 +53,27 @@ function ResetInner() {
       const r = await fetch(`${API_BASE}/customer/password/reset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: values.email.trim() }),
+        body: JSON.stringify({ email: values.email.trim().toLowerCase() }),
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
       }
-      // Backend returns the token + reset_url (dev convenience). In prod
-      // the email would be sent instead; the customer wouldn't see the
-      // token. For the dev build we just acknowledge.
+      // Backend selalu return {ok: true} (anti-enumeration: tidak bisa
+      // membedakan "email tidak ada" vs "email ada & link terkirim").
+      // Email reset akan diterima customer dalam beberapa menit kalau
+      // akun terdaftar & aktif.
       setRequestSent(true);
       toast.success("Link reset password sudah dikirim ke email Anda");
     } catch (e) {
-      setRequestError(e instanceof Error ? e.message : "Gagal mengirim request");
+      // Untuk error jaringan (TypeError "Failed to fetch"), tampilkan
+      // pesan generic — sama dengan pattern di form lain.
+      const msg = e instanceof TypeError
+        ? "Tidak dapat terhubung ke server. Periksa koneksi Anda dan coba lagi."
+        : e instanceof Error
+          ? e.message
+          : "Gagal mengirim request";
+      setRequestError(msg);
     } finally {
       setSubmitting(false);
     }

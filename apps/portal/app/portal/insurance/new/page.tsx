@@ -23,7 +23,9 @@ import { Reveal } from "@/components/Reveal";
 import { PlanPicker } from "@/components/PlanPicker";
 import { ApplicantTypePicker } from "@/components/registration/ApplicantTypePicker";
 import { InstansiForm } from "./InstansiForm";
-import { Form, FormField, FormError } from "@insuretrack/forms";
+import { Form, FormField } from "@insuretrack/forms";
+import { ResultDialog } from "@/components/registration/ResultDialog";
+import { IDLE, mapSubmitError, type ResultState } from "@/lib/submit-error";
 import {
   emailSchema,
   nikSchema,
@@ -117,12 +119,12 @@ export default function InsuranceNewPage() {
 function InsuranceNewPageInner() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [ktpName, setKtpName] = useState<string | null>(null);
   const [result, setResult] = useState<{
     registration_no: string;
     invoice_no: string;
   } | null>(null);
+  const [resultDialog, setResultDialog] = useState<ResultState>(IDLE);
   const [portalStatus, setPortalStatus] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<ProductCatalogData | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -327,7 +329,7 @@ function InsuranceNewPageInner() {
       return;
     }
     setSubmitting(true);
-    setFormError(null);
+    setResultDialog(IDLE);
     const token = getCustomerToken();
     if (!token) {
       router.replace("/portal/login?next=/portal/insurance/new");
@@ -377,7 +379,7 @@ function InsuranceNewPageInner() {
       }
       setResult({ registration_no: json.registration_no, invoice_no: json.invoice_no });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Terjadi kesalahan.");
+      setResultDialog(mapSubmitError(err));
     } finally {
       setSubmitting(false);
     }
@@ -420,7 +422,6 @@ function InsuranceNewPageInner() {
                   className="caption"
                   style={{ color: "var(--warm-charcoal)", marginTop: 16 }}
                 >
-                  Mode development: trigger webhook via curl untuk aktivasi polis (lihat README).
                 </p>
                 <button
                   onClick={() => router.push("/portal/dashboard")}
@@ -495,8 +496,6 @@ function InsuranceNewPageInner() {
 
         {applicantType === "INDIVIDU" ? (
           <Form methods={methods} onSubmit={onSubmit} style={{ display: "grid", gap: 32 }}>
-            <FormError message={formError} />
-
             <Tabs
               value={activeTab}
               onValueChange={(v) => setActiveTab(v as TabKey)}
@@ -817,9 +816,17 @@ function InsuranceNewPageInner() {
                   ? "Aktivasi email dulu untuk mendaftar"
                   : submitting
                   ? "Mengirim..."
-                  : "Daftar & Buat Invoice →"}
+                  : "Selesaikan Pendaftaran"}
               </button>
             </Reveal>
+
+            <ResultDialog
+              open={resultDialog.kind !== "idle"}
+              onOpenChange={(o) => !o && setResultDialog(IDLE)}
+              variant={resultDialog.kind === "idle" ? "info" : resultDialog.kind}
+              title={resultDialog.kind === "idle" ? "" : resultDialog.title}
+              description={resultDialog.kind === "idle" ? undefined : resultDialog.description}
+            />
           </Form>
         ) : (
           <InstansiForm

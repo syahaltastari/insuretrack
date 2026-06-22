@@ -6,8 +6,14 @@
 //!
 //! `created_at` di-backdate ke bulan yang dipilih supaya identifier
 //! prefix `REG-YYYYMM-NNNNNN` berbeda per bulan (sesuai spec §9).
+//!
+//! Applicant type distribution:
+//!   - INDIVIDU (80%): 1 peserta = customer (existing flow)
+//!   - INSTANSI (20%): 1 group dengan N peserta (5-20 random), data
+//!     peserta di tabel `registration_participants` (bukan customers).
+//!     1 invoice per group, N policies per group (1 per peserta).
 
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rust_decimal::Decimal;
 use sqlx::{Postgres, Transaction};
@@ -17,6 +23,15 @@ use crate::{
     domain::identifier::{next_id_with_year_month, EntityType as IdEntity},
     seed::{config::SeedConfig, customers::SeededCustomer, data::Product},
 };
+
+/// Output 1 peserta Instansi. Hanya di-populate untuk applicant_type='INSTANSI'.
+#[derive(Debug, Clone)]
+pub struct SeededParticipant {
+    pub id: Uuid,
+    pub nik: String,
+    pub full_name: String,
+    pub birth_date: NaiveDate,
+}
 
 #[derive(Debug, Clone)]
 pub struct SeededRegistration {
@@ -28,6 +43,19 @@ pub struct SeededRegistration {
     pub coverage_term: i32,
     pub status: String,
     pub created_at: DateTime<Utc>,
+    /// `INDIVIDU` atau `INSTANSI`. Untuk INDIVIDU, `participants` kosong.
+    pub applicant_type: String,
+    /// Jumlah peserta di group. `1` untuk INDIVIDU, `>= 5` untuk INSTANSI.
+    /// `participants.len()` setelah seed selesai — dipakai downstream
+    /// (policies.rs) tanpa perlu inspect Vec length.
+    pub participant_count: usize,
+    /// Detail peserta. Kosong untuk INDIVIDU (data peserta = customer).
+    pub participants: Vec<SeededParticipant>,
+    /// Kalau `true`, invoices.rs harus set invoice ke `EXPIRED` (lewat
+    /// `due_date`) bukan `UNPAID`. Dipakai untuk RegistrationOutcome::Expired
+    /// customer (1 portal customer ke-4) supaya demo skenario gagal
+    /// punya invoice yang sesuai.
+    pub force_expired_invoice: bool,
 }
 
 pub async fn seed_registrations(
@@ -44,6 +72,29 @@ pub async fn seed_registrations(
     let base_year = now.format("%Y").to_string().parse::<i32>()?;
     let base_month = now.format("%m").to_string().parse::<u32>()?;
 
+    // Pre-filter customer pool per applicant_type supaya round-robin
+    // hanya memilih customer yang eligible. Customer dengan
+    // `eligible_applicant_types` berisi type tertentu akan di-skip
+    // saat registration type lain di-assign. Alasan: 3 portal customer
+    // demo di-set eligibility-nya supaya CLI output punya 3 variasi
+    // tag (mixed / Individu only / Instansi only). Tanpa filter ini,
+    // round-robin acak bakal bikin semua portal customer mixed.
+    let individu_pool: Vec<&SeededCustomer> = customers
+        .iter()
+        .filter(|c| c.eligible_applicant_types.contains(&"INDIVIDU"))
+        .collect();
+    let instansi_pool: Vec<&SeededCustomer> = customers
+        .iter()
+        .filter(|c| c.eligible_applicant_types.contains(&"INSTANSI"))
+        .collect();
+    if individu_pool.is_empty() || instansi_pool.is_empty() {
+        anyhow::bail!(
+            "no eligible customers for applicant_type — check eligibility assignment (individu_pool={}, instansi_pool={})",
+            individu_pool.len(),
+            instansi_pool.len()
+        );
+    }
+
     for i in 0..cfg.counts.registrations {
         // Tentukan bulan: distribusi deterministik per i, range offset
         // 1..=4 (4 bulan ke belakang). `n_months` selalu 4 (bukan
@@ -52,9 +103,6 @@ pub async fn seed_registrations(
         let n_months = cfg.months_back.clamp(1, 12) as u32;
         let month_offset = (i as u32 % n_months) + 1;
         let (year, month) = subtract_months(base_year, base_month, month_offset);
-
-        // Pilih customer round-robin.
-        let customer = &customers[i % customers.len()];
 
         // Pilih product random.
         let product = match rng.gen_range(0..3) {
@@ -67,20 +115,58 @@ pub async fn seed_registrations(
         let (ct_min, ct_max) = product.coverage_term_range();
         let coverage_term = rng.gen_range(ct_min..=ct_max);
 
-        // Status distribution (deterministic via modulo):
-        //   i % 20 == 0 → PENDING (5%)
-        //   i % 20 == 1 → CANCELLED (5%)
-        //   15/20 = 75% → ISSUED
-        //   4/20 = 20% → PAID (subset of ISSUED path: paid but not yet issued)
-        // Total PENDING+PAID+ISSUED+CANCELLED = 5+5+20+70 if my math is off
-        // Use simpler mapping: i%4 → ISSUED, i%20==0 → PENDING, etc.
-        let status = match i % 20 {
-            0 => "PENDING",
-            1 => "CANCELLED",
-            2..=5 => "PAID", // 4/20 = 20%
-            _ => "ISSUED",   // 15/20 = 75%
-        }
-        .to_string();
+        // Applicant type distribution (deterministic by index ratio).
+        // `i as f32 / total < group_ratio` ⇒ Instansi. Untuk 50 regs
+        // dan group_ratio=0.2: i=0..9 (10 regs) = INSTANSI, i=10..49
+        // = INDIVIDU. Reproducible antar run (deterministic by i),
+        // dan match group_ratio dengan presisi: 10/50 = 20%.
+        let total = cfg.counts.registrations.max(1);
+        let is_group = (i as f32) < (total as f32 * cfg.counts.group_ratio);
+        let applicant_type = if is_group { "INSTANSI" } else { "INDIVIDU" };
+
+        // Pilih customer dari pool yang eligible untuk applicant_type
+        // ini. Round-robin supaya distribusi merata ke semua customer
+        // eligible. Customer yang di-skip dari pool akan tetap punya
+        // registration type lainnya (jika eligible).
+        let customer = if is_group {
+            instansi_pool[i % instansi_pool.len()]
+        } else {
+            individu_pool[i % individu_pool.len()]
+        };
+
+        // Status distribution (deterministic via modulo), dengan override
+        // berdasarkan `customer.registration_outcome`:
+        //   Success → ISSUED (reg guaranteed sukses, dapat policy)
+        //   Expired → PENDING + force_expired_invoice flag (invoice akan
+        //             di-set EXPIRED di invoices.rs — lewat due_date)
+        //   Default → i % 20 mapping existing
+        let outcome = customer.registration_outcome;
+        let status = match outcome {
+            crate::seed::customers::RegistrationOutcome::Success => "ISSUED".to_string(),
+            crate::seed::customers::RegistrationOutcome::Expired => "PENDING".to_string(),
+            crate::seed::customers::RegistrationOutcome::Default => match i % 20 {
+                0 => "PENDING".to_string(),
+                1 => "CANCELLED".to_string(),
+                2..=5 => "PAID".to_string(), // 4/20 = 20%
+                _ => "ISSUED".to_string(),   // 15/20 = 75%
+            },
+        };
+        let force_expired_invoice =
+            outcome == crate::seed::customers::RegistrationOutcome::Expired;
+
+        // Company info: NULL untuk INDIVIDU, random untuk INSTANSI.
+        let (company_name, company_npwp, company_industry) = if is_group {
+            let name = crate::seed::data::COMPANY_NAMES
+                [rng.gen_range(0..crate::seed::data::COMPANY_NAMES.len())]
+            .to_string();
+            let npwp = crate::seed::data::random_npwp(&mut rng);
+            let industry = crate::seed::data::COMPANY_INDUSTRIES
+                [rng.gen_range(0..crate::seed::data::COMPANY_INDUSTRIES.len())]
+            .to_string();
+            (Some(name), Some(npwp), Some(industry))
+        } else {
+            (None, None, None)
+        };
 
         // Allocate identifier untuk bulan ini.
         let year_month = format!("{:04}{:02}", year, month);
@@ -95,15 +181,15 @@ pub async fn seed_registrations(
             .expect("valid time");
         let created_at: DateTime<Utc> = Utc.from_utc_datetime(&created_naive);
 
-        // Insert. `applicant_type` selalu INDIVIDU (seeder tidak handle
-        // group registration — out of scope per plan).
+        // Insert registration row.
         let id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO registrations (
                 registration_no, customer_id, product, sum_assured,
-                coverage_term, status, created_at, applicant_type
+                coverage_term, status, created_at, applicant_type,
+                company_name, company_npwp, company_industry
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'INDIVIDU')
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id
             "#,
         )
@@ -114,12 +200,70 @@ pub async fn seed_registrations(
         .bind(coverage_term)
         .bind(&status)
         .bind(created_naive)
+        .bind(applicant_type)
+        .bind(company_name.as_deref())
+        .bind(company_npwp.as_deref())
+        .bind(company_industry.as_deref())
         .fetch_one(&mut **tx)
         .await?;
 
-        // Karena `created_at` di-insert dengan custom value, dan kita
-        // juga butuh konsistensi antara identifier (month) vs created_at,
-        // kita tidak perlu UPDATE — `created_at` di-set dari awal.
+        // Untuk INSTANSI: generate N peserta → insert ke
+        // `registration_participants`. UNIQUE(registration_id, nik)
+        // enforced; NIK uniqueness di-handle per-group via local HashSet.
+        let mut participants: Vec<SeededParticipant> = Vec::new();
+        if is_group {
+            let n = rng.gen_range(
+                cfg.counts.min_participants..=cfg.counts.max_participants,
+            );
+            let mut local_used_niks = std::collections::HashSet::new();
+            for _ in 0..n {
+                let (p_nik, p_full_name, p_birth_date) = generate_participant(
+                    &mut rng,
+                    &mut local_used_niks,
+                );
+
+                // Insert ke registration_participants.
+                let p_id: Uuid = sqlx::query_scalar(
+                    r#"
+                    INSERT INTO registration_participants (
+                        registration_id, nik, full_name, birth_place, birth_date,
+                        gender, address, rt_rw, village, district, city, province,
+                        postal_code, email, mobile_number, beneficiary_name
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                            $13, $14, $15, $16)
+                    RETURNING id
+                    "#,
+                )
+                .bind(id)
+                .bind(&p_nik)
+                .bind(&p_full_name)
+                .bind("Jakarta")
+                .bind(p_birth_date)
+                .bind("MALE")
+                .bind("Jl. Perusahaan No. 1")
+                .bind("001/002")
+                .bind("Kelurahan Karyawan")
+                .bind("Kecamatan Pusat")
+                .bind("Jakarta Selatan")
+                .bind("DKI Jakarta")
+                .bind("12345")
+                .bind(Option::<String>::None)
+                .bind(Option::<String>::None)
+                .bind(Option::<String>::None)
+                .fetch_one(&mut **tx)
+                .await?;
+
+                participants.push(SeededParticipant {
+                    id: p_id,
+                    nik: p_nik,
+                    full_name: p_full_name,
+                    birth_date: p_birth_date,
+                });
+            }
+        }
+
+        let participant_count = if is_group { participants.len() } else { 1 };
 
         out.push(SeededRegistration {
             id,
@@ -130,13 +274,62 @@ pub async fn seed_registrations(
             coverage_term,
             status,
             created_at,
+            applicant_type: applicant_type.to_string(),
+            participant_count,
+            participants,
+            force_expired_invoice,
         });
     }
 
-    // Suppress unused warnings untuk type yang dipakai di step 6+.
-    let _ = NaiveDate::MIN;
-
     Ok(out)
+}
+
+/// Generate 1 peserta Instansi (NIK unique dalam group, nama realistic).
+/// NIK tidak perlu globally unique — `registration_participants` UNIQUE
+/// index hanya per-registration, jadi HashSet lokal cukup.
+fn generate_participant(
+    rng: &mut StdRng,
+    used_niks: &mut std::collections::HashSet<String>,
+) -> (String, String, NaiveDate) {
+    // NIK 16 digit: PROV(2) + KOTA(2) + DDMMYY(6) + URUT(4) + KEC(2).
+    // Range PROV dari 01-94 (sama dengan customers, tapi tidak conflict
+    // karena tabel berbeda). Untuk peserta, kita hardcode PROV=KOTA=11
+    // (kode Jakarta) supaya simple — variasi NIK datang dari DDMMYY
+    // birth date + URUT random.
+    const PROV: &str = "31";
+    const KOTA: &str = "71";
+
+    for _ in 0..1000 {
+        // Birth date acak untuk variasi NIK: 25-55 tahun.
+        let age_years = rng.gen_range(25..=55_i32);
+        let epoch = NaiveDate::from_ymd_opt(2026 - age_years, 6, 15).unwrap();
+        let offset_days = rng.gen_range(0..365_i64);
+        let birth_date = epoch
+            .checked_sub_signed(chrono::Duration::days(offset_days))
+            .expect("birth_date arithmetic underflow");
+
+        let ddmmyy = format!(
+            "{:02}{:02}{:02}",
+            birth_date.day(),
+            birth_date.month(),
+            birth_date.year() % 100
+        );
+        let urut: u32 = rng.gen_range(1..=9999);
+        let kec: u32 = rng.gen_range(1..=99);
+        let nik = format!("{PROV}{KOTA}{ddmmyy}{urut:04}{kec:02}");
+
+        if used_niks.insert(nik.clone()) {
+            // Nama: dari pool customers (sengaja reuse — realistis
+            // bahwa banyak nama umum ada di perusahaan manapun).
+            let first = crate::seed::data::FIRST_NAMES
+                [rng.gen_range(0..crate::seed::data::FIRST_NAMES.len())];
+            let last = crate::seed::data::LAST_NAMES
+                [rng.gen_range(0..crate::seed::data::LAST_NAMES.len())];
+            let full_name = format!("{first} {last}");
+            return (nik, full_name, birth_date);
+        }
+    }
+    panic!("unable to generate unique participant NIK after 1000 attempts");
 }
 
 /// Helper: kurangi `month` sebanyak `n` dari (year, month). Menghandle

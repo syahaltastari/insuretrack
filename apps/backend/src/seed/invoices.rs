@@ -38,17 +38,28 @@ pub async fn seed_invoices(
     let mut out = Vec::with_capacity(registrations.len());
 
     for (idx, reg) in registrations.iter().enumerate() {
-        // Status derived dari reg status, dengan override ke EXPIRED
-        // untuk 1 dari 6 UNPAID (backdate ke due_date > 30 hari lalu).
-        let (invoice_status, paid_at) = match reg.status.as_str() {
-            "PENDING" if idx % 6 == 0 => ("EXPIRED".to_string(), None),
-            "PENDING" => ("UNPAID".to_string(), None),
-            "PAID" | "ISSUED" => ("PAID".to_string(), Some(reg.created_at + Duration::days(2))),
-            "CANCELLED" => ("CANCELLED".to_string(), None),
-            other => panic!("unknown registration status: {other}"),
+        // Status derived dari reg status, dengan 2 override:
+        //   1. `reg.force_expired_invoice` → EXPIRED (forced, untuk
+        //      demo RegistrationOutcome::Expired customer — invoice
+        //      lewat due_date, registration PENDING, no policy).
+        //   2. PENDING + idx % 6 == 0 → EXPIRED (backdate due_date
+        //      > 30 hari lalu) untuk variasi random.
+        let (invoice_status, paid_at) = if reg.force_expired_invoice {
+            ("EXPIRED".to_string(), None)
+        } else {
+            match reg.status.as_str() {
+                "PENDING" if idx % 6 == 0 => ("EXPIRED".to_string(), None),
+                "PENDING" => ("UNPAID".to_string(), None),
+                "PAID" | "ISSUED" => ("PAID".to_string(), Some(reg.created_at + Duration::days(2))),
+                "CANCELLED" => ("CANCELLED".to_string(), None),
+                other => panic!("unknown registration status: {other}"),
+            }
         };
 
         // Premium = sum_assured * rate * coverage_term.
+        // Untuk INSTANSI: dikalikan participant_count (semua peserta
+        // pakai plan & term yang sama — sama dengan formula
+        // `calculate_group_premium` di dto/registration.rs).
         let product = match reg.product.as_str() {
             "LIFE" => Product::Life,
             "PERSONAL_ACCIDENT" => Product::PersonalAccident,
@@ -57,7 +68,8 @@ pub async fn seed_invoices(
         };
         let rate = Decimal::try_from(product.premium_rate())?;
         let term = Decimal::from(reg.coverage_term);
-        let premium = reg.sum_assured * rate * term;
+        let participant_mult = Decimal::from(reg.participant_count as u64);
+        let premium = reg.sum_assured * rate * term * participant_mult;
 
         // due_date: created_at + 14 hari (untuk UNPAID/EXPIRED).
         let due_date: NaiveDate = (reg.created_at + Duration::days(14)).date_naive();

@@ -76,6 +76,11 @@ tags:
     description: Registrations, invoices, policies, claims, inquiries, logs.
   - name: Admin Marketing
     description: Manage corporate clients and customer testimonials.
+  - name: Admin User Management
+    description: |
+      Manage admin accounts (**super_admin only**). Includes CRUD,
+      activate/deactivate, and password reset. Non-super_admin gets
+      403 on every endpoint in this section, including `GET /users/{id}`.
   - name: Webhook
     description: Server-to-server webhook callbacks (no Bearer auth).
 
@@ -387,9 +392,12 @@ paths:
       tags: [Customer Auth]
       summary: Request password reset
       description: |
-        Generates a single-purpose JWT (30-min TTL) for password reset.
-        In production the `reset_url` is sent via email; the response
-        includes it for testing convenience.
+        Generates a single-purpose JWT (30-min TTL) for password reset and
+        emails the `reset_url` to the registered customer.
+
+        The response is always `{ ok: true }`, even when the email is
+        not registered or the account is not yet active, to prevent email
+        enumeration.
       operationId: requestPasswordReset
       security: []
       requestBody:
@@ -1588,6 +1596,201 @@ paths:
           $ref: "#/components/responses/NotFound"
 
   # ============================================================
+  # ADMIN USER MANAGEMENT (super_admin only)
+  # ============================================================
+  /admin/users:
+    get:
+      tags: [Admin User Management]
+      summary: List admin accounts
+      description: |
+        Returns all admin accounts (super_admin only). Supports
+        `?status=true` / `?status=false` to filter by `is_active`,
+        and `?q=<text>` to search by username or full_name.
+        Sort whitelist: `created_at`, `username`, `full_name`, `last_login_at`
+        (see `?sort_by=` + `?sort_dir=asc|desc`).
+      operationId: adminListUsers
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: status
+          in: query
+          schema: { type: string, enum: ["true", "false"], example: "" }
+          description: Filter by `is_active`. Empty = all.
+      responses:
+        "200":
+          description: Paginated list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/AdminUserRow" }
+        "403":
+          description: Caller is not a super_admin.
+
+    post:
+      tags: [Admin User Management]
+      summary: Create an admin account
+      description: |
+        Creates a new admin user with hashed password. Only super_admins
+        may set `is_super_admin: true` on the new account.
+
+        **Side effects:**
+        - INSERT into `admin_users`.
+        - Audit log `admin_user_created` (includes `username` and
+          `is_super_admin` flag, never the password hash).
+      operationId: adminCreateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
+            examples:
+              standard:
+                value:
+                  username: "operator1"
+                  full_name: "Operator Satu"
+                  email: "operator1@insuretrack.example"
+                  password: "OperatorPass123"
+                  is_super_admin: false
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserRow" }
+        "403":
+          description: Caller is not a super_admin.
+        "409":
+          description: Duplicate username or email.
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /admin/users/{id}:
+    get:
+      tags: [Admin User Management]
+      summary: Get a single admin user
+      operationId: adminGetUser
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserRow" }
+        "403":
+          description: Caller is not a super_admin.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [Admin User Management]
+      summary: Update admin profile fields
+      description: |
+        Updates `full_name`, `email`, and/or `is_super_admin`. All
+        fields optional — `null`/omitted means no change. Self-protection:
+        setting `is_super_admin: false` on your own account returns 422.
+
+        Audit log: `admin_user_updated` (records which fields were updated).
+      operationId: adminUpdateUser
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRequest" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserRow" }
+        "403":
+          description: Caller is not a super_admin.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Attempted self-demotion from super_admin.
+          $ref: "#/components/responses/ValidationError"
+
+  /admin/users/{id}/activate:
+    post:
+      tags: [Admin User Management]
+      summary: Re-activate a deactivated admin account
+      description: "Sets `is_active = true`. Idempotent. Audit: `admin_user_activated`."
+      operationId: adminActivateUser
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Re-activated (no body).
+        "403":
+          description: Caller is not a super_admin.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /admin/users/{id}/deactivate:
+    post:
+      tags: [Admin User Management]
+      summary: Deactivate an admin account
+      description: |
+        Sets `is_active = false`. Refuses to deactivate self (422).
+        Audit: `admin_user_deactivated`.
+      operationId: adminDeactivateUser
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deactivated (no body).
+        "403":
+          description: Caller is not a super_admin.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Attempted to deactivate self.
+          $ref: "#/components/responses/ValidationError"
+
+  /admin/users/{id}/reset-password:
+    post:
+      tags: [Admin User Management]
+      summary: Generate a new random password for an admin user
+      description: |
+        Generates a 16-char random password, hashes + stores it,
+        and returns the plaintext **once** in the response. The caller
+        (FE) must display it to the user immediately and prompt them
+        to change it on first login. Refuses to reset self (use
+        `POST /admin/me/password` instead). Audit:
+        `admin_user_password_reset` (logs only the length, never plaintext).
+      operationId: adminResetUserPassword
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: New password generated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResetPasswordResponse" }
+              examples:
+                success:
+                  value:
+                    new_password: "aBcD3fGh7jKlMn0p"
+        "403":
+          description: Caller is not a super_admin.
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Attempted to reset own password.
+          $ref: "#/components/responses/ValidationError"
+
+  # ============================================================
   # WEBHOOK
   # ============================================================
   /public/payment/webhook:
@@ -1850,6 +2053,7 @@ components:
           type: string
           enum: [customer, admin]
         id: { type: string, format: uuid, nullable: true, description: "customer_id for customer role, admin_id for admin role. Omitted when not set (legacy callers)." }
+        is_super_admin: { type: boolean, nullable: true, description: "Admin-only flag: true if account can manage other admin users. Omitted (null) for customer logins." }
 
     ActivateRequest:
       type: object
@@ -1890,16 +2094,9 @@ components:
 
     PasswordResetResponse:
       type: object
-      required: [ok, reset_url]
+      required: [ok]
       properties:
         ok: { type: boolean, example: true }
-        reset_token:
-          type: string
-          description: Test convenience. Not in production.
-        reset_url:
-          type: string
-          format: uri
-          description: Test convenience. Not in production.
 
     PasswordResetConsumeRequest:
       type: object
@@ -2389,7 +2586,19 @@ components:
             created_at: { type: string, format: date-time }
 
     AdminClaimRow:
-      $ref: "#/components/schemas/ClaimRow"
+      allOf:
+        - $ref: "#/components/schemas/ClaimRow"
+        - type: object
+          properties:
+            payment_proof_path:
+              type: string
+              nullable: true
+              description: |
+                Storage key for the payment proof uploaded via
+                `POST /admin/claims/{id}/payment-proof`. Set when
+                admin uploads proof before transitioning to PAID.
+            customer_name: { type: string }
+            customer_email: { type: string, format: email }
 
     AdminInquiryRow:
       type: object
@@ -2435,6 +2644,83 @@ components:
     # `RespondInquiryRequest` is OBSOLETE — removed in migration 0011.
     # Use `POST /admin/inquiries/{id}/messages` (reply) and
     # `POST /admin/inquiries/{id}/close` (close) instead.
+
+    # ----- Admin user management (super_admin only) -----
+    AdminUserRow:
+      type: object
+      required: [id, username, role, is_super_admin, is_active, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string, example: "admin" }
+        full_name: { type: string, nullable: true }
+        email: { type: string, format: email, nullable: true }
+        role:
+          type: string
+          example: "admin"
+          description: 'Currently always `"admin"`. Reserved for future roles.'
+        is_super_admin:
+          type: boolean
+          description: Super-admins can create/deactivate other admin accounts.
+        is_active: { type: boolean }
+        last_login_at: { type: string, format: date-time, nullable: true }
+        password_changed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateUserRequest:
+      type: object
+      required: [username, full_name, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+          description: Unique. 3–64 chars, trimmed server-side.
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          nullable: true
+        password:
+          type: string
+          format: password
+          minLength: 8
+        is_super_admin:
+          type: boolean
+          default: false
+          description: Default false. Only super_admins may set true.
+
+    UpdateUserRequest:
+      type: object
+      description: |
+        All fields optional. `null`/omitted = no change (COALESCE in SQL).
+        Self-protection: setting `is_super_admin: false` on your own account
+        is rejected with 422.
+      properties:
+        full_name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+        is_super_admin:
+          type: boolean
+          description: Cannot set to false on self.
+
+    ResetPasswordResponse:
+      type: object
+      required: [new_password]
+      properties:
+        new_password:
+          type: string
+          description: |
+            Newly generated 16-char password. Returned ONCE — caller must
+            display to the user immediately and prompt them to change it on
+            first login. Cannot reset own password via this endpoint (use
+            `POST /api/admin/me/password` instead).
 
     # ----- Marketing -----
     Client:

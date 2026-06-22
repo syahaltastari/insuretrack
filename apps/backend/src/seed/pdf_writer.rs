@@ -47,11 +47,21 @@ pub async fn write_policy_pdf(
         // TODO(M4): pass real customer NIK/name/birth/address.
         customer_nik: "0000000000000000",
         customer_name: "Customer Name",
+        customer_birth_place: "Kota",
         customer_birth_date: chrono::NaiveDate::from_ymd_opt(1990, 1, 1).unwrap(),
+        customer_gender: "MALE",
         customer_address: "Alamat customer (placeholder seeder)",
+        customer_email: "customer@example.com",
+        customer_mobile: "6281234567890",
         product_name: &draft.product,
+        plan_tier: None,
         sum_assured: draft.sum_assured,
         premium: draft.premium,
+        coverage_term_years: 1,
+        beneficiary_name: None,
+        company_name: None,
+        company_npwp: None,
+        company_industry: None,
     };
 
     let bytes = render(&input).map_err(|e| anyhow::anyhow!("render policy pdf: {e}"))?;

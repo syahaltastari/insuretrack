@@ -116,10 +116,11 @@ export default async function ProductDetailPage({
                   background: "var(--pure-white)",
                   color: "var(--clay-black)",
                   marginBottom: 16,
+                  marginLeft:10,
                 }}
               >
                 <Icon name="Sparkles" size="xs" />
-                <span className="uppercase-label" style={{ margin: 0 }}>
+                <span className="uppercase-label" style={{ margin:0}}>
                   Produk InsureTrack
                 </span>
               </div>

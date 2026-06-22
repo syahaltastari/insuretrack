@@ -79,7 +79,7 @@ export default function PortalClaimsPage() {
             + Ajukan Klaim
           </button>
         ) : (
-          <Link href="/portal/claims/new" className="clay-button solid-ube">
+          <Link href="/portal/claims/new" className="clay-button solid-ube mb-2">
             + Ajukan Klaim
           </Link>
         )}

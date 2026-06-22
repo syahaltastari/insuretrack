@@ -13,6 +13,10 @@
  *
  * Submit: POST /api/customer/registrations (multipart, same endpoint as
  * Individu — backend discriminates via `applicant_type` field).
+ *
+ * Error handling: pakai mapSubmitError + ResultDialog (modal alert) —
+ * error network, server, dan validation ditampilkan via modal. Inline
+ * FormError tidak dipakai (konsisten dengan pattern di Individu form).
  */
 
 import { useState } from "react";
@@ -32,10 +36,12 @@ import {
   type ProductPlan,
 } from "@insuretrack/api-client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@insuretrack/ui";
-import { Form, FormField, FormError } from "@insuretrack/forms";
+import { Form, FormField } from "@insuretrack/forms";
 import { PlanPicker } from "@/components/PlanPicker";
 import { ParticipantTable } from "@/components/registration/ParticipantTable";
 import { ParticipantImport } from "@/components/registration/ParticipantImport";
+import { ResultDialog } from "@/components/registration/ResultDialog";
+import { IDLE, mapSubmitError, type ResultState } from "@/lib/submit-error";
 
 type TabKey = "institution" | "plan" | "peserta" | "konfirmasi";
 
@@ -84,8 +90,10 @@ export function InstansiForm({
   const [activeTab, setActiveTab] = useState<TabKey>("institution");
   const [participants, setParticipants] = useState<ParticipantData[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ registration_no: string; invoice_no: string } | null>(null);
+  const [result, setResult] = useState<
+    { registration_no: string; invoice_no: string } | null
+  >(null);
+  const [resultDialog, setResultDialog] = useState<ResultState>(IDLE);
 
   const methods = useForm<InstansiValues>({
     resolver: zodResolver(instansiSchema) as never,
@@ -142,11 +150,17 @@ export function InstansiForm({
 
   const onSubmit = async (values: InstansiValues) => {
     if (participants.length === 0) {
-      setFormError("Tambah minimal 1 peserta sebelum submit");
+      setResultDialog({
+        kind: "warning",
+        title: "Tambah peserta terlebih dahulu",
+        description:
+          "Pendaftaran Instansi membutuhkan minimal 1 peserta. Tambahkan peserta secara manual atau import dari CSV/Excel.",
+      });
+      setActiveTab("peserta");
       return;
     }
     setSubmitting(true);
-    setFormError(null);
+    setResultDialog(IDLE);
     const token = getCustomerToken();
     if (!token) {
       router.replace("/portal/login?next=/portal/insurance/new");
@@ -201,7 +215,7 @@ export function InstansiForm({
       }
       setResult({ registration_no: json.registration_no, invoice_no: json.invoice_no });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Terjadi kesalahan.");
+      setResultDialog(mapSubmitError(err));
     } finally {
       setSubmitting(false);
     }
@@ -257,8 +271,6 @@ export function InstansiForm({
 
   return (
     <Form methods={methods} onSubmit={onSubmit} style={{ display: "grid", gap: 32 }}>
-      <FormError message={formError} />
-
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as TabKey)}
@@ -604,12 +616,12 @@ export function InstansiForm({
                   marginTop: 8,
                 }}
               >
-                <p className="uppercase-label" style={{ color: "var(--warm-silver)" }}>
+                <p className="uppercase-label" style={{ color: "var(--warm-silver)", marginBottom: 20 }}>
                   Estimasi Total Premi
                 </p>
                 <p
                   className="display-secondary"
-                  style={{ color: "var(--clay-black)", margin: 0 }}
+                  style={{ color: "var(--clay-black)", margin: 0, marginBottom: 30 }}
                 >
                   {formatIdr(totalPremium)}
                 </p>
@@ -636,8 +648,16 @@ export function InstansiForm({
           ? "Aktivasi email dulu untuk mendaftar"
           : submitting
             ? "Mengirim..."
-            : `Daftar ${participants.length} Peserta & Buat Invoice →`}
+            : `Selesaikan Pendaftaran`}
       </button>
+
+      <ResultDialog
+        open={resultDialog.kind !== "idle"}
+        onOpenChange={(o) => !o && setResultDialog(IDLE)}
+        variant={resultDialog.kind === "idle" ? "info" : resultDialog.kind}
+        title={resultDialog.kind === "idle" ? "" : resultDialog.title}
+        description={resultDialog.kind === "idle" ? undefined : resultDialog.description}
+      />
     </Form>
   );
 }

@@ -12,6 +12,13 @@ pub fn print_plan(cfg: &SeedConfig) {
         crate::seed::config::SeedMode::Load => "Load (high volume)",
     };
 
+    // Estimasi peserta & group registrations.
+    let expected_group = (cfg.counts.registrations as f32 * cfg.counts.group_ratio).round() as usize;
+    let avg_participants =
+        (cfg.counts.min_participants + cfg.counts.max_participants) as f32 / 2.0;
+    let expected_participants = (expected_group as f32 * avg_participants).round() as usize;
+    let expected_policies = (cfg.counts.registrations - expected_group) + expected_participants;
+
     println!();
     println!("================================================================");
     println!("  InsureTrack Seeder — DRY RUN (no DB writes)");
@@ -23,6 +30,19 @@ pub fn print_plan(cfg: &SeedConfig) {
     println!(
         "  Portal customers   : {}",
         cfg.counts.customers_with_portal
+    );
+    println!(
+        "  Group ratio        : {:.0}%  (≈{} Instansi dari {} regs)",
+        cfg.counts.group_ratio * 100.0,
+        expected_group,
+        cfg.counts.registrations
+    );
+    println!(
+        "  Participants/group : {}–{}  (≈{} total peserta, {} policies)",
+        cfg.counts.min_participants,
+        cfg.counts.max_participants,
+        expected_participants,
+        expected_policies
     );
     println!("  Months back        : {}", cfg.months_back);
     println!("  Claims ratio       : {:.0}%", cfg.claims_ratio * 100.0);
@@ -36,12 +56,14 @@ pub fn print_plan(cfg: &SeedConfig) {
     println!("        - policy      : ACTIVE, LAPSED, EXPIRED");
     println!("        - claim       : SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, PAID");
     println!("        - inquiry     : OPEN, ANSWERED, CLOSED");
+    println!("    * Applicant type mix: INDIVIDU (1 peserta) + INSTANSI (5-20 peserta)");
     match cfg.mode {
         crate::seed::config::SeedMode::Demo => {
             println!(
                 "    * PDF policies & invoices di-render ke {}/policies dan {}/invoices",
                 cfg.upload_dir, cfg.upload_dir
             );
+            println!("    * Instansi: 1 PDF per group (sample), bukan per peserta");
         }
         crate::seed::config::SeedMode::Load => {
             println!("    * PDF di-SKIP (load mode) — pdf_path akan NULL");
@@ -56,6 +78,9 @@ pub fn print_summary(
     customers: usize,
     portal_customers: usize,
     registrations: usize,
+    group_registrations: usize,
+    participants: usize,
+    expired_invoices: usize,
     invoices: usize,
     policies: usize,
     claims: usize,
@@ -65,6 +90,7 @@ pub fn print_summary(
     pdf_files_written: usize,
     duration_ms: u128,
 ) {
+    let individual = registrations - group_registrations;
     println!();
     println!("================================================================");
     println!("  InsureTrack Seeder — DONE in {}ms", duration_ms);
@@ -73,8 +99,17 @@ pub fn print_summary(
         "  Customers         : {:>5}  ({} with portal access)",
         customers, portal_customers
     );
-    println!("  Registrations     : {:>5}", registrations);
-    println!("  Invoices          : {:>5}", invoices);
+    println!(
+        "  Registrations     : {:>5}  ({} Individu + {} Instansi)",
+        registrations, individual, group_registrations
+    );
+    if group_registrations > 0 {
+        println!(
+            "  Participants      : {:>5}  (di registration_participants)",
+            participants
+        );
+    }
+    println!("  Invoices          : {:>5}  ({} EXPIRED)", invoices, expired_invoices);
     println!("  Policies          : {:>5}", policies);
     println!("  Claims            : {:>5}", claims);
     println!("  Inquiries         : {:>5}", inquiries);
@@ -85,22 +120,54 @@ pub fn print_summary(
     println!();
 }
 
-pub fn print_portal_credentials(creds: &[(String, String, String)]) {
-    // Tuple: (email, password_plaintext, customer_name)
+/// 1 portal customer + daftar tag applicant_type untuk registrations
+/// yang dia miliki. Dipakai `print_portal_credentials` untuk nandai
+/// akun mana yang relevan untuk demo flow Individual vs Instansi.
+pub struct PortalCredWithTags {
+    pub email: String,
+    pub password: String,
+    pub full_name: String,
+    /// Distinct applicant_types dari registrations customer ini,
+    /// lowercase: `"individu"`, `"instansi"`. Bisa kosong kalau customer
+    /// tidak punya registration (kasus edge: portal account tanpa polis).
+    pub tags: Vec<String>,
+}
+
+pub fn print_portal_credentials(creds: &[PortalCredWithTags]) {
     if creds.is_empty() {
         return;
     }
     println!();
     println!("================================================================");
     println!("  PORTAL CUSTOMER CREDENTIALS (login ke http://localhost:3000)");
+    println!("  Tag penjelasan:");
+    println!("    [Individu] = customer ini punya registration INDIVIDU");
+    println!("    [Instansi] = customer ini punya registration INSTANSI");
     println!("================================================================");
-    for (i, (email, password, name)) in creds.iter().enumerate() {
+    for (i, c) in creds.iter().enumerate() {
         if i > 0 {
             println!("------------------------------------------------------------");
         }
-        println!("  Email     : {}", email);
-        println!("  Password  : {}", password);
-        println!("  Name      : {}", name);
+        println!("  Email     : {}", c.email);
+        println!("  Password  : {}", c.password);
+        println!("  Name      : {}", c.full_name);
+        if c.tags.is_empty() {
+            println!("  Tags      : (no registration yet)");
+        } else {
+            // Capitalize first letter untuk display.
+            let pretty: Vec<String> = c
+                .tags
+                .iter()
+                .map(|t| {
+                    let mut chars: Vec<char> = t.chars().collect();
+                    if let Some(c) = chars.first_mut() {
+                        *c = c.to_ascii_uppercase();
+                    }
+                    chars.into_iter().collect()
+                })
+                .collect();
+            println!("  Tags      : [{}]", pretty.join(", "));
+        }
     }
     println!("================================================================");
     println!();

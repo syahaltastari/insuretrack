@@ -35,7 +35,6 @@ export function ApplicantTypePicker({ value, onChange }: ApplicantTypePickerProp
       icon: "🏢",
       title: "Instansi",
       desc: "Daftarkan banyak peserta sekaligus (kolektif). Cocok untuk HR mendaftarkan karyawan, atau admin yayasan mendaftarkan anggota.",
-      badge: "Baru",
     },
   ];
 

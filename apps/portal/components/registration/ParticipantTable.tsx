@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ParticipantData } from "@insuretrack/api-client";
 import { Confirm, Icon } from "@insuretrack/ui";
 
@@ -10,13 +10,19 @@ import { Confirm, Icon } from "@insuretrack/ui";
  * valid; user cukup lihat ringkasan di sini.
  *
  * Aksi:
- *   - "Tambah Manual" → buka modal (ModalAddParticipant) untuk isi 1 peserta
- *   - "Hapus" per baris → Confirm dialog (Confirm component dari @insuretrack/ui)
+ *   - "Tambah Manual" → buka modal (ParticipantFormModal mode=add) untuk
+ *     isi 1 peserta
+ *   - "Edit" per baris → buka modal mode=edit dengan field pre-filled
+ *   - "Hapus" per baris → Confirm dialog
  *   - Import (CSV/Excel) → komponen <ParticipantImport> di parent
+ *
+ * Modal participant TIDAK close on outside click (per requirement user
+ * untuk mencegah close tidak sengaja). User harus klik tombol X / Batal /
+ * tekan ESC. Tombol close X di pojok kanan atas card.
  *
  * Props:
  *   - participants: state array dari parent (controlled)
- *   - onChange: dipanggil saat array berubah (add/remove)
+ *   - onChange: dipanggil saat array berubah (add/edit/remove)
  *   - showBeneficiary: tampilkan kolom Ahli Waris (untuk produk LIFE)
  */
 
@@ -33,6 +39,7 @@ export function ParticipantTable({
 }: ParticipantTableProps) {
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
   return (
     <div>
@@ -102,7 +109,7 @@ export function ParticipantTable({
                 <th>Tempat, Tgl Lahir</th>
                 <th>JK</th>
                 {showBeneficiary && <th>Ahli Waris</th>}
-                <th style={{ width: 80 }}>Aksi</th>
+                <th style={{ width: 110 }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -129,15 +136,26 @@ export function ParticipantTable({
                   </td>
                   {showBeneficiary && <td>{p.beneficiary_name || "—"}</td>}
                   <td>
-                    <button
-                      type="button"
-                      className="clay-button ghost size-small"
-                      onClick={() => setPendingRemove(i)}
-                      aria-label={`Hapus peserta ${p.full_name || i + 1}`}
-                      style={{ padding: "4px 8px" }}
-                    >
-                      <Icon name="X" size="sm" />
-                    </button>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button
+                        type="button"
+                        className="clay-button ghost size-small"
+                        onClick={() => setEditingIdx(i)}
+                        aria-label={`Edit peserta ${p.full_name || i + 1}`}
+                        style={{ padding: "4px 8px" }}
+                      >
+                        <Icon name="Pencil" size="sm" />
+                      </button>
+                      <button
+                        type="button"
+                        className="clay-button ghost size-small"
+                        onClick={() => setPendingRemove(i)}
+                        aria-label={`Hapus peserta ${p.full_name || i + 1}`}
+                        style={{ padding: "4px 8px" }}
+                      >
+                        <Icon name="X" size="sm" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -148,13 +166,33 @@ export function ParticipantTable({
 
       {/* Add modal */}
       {showAdd && (
-        <AddParticipantModal
+        <ParticipantFormModal
+          mode="add"
           existingNiks={new Set(participants.map((p) => p.nik).filter(Boolean))}
           showBeneficiary={showBeneficiary}
           onClose={() => setShowAdd(false)}
-          onAdd={(p) => {
+          onSave={(p) => {
             onChange([...participants, p]);
             setShowAdd(false);
+          }}
+        />
+      )}
+
+      {/* Edit modal */}
+      {editingIdx !== null && (
+        <ParticipantFormModal
+          mode="edit"
+          initial={participants[editingIdx]}
+          existingNiks={new Set(
+            participants
+              .map((p, idx) => (idx !== editingIdx ? p.nik : ""))
+              .filter(Boolean),
+          )}
+          showBeneficiary={showBeneficiary}
+          onClose={() => setEditingIdx(null)}
+          onSave={(p) => {
+            onChange(participants.map((q, idx) => (idx === editingIdx ? p : q)));
+            setEditingIdx(null);
           }}
         />
       )}
@@ -182,22 +220,31 @@ export function ParticipantTable({
   );
 }
 
-// ---- Add modal -------------------------------------------------------------
+// ---- Add / Edit modal (reusable) ---------------------------------------
 
-interface AddModalProps {
+interface ParticipantFormModalProps {
+  mode: "add" | "edit";
+  /** Untuk mode="edit": data existing yang akan di-prefill. */
+  initial?: ParticipantData;
+  /** Set NIK yang sudah ada di list (exclude row yang sedang di-edit
+   *  supaya user bisa save tanpa konflik dengan NIK sendiri). */
   existingNiks: Set<string>;
   showBeneficiary: boolean;
   onClose: () => void;
-  onAdd: (p: ParticipantData) => void;
+  /** Callback tunggal untuk add & edit. Parent yang putuskan append
+   *  atau replace based on mode. */
+  onSave: (p: ParticipantData) => void;
 }
 
-function AddParticipantModal({
+function ParticipantFormModal({
+  mode,
+  initial,
   existingNiks,
   showBeneficiary,
   onClose,
-  onAdd,
-}: AddModalProps) {
-  const [form, setForm] = useState<ParticipantData>({
+  onSave,
+}: ParticipantFormModalProps) {
+  const empty: ParticipantData = {
     nik: "",
     full_name: "",
     birth_place: "",
@@ -213,16 +260,26 @@ function AddParticipantModal({
     email: "",
     mobile_number: "",
     beneficiary_name: "",
-  });
+  };
+  const [form, setForm] = useState<ParticipantData>(initial ?? empty);
   const [error, setError] = useState<string | null>(null);
+
+  // ESC key close — selain tombol X / Batal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const set = <K extends keyof ParticipantData>(k: K, v: ParticipantData[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
   const handleSubmit = () => {
-    // Minimal validation
+    // Sama validation rules untuk add & edit.
     if (!/^\d{16}$/.test(form.nik)) {
-      setError("NIK harus 16 digit");
+      setError("NIK harus 16 digit angka");
       return;
     }
     if (existingNiks.has(form.nik)) {
@@ -251,14 +308,18 @@ function AddParticipantModal({
       setError("Kelurahan/Kecamatan/Kota/Provinsi/Kode Pos wajib diisi");
       return;
     }
-    onAdd(form);
+    if (showBeneficiary && !form.beneficiary_name?.trim()) {
+      setError("Nama ahli waris wajib diisi untuk produk Jiwa");
+      return;
+    }
+    onSave(form);
   };
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Tambah peserta"
+      aria-label={mode === "add" ? "Tambah peserta" : "Edit peserta"}
       style={{
         position: "fixed",
         inset: 0,
@@ -269,15 +330,36 @@ function AddParticipantModal({
         placeItems: "center",
         padding: 16,
       }}
-      onClick={onClose}
     >
       <div
-        className="clay-card section"
-        style={{ width: "100%", maxWidth: 720, maxHeight: "90vh", overflowY: "auto" }}
-        onClick={(e) => e.stopPropagation()}
+        className="clay-card section clay-modal-scroll"
+        style={{
+          width: "100%",
+          maxWidth: 720,
+          maxHeight: "90vh",
+          overflowY: "auto",
+          position: "relative",
+        }}
       >
-        <h2 className="card-heading" style={{ marginBottom: 16 }}>
-          Tambah Peserta Manual
+        {/* Close X di pojok kanan atas. Tidak ada click-outside-close:
+            user harus explicit close via X / Batal / ESC. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Tutup"
+          className="clay-button ghost size-small"
+          style={{
+            position: "absolute",
+            top: 16,
+            right: 16,
+            padding: "4px 8px",
+            zIndex: 1,
+          }}
+        >
+          <Icon name="X" size="sm" />
+        </button>
+        <h2 className="card-heading" style={{ marginBottom: 16, paddingRight: 40 }}>
+          {mode === "add" ? "Tambah Peserta Manual" : "Edit Peserta"}
         </h2>
         {error && (
           <div
@@ -447,7 +529,7 @@ function AddParticipantModal({
             className="clay-button solid-ube size-small"
             onClick={handleSubmit}
           >
-            Tambah
+            {mode === "add" ? "Tambah" : "Simpan"}
           </button>
         </div>
       </div>

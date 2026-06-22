@@ -15,6 +15,34 @@ use crate::{
     seed::{config::SeedConfig, data, id_card},
 };
 
+/// Outcome yang di-paksakan untuk registration customer ini. Override
+/// default distribution `i % 20` di seed_registrations supaya 4
+/// portal customer demo punya 3 skenario jelas (lihat assignment
+/// di `seed_customers`).
+///
+/// Alasan pisah dari `eligible_applicant_types`: outcome mengatur
+/// status registration (apakah sukses atau gagal), sedangkan eligibility
+/// mengatur applicant_type (INDIVIDU vs INSTANSI). Bisa di-combine —
+/// customer Success bisa eligible INDIVIDU saja atau INSTANSI saja
+/// atau mixed, independent dari outcome-nya.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistrationOutcome {
+    /// Pakai distribution default `i % 20` di seed_registrations.
+    /// Ini untuk non-portal customer (27 dari 30 customer demo).
+    Default,
+    /// Registration selalu `ISSUED` (status akhir sukses, dapat policy).
+    /// Dipakai untuk 3 portal customer pertama (i=0..2) supaya demo
+    /// flow login → lihat polis tanpa ada skenario gagal yang
+    /// membingungkan.
+    Success,
+    /// Registration selalu `PENDING` dengan invoice `EXPIRED`
+    /// (overdue, lewat `due_date`). Dipakai untuk 1 portal customer
+    /// ke-4 (i=3 kalau portal customers >= 4) supaya demo bisa
+    /// tunjukkan skenario "registrasi gagal karena lewat tanggal
+    /// registrasi" tanpa harus inject manual.
+    Expired,
+}
+
 /// Output 1 customer yang baru di-insert. Digunakan caller untuk
 /// downstream steps (registrations, claims, dst.) yang butuh customer
 /// reference.
@@ -30,6 +58,19 @@ pub struct SeededCustomer {
     /// `Some((plaintext_password, ...))` kalau customer ini punya
     /// portal access; `None` untuk yang PENDING.
     pub portal_password: Option<String>,
+    /// Applicant types yang boleh di-assign ke customer ini saat
+    /// seed_registrations round-robin. Filter supaya customer tertentu
+    /// hanya jadi representative registration type tertentu saja —
+    /// penting untuk 3 portal customer demo supaya tag output CLI
+    /// terdistribusi rapi (1 mixed, 1 Individu only, 1 Instansi only).
+    ///
+    /// Default `[INDIVIDU, INSTANSI]` (mixed). Customer dengan
+    /// `portal_password` non-None di i=0..2 di-override supaya
+    /// demo flow punya 3 variasi.
+    pub eligible_applicant_types: Vec<&'static str>,
+    /// Outcome yang di-paksa untuk registration customer ini. Lihat
+    /// `RegistrationOutcome` untuk variasi.
+    pub registration_outcome: RegistrationOutcome,
 }
 
 /// Password yang dipakai untuk 3 portal customers (fixed untuk demo,
@@ -163,6 +204,41 @@ pub async fn seed_customers(
             None
         };
 
+        // Eligibility per customer untuk assignment registration:
+        //   i=0 (portal, demo "mixed")  → eligible INDIVIDU + INSTANSI
+        //   i=1 (portal, "Individu")    → eligible INDIVIDU saja
+        //   i=2 (portal, "Instansi")    → eligible INSTANSI saja
+        //   i>=3 (non-portal)           → eligible INDIVIDU + INSTANSI
+        //
+        // Tujuan: tag CLI output punya 3 variasi supaya onboarding
+        // bisa demo ke klien 3 skenario berbeda (lihat
+        // `print_portal_credentials` di printer.rs).
+        let eligible_applicant_types: Vec<&'static str> = if i == 1 && cfg.counts.customers_with_portal >= 2 {
+            vec!["INDIVIDU"]
+        } else if i == 2 && cfg.counts.customers_with_portal >= 3 {
+            vec!["INSTANSI"]
+        } else {
+            // i=0 (mixed portal) atau non-portal → eligible dua-duanya.
+            vec!["INDIVIDU", "INSTANSI"]
+        };
+
+        // Outcome per customer untuk demo flow yang konsisten:
+        //   i=0..2 (3 portal customer sukses)  → RegistrationOutcome::Success
+        //   i=3 (portal customer ke-4, kalau ada) → RegistrationOutcome::Expired
+        //   i>=4 atau non-portal              → RegistrationOutcome::Default
+        //
+        // Tujuan: 3 portal customer pertama dijamin sukses (ada policy,
+        // bisa di-demo full flow login → lihat polis). Portal customer
+        // ke-4 dipakai untuk demo skenario gagal (invoice EXPIRED,
+        // registration PENDING, tidak ada policy).
+        let registration_outcome = if i < 3 && cfg.counts.customers_with_portal > i {
+            RegistrationOutcome::Success
+        } else if i == 3 && cfg.counts.customers_with_portal >= 4 {
+            RegistrationOutcome::Expired
+        } else {
+            RegistrationOutcome::Default
+        };
+
         out.push(SeededCustomer {
             id,
             email,
@@ -172,6 +248,8 @@ pub async fn seed_customers(
             province: province.to_string(),
             city: city.to_string(),
             portal_password,
+            eligible_applicant_types,
+            registration_outcome,
         });
     }
 

@@ -7,6 +7,8 @@
 //! Total data di file ini ~3 KB — jauh lebih kecil dari dependency
 //! faker, dan tidak menambah compile time.
 
+use rand::Rng;
+
 // =====================================================================
 // Identitas
 // =====================================================================
@@ -283,6 +285,84 @@ pub const INQUIRY_RESPONSES: &[&str] = &[
     "Kami sudah lakukan recalculation dan refund sebesar Rp xxx akan ditransfer dalam 3-5 hari kerja ke rekening Anda.",
     "Manfaat polis LIFE mencakup santunan duka, biaya pemakaman, dan uang pertanggungan ahli waris. Detail ada di e-policy PDF Anda.",
 ];
+
+// =====================================================================
+// Company data (untuk Instansi / group registration)
+// =====================================================================
+
+/// Nama perusahaan generic Indonesia (PT/CV). Tidak real — semua fiktif
+/// untuk demo. Pool 30 entry untuk variasi tanpa collision.
+pub const COMPANY_NAMES: &[&str] = &[
+    "PT Nusantara Jaya Sentosa",
+    "PT Mitra Abadi Perkasa",
+    "PT Cahaya Mandiri Sejahtera",
+    "PT Garuda Indonesia Tech",
+    "PT Sinar Mas Digital",
+    "PT Bukit Hijau Lestari",
+    "PT Wahana Karya Persada",
+    "PT Bina Konstruksi Utama",
+    "PT Cendana Textile Industri",
+    "PT Sapta Jaya Makmur",
+    "PT Palma Agro Lestari",
+    "PT Surya Logistik Nusantara",
+    "PT Mitra Edukasi Cerdas",
+    "PT Anugerah Kimia Indonesia",
+    "PT Graha Medika Sentosa",
+    "PT Mitra Kesehatan Nusantara",
+    "PT Optima Telekomunikasi",
+    "PT Mitra Transportasi Mandiri",
+    "PT Asri Properti Indonesia",
+    "PT Pradipa Karya Mulia",
+    "PT Katalis Digital Solusi",
+    "PT Cakrawala Bisnis Global",
+    "PT Bahari Samudera Pasifik",
+    "PT Mitra Energi Terbarukan",
+    "PT Tugu Baja Perkasa",
+    "PT Kinarya Selaras Indonesia",
+    "PT Lentera Teknologi Nusantara",
+    "PT Mitra Otomotif Indonesia",
+    "PT Andalan Food Industries",
+    "PT Mitra Retail Indonesia",
+];
+
+/// Bidang usaha — 20 entry curated untuk variasi industri di seed.
+pub const COMPANY_INDUSTRIES: &[&str] = &[
+    "Teknologi Informasi",
+    "Manufaktur",
+    "Konstruksi",
+    "Perdagangan Umum",
+    "Jasa Keuangan",
+    "Kesehatan",
+    "Pendidikan",
+    "Transportasi & Logistik",
+    "Pertanian & Perkebunan",
+    "Peternakan",
+    "Perikanan",
+    "Makanan & Minuman",
+    "Tekstil & Garmen",
+    "Otomotif",
+    "Properti",
+    "Telekomunikasi",
+    "Energi & Pertambangan",
+    "Konsultan",
+    "Hospitality & Pariwisata",
+    "Media & Hiburan",
+];
+
+/// Generate NPWP format Indonesia: `99.999.999.9-999.999` (15 digit
+/// utama + 3 digit KPP, total 18 char dengan separator). Tidak validasi
+/// checksum — hanya format placeholder untuk demo.
+pub fn random_npwp(rng: &mut rand::rngs::StdRng) -> String {
+    // 9 digit pertama
+    let a1: u32 = rng.gen_range(10..=99);
+    let b1: u32 = rng.gen_range(100..=999);
+    let c1: u32 = rng.gen_range(100..=999);
+    let d1: u32 = rng.gen_range(1..=9);
+    // 6 digit setelah strip (KPP + kode cabang)
+    let e1: u32 = rng.gen_range(100..=999);
+    let f1: u32 = rng.gen_range(100..=999);
+    format!("{a1:02}.{b1:03}.{c1:03}.{d1:1}-{e1:03}.{f1:03}")
+}
 
 // =====================================================================
 // Email types — 8 dari spec FS-05

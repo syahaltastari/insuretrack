@@ -125,6 +125,7 @@ pub fn router() -> Router<AppState> {
         .route("/invoices", get(list_invoices))
         .route("/invoices/:id", get(get_invoice))
         .route("/invoices/:id/pdf", get(download_invoice_pdf))
+        .route("/invoices/:id/receipt", get(download_invoice_receipt))
         .route("/policies", get(list_policies))
         .route("/policies/:id", get(get_policy))
         .route("/policies/:id/pdf", get(download_policy_pdf))
@@ -859,6 +860,39 @@ async fn download_invoice_pdf(
         HeaderValue::from_static("application/pdf"),
     );
     let disp = format!("attachment; filename=\"{invoice_no}.pdf\"");
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&disp)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("invalid content-disposition: {e}")))?,
+    );
+    Ok((StatusCode::OK, headers, body).into_response())
+}
+
+// ---- GET /invoices/:id/receipt ----
+
+async fn download_invoice_receipt(
+    State(state): State<AppState>,
+    _: RequireAdmin,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let row: Option<(Option<String>, String)> =
+        sqlx::query_as("SELECT receipt_pdf_path, invoice_no FROM invoices WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let (receipt_path_opt, invoice_no) = row.ok_or(AppError::NotFound("invoice".into()))?;
+    let receipt_path =
+        receipt_path_opt.ok_or(AppError::NotFound("payment receipt (invoice belum dibayar)".into()))?;
+
+    let bytes = state.storage.read_bytes(&receipt_path).await?;
+    let body = Body::from(bytes);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/pdf"),
+    );
+    let disp = format!("attachment; filename=\"receipt-{invoice_no}.pdf\"");
     headers.insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_str(&disp)
