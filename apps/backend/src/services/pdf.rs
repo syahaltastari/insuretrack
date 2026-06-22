@@ -629,7 +629,7 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
         set_color(&layer, C_BLACK);
         layer.use_text(*title, 9.0, Mm(18.0), Mm(by), &bold);
         set_color(&layer, C_CHARCOAL);
-        let desc_lines = wrap_text(*desc, 88);
+        let desc_lines = wrap_text(desc, 88);
         for (i, line) in desc_lines.iter().take(2).enumerate() {
             layer.use_text(
                 line.as_str(),
@@ -668,7 +668,7 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
         set_color(&layer, C_BLACK);
         layer.use_text(*title, 8.5, Mm(15.0), Mm(ty), &bold);
         set_color(&layer, C_CHARCOAL);
-        let clines = wrap_text(*content, 92);
+        let clines = wrap_text(content, 92);
         for (i, line) in clines.iter().take(2).enumerate() {
             let ypos = ty - 5.0 - i as f32 * 4.0;
             if ypos > 56.0 {
@@ -1454,31 +1454,6 @@ fn draw_line(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, thic
         is_closed: false,
     };
     layer.add_line(line);
-}
-
-/// Draw a dashed rectangle frame (4 sides, dashed style). Implementasi
-/// sederhana: gambar 4 garis solid tipis — printpdf tidak punya helper
-/// dashed built-in. Untuk efek dashed, alternating gap pattern. Tapi
-/// karena visual priority rendah, pakai 4 garis tipis solid sebagai
-/// pendekatan pragmatis. Box dengan border solid tipis ini acceptable
-/// untuk beneficiary/company info card.
-fn draw_dashed_rect(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32) {
-    // Top, bottom, left, right
-    let gap: f32 = 2.0;
-    let mut x = x1;
-    while x < x2 {
-        let x_end = (x + gap * 2.0).min(x2);
-        draw_line(layer, x, y2, x_end, y2, thickness); // top
-        draw_line(layer, x, y1, x_end, y1, thickness); // bottom
-        x = x_end + gap;
-    }
-    let mut y = y1;
-    while y < y2 {
-        let y_end = (y + gap * 2.0).min(y2);
-        draw_line(layer, x1, y, x1, y_end, thickness); // left
-        draw_line(layer, x2, y, x2, y_end, thickness); // right
-        y = y_end + gap;
-    }
 }
 
 /// Truncate string dengan ellipsis kalau lebih panjang dari max_len.

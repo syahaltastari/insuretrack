@@ -312,11 +312,11 @@ async fn payment_webhook(
     // (1 per participant, masing-masing dengan policy_no sendiri & link
     // ke member_id).
     //
-    // Tuple: (policy_id, policy_no, member_id, participant_nik,
-    //         participant_name, participant_birth_date, participant_address,
-    //         participant_birth_place, participant_gender,
-    //         participant_email, participant_mobile, participant_beneficiary)
-    let mut issued_policies: Vec<(
+    // (policy_id, policy_no, member_id, participant_nik, participant_name,
+    //  participant_birth_date, participant_address, participant_birth_place,
+    //  participant_gender, participant_email, participant_mobile,
+    //  participant_beneficiary)
+    type IssuedPolicy = (
         Uuid,
         String,
         Uuid,
@@ -329,7 +329,8 @@ async fn payment_webhook(
         Option<String>,
         Option<String>,
         Option<String>,
-    )> = Vec::new();
+    );
+    let mut issued_policies: Vec<IssuedPolicy> = Vec::new();
 
     if applicant_type == "INSTANSI" {
         // Fetch semua peserta: identitas dari customers, beneficiary dari
