@@ -89,6 +89,10 @@ struct CustomerCredRow {
     full_name: String,
     password_hash: Option<String>,
     portal_status: Option<String>,
+    /// `is_active = false` menandakan admin sudah menonaktifkan akun.
+    /// Login handler menolak dengan Unauthorized agar customer tidak
+    /// bisa bypass deactivate. Field ini ditambah di migration 0019.
+    is_active: bool,
 }
 
 fn customer_id_from(claims: &crate::auth::Claims) -> AppResult<Uuid> {
@@ -116,7 +120,7 @@ async fn activate(
         UPDATE customers
            SET portal_status = 'ACTIVE', updated_at = now()
          WHERE id = $1 AND portal_status = 'PENDING'
-         RETURNING id, email, full_name, password_hash, portal_status
+         RETURNING id, email, full_name, password_hash, portal_status, is_active
         "#,
     )
     .bind(customer_id)
@@ -150,7 +154,7 @@ async fn login(
 ) -> AppResult<Json<LoginResponse>> {
     let row: Option<CustomerCredRow> = sqlx::query_as(
         r#"
-        SELECT id, email, full_name, password_hash, portal_status
+        SELECT id, email, full_name, password_hash, portal_status, is_active
           FROM customers WHERE email = $1
         "#,
     )
@@ -159,6 +163,12 @@ async fn login(
     .await?;
 
     let customer = row.ok_or(AppError::Unauthorized)?;
+    // is_active = false → admin sudah menonaktifkan akun. Tolak login
+    // dengan response yang sama dengan credential salah supaya tidak
+    // bocorin info "akun ini ada tapi nonaktif" vs "akun tidak ada".
+    if !customer.is_active {
+        return Err(AppError::Unauthorized);
+    }
     let stored_hash = customer
         .password_hash
         .as_deref()
@@ -209,7 +219,7 @@ async fn password_reset(
     Json(req): Json<PasswordResetRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
     let row: Option<CustomerCredRow> = sqlx::query_as(
-        "SELECT id, email, full_name, password_hash, portal_status FROM customers WHERE email = $1",
+        "SELECT id, email, full_name, password_hash, portal_status, is_active FROM customers WHERE email = $1",
     )
     .bind(req.email.trim().to_lowercase())
     .fetch_optional(&state.pool)

@@ -29,4 +29,13 @@ export type {
   CreateAdminUserRequest,
   UpdateAdminUserRequest,
   ResetPasswordResponse,
+  AdminCustomer,
+  AdminCustomerDetail,
+  AdminCustomerRecentRegistration,
+  AdminCustomerRecentPolicy,
+  AdminCustomerRecentClaim,
+  AdminCustomerRecentInquiry,
+  AdminCustomerAuditEntry,
+  AdminCustomerResetPasswordResponse,
+  ResendActivationResponse,
 } from "./dto/admin";

@@ -46,6 +46,7 @@ import {
   LogOut,
   // User
   User,
+  UserCircle,
   Users,
   UserPlus,
   UserCog,
@@ -108,6 +109,7 @@ export const Icons: Record<string, LucideIcon> = {
   Send,
   LogOut,
   User,
+  UserCircle,
   Users,
   UserPlus,
   UserCog,

@@ -1,8 +1,10 @@
 pub mod admin;
+pub mod admin_customers;
 pub mod admin_marketing;
 pub mod admin_users;
 pub mod customer;
 pub mod public;
+pub mod util;
 
 use axum::{routing::get, Json, Router};
 use serde_json::json;
@@ -16,6 +18,7 @@ pub fn build(state: AppState) -> Router {
         .nest("/api/admin", admin::router())
         .nest("/api/admin", admin_marketing::router())
         .nest("/api/admin", admin_users::router())
+        .nest("/api/admin", admin_customers::router())
         .nest("/api/customer", customer::router())
         .with_state(state)
 }

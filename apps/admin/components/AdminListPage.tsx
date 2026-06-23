@@ -90,6 +90,12 @@ export function AdminListPage<T extends { id: string }>({
   /** Columns that the header can sort by. If provided, header is clickable
    *  and sort indicators are shown. */
   sortableColumns,
+  /** Boolean-style single-select filter. Backend param maps a non-empty
+   *  `value` to a literal — e.g. `?active=true|false` — and treats "" as
+   *  "no filter". Pakai ini untuk field yang URL-nya bukan kolom (seperti
+   *  `is_active`, `is_archived`, dll) sehingga `status`/`entity_type`
+   *  tidak collision dengan filter entity lain. */
+  booleanFilter,
 }: {
   title: string;
   endpoint: string;
@@ -123,6 +129,20 @@ export function AdminListPage<T extends { id: string }>({
   claimTypes?: string[];
   /** Sortable columns. If provided, clickable headers + sort indicators. */
   sortableColumns?: SortableColumn[];
+  /** Boolean-style single-select filter. Backend param maps a non-empty
+   *  `value` to a literal — e.g. `?active=true|false` — and treats "" as
+   *  "no filter". Pakai ini untuk field yang URL-nya bukan kolom (seperti
+   *  `is_active`, `is_archived`, dll) sehingga `status`/`entity_type`
+   *  tidak collision dengan filter entity lain. */
+  booleanFilter?: {
+    /** Query param name (e.g. "active"). */
+    paramName: string;
+    /** Label above the dropdown. */
+    label: string;
+    /** Options. First option is usually `{ value: "", label: "Semua" }`
+     *  which means "no filter applied". */
+    options: Array<{ value: string; label: string }>;
+  };
 }) {
   // ----- URL sync helpers -----
   const router = useRouter();
@@ -136,6 +156,9 @@ export function AdminListPage<T extends { id: string }>({
   const dateFieldFromUrl = searchParams.get("date_field") ?? "";
   const productFromUrl = searchParams.get("product") ?? "";
   const claimTypeFromUrl = searchParams.get("claim_type") ?? "";
+  const booleanFilterFromUrl = booleanFilter
+    ? searchParams.get(booleanFilter.paramName) ?? ""
+    : "";
   // `page_size` di-URL-kan supaya shareable. Backend clamp ke 1-100
   // (lihat `PageQuery::page_size()` di repo/mod.rs). Default 20.
   const pageSizeFromUrl = searchParams.get("page_size");
@@ -160,6 +183,7 @@ export function AdminListPage<T extends { id: string }>({
   );
   const [product, setProduct] = useState(productFromUrl);
   const [claimType, setClaimType] = useState(claimTypeFromUrl);
+  const [activeBooleanFilter, setActiveBooleanFilter] = useState(booleanFilterFromUrl);
 
   // Lookup helpers — must be declared before they're used in `chips`.
   const dateFieldOptionsMap = useMemo(
@@ -231,8 +255,18 @@ export function AdminListPage<T extends { id: string }>({
     setActiveDateField(dateFieldFromUrl || defaultDateField || dateField?.[0]?.value || "");
     setProduct(productFromUrl);
     setClaimType(claimTypeFromUrl);
+    setActiveBooleanFilter(booleanFilterFromUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qFromUrl, statusFromUrl, dateFieldFromUrl, dateFromUrl, dateToUrl, productFromUrl, claimTypeFromUrl]);
+  }, [
+    qFromUrl,
+    statusFromUrl,
+    dateFieldFromUrl,
+    dateFromUrl,
+    dateToUrl,
+    productFromUrl,
+    claimTypeFromUrl,
+    booleanFilterFromUrl,
+  ]);
 
   // ----- Data fetch -----
   const load = useCallback(async () => {
@@ -252,6 +286,9 @@ export function AdminListPage<T extends { id: string }>({
       if (dateField) params.set("date_field", activeDateField);
       if (product) params.set("product", product);
       if (claimType) params.set("claim_type", claimType);
+      if (booleanFilter && activeBooleanFilter) {
+        params.set(booleanFilter.paramName, activeBooleanFilter);
+      }
       if (sortBy) params.set("sort_by", sortBy);
       if (sortBy) params.set("sort_dir", sortDir);
 
@@ -278,6 +315,7 @@ export function AdminListPage<T extends { id: string }>({
     activeDateField,
     product,
     claimType,
+    activeBooleanFilter,
     sortBy,
     sortDir,
   ]);
@@ -319,6 +357,14 @@ export function AdminListPage<T extends { id: string }>({
     setPage(1);
   };
 
+  const onBooleanFilterChange = (v: string) => {
+    setActiveBooleanFilter(v);
+    if (booleanFilter) {
+      setFilterParams({ [booleanFilter.paramName]: v || undefined });
+    }
+    setPage(1);
+  };
+
   const onPageSizeChange = (v: string) => {
     // v = "" artinya default (20). setFilterParams reset page ke 1
     // dan hapus param kalau value kosong.
@@ -334,6 +380,7 @@ export function AdminListPage<T extends { id: string }>({
     setActiveDateField(defaultDateField || dateField?.[0]?.value || "");
     setProduct("");
     setClaimType("");
+    setActiveBooleanFilter("");
     // Sort state diurus oleh `useAdminTable` — `router.replace(pathname)`
     // di bawah akan trigger hook untuk clear sort_by/sort_dir dari URL.
     router.replace(pathname);
@@ -380,6 +427,15 @@ export function AdminListPage<T extends { id: string }>({
       onRemove: () => setFilterParams({ claim_type: undefined }),
     });
   }
+  if (booleanFilter && activeBooleanFilter) {
+    const opt = booleanFilter.options.find((o) => o.value === activeBooleanFilter);
+    chips.push({
+      key: booleanFilter.paramName,
+      label: `${booleanFilter.label}: ${opt?.label ?? activeBooleanFilter}`,
+      onRemove: () =>
+        setFilterParams({ [booleanFilter.paramName]: undefined }),
+    });
+  }
   if (sortBy) {
     chips.push({
       key: "sort",
@@ -398,6 +454,9 @@ export function AdminListPage<T extends { id: string }>({
     if (dateField) params.set("date_field", activeDateField);
     if (product) params.set("product", product);
     if (claimType) params.set("claim_type", claimType);
+    if (booleanFilter && activeBooleanFilter) {
+      params.set(booleanFilter.paramName, activeBooleanFilter);
+    }
     if (sortBy) params.set("sort_by", sortBy);
     if (sortBy) params.set("sort_dir", sortDir);
     return `${API_BASE}${endpoint}?${params.toString()}`;
@@ -409,6 +468,7 @@ export function AdminListPage<T extends { id: string }>({
     activeDateField,
     product,
     claimType,
+    activeBooleanFilter,
     sortBy,
     sortDir,
     endpoint,
@@ -533,6 +593,18 @@ export function AdminListPage<T extends { id: string }>({
               ]}
               ariaLabel="Tipe klaim"
               width={170}
+            />
+          )}
+
+          {/* Boolean-style single-select filter (e.g. is_active) */}
+          {booleanFilter && (
+            <FilterSelect
+              label={booleanFilter.label}
+              value={activeBooleanFilter}
+              onChange={onBooleanFilterChange}
+              options={booleanFilter.options}
+              ariaLabel={booleanFilter.label}
+              width={180}
             />
           )}
 

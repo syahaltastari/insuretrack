@@ -9,6 +9,7 @@ import { clearAdminToken, getAdminToken } from "@insuretrack/api-client";
 
 const navItems: Array<{ href: string; label: string; icon: IconName; superAdminOnly?: boolean }> = [
   { href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
+  { href: "/admin/customers", label: "Customer", icon: "UserCircle" },
   { href: "/admin/registrations", label: "Registrasi", icon: "ClipboardList" },
   { href: "/admin/invoices", label: "Invoice", icon: "Receipt" },
   { href: "/admin/policies", label: "Polis", icon: "FileText" },

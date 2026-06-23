@@ -8,7 +8,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -18,100 +17,13 @@ use crate::{
     dto::{DashboardStats, LoginRequest, LoginResponse},
     error::{AppError, AppResult},
     repo::{filters as filters_helper, Page, PageQuery},
+    routes::util::{csv_response, ListFormatQuery},
     services::{
         audit::{write as audit_write, AuditEntry},
         dashboard,
     },
     state::AppState,
 };
-
-/// Query string for list endpoints: when `format=csv`, return all rows
-/// as CSV instead of paginated JSON. `q` and `status` are reused from
-/// PageQuery so the existing filters still apply.
-#[derive(Debug, Deserialize)]
-struct ListFormatQuery {
-    #[serde(default)]
-    format: Option<String>,
-}
-
-impl ListFormatQuery {
-    fn is_csv(&self) -> bool {
-        self.format.as_deref() == Some("csv")
-    }
-}
-
-/// Escape a single CSV field per RFC 4180.
-fn csv_escape(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
-}
-
-#[cfg(test)]
-mod csv_tests {
-    use super::*;
-
-    #[test]
-    fn passes_through_plain_strings() {
-        assert_eq!(csv_escape("hello"), "hello");
-        assert_eq!(csv_escape("REG-202606-000001"), "REG-202606-000001");
-        assert_eq!(csv_escape(""), "");
-    }
-
-    #[test]
-    fn wraps_values_with_comma() {
-        assert_eq!(csv_escape("Doe, John"), r#""Doe, John""#);
-    }
-
-    #[test]
-    fn doubles_inner_quotes() {
-        assert_eq!(csv_escape(r#"she said "hi""#), r#""she said ""hi""""#);
-    }
-
-    #[test]
-    fn wraps_values_with_newlines() {
-        assert_eq!(csv_escape("line1\nline2"), "\"line1\nline2\"");
-        assert_eq!(csv_escape("line1\r\nline2"), "\"line1\r\nline2\"");
-    }
-}
-
-/// Build a CSV download response. `headers` is the column labels; `rows`
-/// is the cell text per row (Decimal / NaiveDate / Option<…> should be
-/// pre-formatted to String before calling).
-fn csv_response(headers: &[&str], rows: Vec<Vec<String>>, filename: &str) -> Response {
-    let mut s = String::new();
-    s.push_str(
-        &headers
-            .iter()
-            .map(|h| csv_escape(h))
-            .collect::<Vec<_>>()
-            .join(","),
-    );
-    s.push_str("\r\n");
-    for row in rows {
-        s.push_str(
-            &row.iter()
-                .map(|c| csv_escape(c))
-                .collect::<Vec<_>>()
-                .join(","),
-        );
-        s.push_str("\r\n");
-    }
-    let mut resp = (StatusCode::OK, s).into_response();
-    resp.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/csv; charset=utf-8"),
-    );
-    let today = Utc::now().format("%Y-%m-%d");
-    let safe_name = format!("{}-{}.csv", filename, today);
-    let disp = format!("attachment; filename=\"{}\"", safe_name);
-    if let Ok(v) = HeaderValue::from_str(&disp) {
-        resp.headers_mut().insert(header::CONTENT_DISPOSITION, v);
-    }
-    resp
-}
 
 pub fn router() -> Router<AppState> {
     Router::new()
