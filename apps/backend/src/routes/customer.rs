@@ -44,7 +44,10 @@ use crate::{
     services::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
-        pdf::{render_invoice as render_invoice_pdf, InvoicePdfInput},
+        pdf::{
+            render_invoice as render_invoice_pdf, InvoicePdfInput,
+            ParticipantSummary as PdfParticipant,
+        },
     },
     state::AppState,
 };
@@ -2023,14 +2026,17 @@ async fn submit_insurance_application(
     // Insert registration row. Untuk INSTANSI, sertakan applicant_type +
     // company_* fields. beneficiary_name hanya untuk INDIVIDU (peserta
     // Instansi punya beneficiary_name masing-masing di tabel participants).
+    // plan_code (LIFE_BASIC, PA_STANDARD, dll) di-bind untuk semua — dipakai
+    // oleh invoice/receipt/list-view untuk render plan tier (lihat
+    // migration 0018).
     let reg_id: (Uuid,) = match data.applicant_type {
         crate::dto::ApplicantType::Individu => {
             sqlx::query_as(
                 r#"
             INSERT INTO registrations
               (registration_no, customer_id, product, sum_assured, coverage_term,
-               status, applicant_type, beneficiary_name)
-            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INDIVIDU', $6)
+               status, applicant_type, beneficiary_name, plan_code)
+            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INDIVIDU', $6, $7)
             RETURNING id
             "#,
             )
@@ -2040,6 +2046,7 @@ async fn submit_insurance_application(
             .bind(plan.sum_assured)
             .bind(data.coverage_term)
             .bind(data.beneficiary_name.as_deref().map(str::trim))
+            .bind(&data.plan_code)
             .fetch_one(&mut *tx)
             .await?
         }
@@ -2048,8 +2055,8 @@ async fn submit_insurance_application(
                 r#"
             INSERT INTO registrations
               (registration_no, customer_id, product, sum_assured, coverage_term,
-               status, applicant_type, company_name, company_npwp, company_industry)
-            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INSTANSI', $6, $7, $8)
+               status, applicant_type, company_name, company_npwp, company_industry, plan_code)
+            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'INSTANSI', $6, $7, $8, $9)
             RETURNING id
             "#,
             )
@@ -2061,6 +2068,7 @@ async fn submit_insurance_application(
             .bind(data.company_name.as_deref().map(str::trim))
             .bind(data.company_npwp.as_deref().map(str::trim))
             .bind(data.company_industry.as_deref().map(str::trim))
+            .bind(&data.plan_code)
             .fetch_one(&mut *tx)
             .await?
         }
@@ -2112,6 +2120,34 @@ async fn submit_insurance_application(
     // (mirror pattern payment_webhook di public.rs:292 — agar policy/invoice
     // row tetap exist kalau storage atau email gagal).
     let product_name = product_name_from_code(plan.product_code);
+    // Applicant type sebagai &'static str — pattern sama dengan existing
+    // struct field, source dari enum yang di-convert ke uppercase.
+    let applicant_type_str: &'static str = match data.applicant_type {
+        crate::dto::ApplicantType::Individu => "INDIVIDU",
+        crate::dto::ApplicantType::Instansi => "INSTANSI",
+    };
+    // Beneficiary hanya di-render untuk produk LIFE (caller pre-filter,
+    // lihat juga validasi di validate_registration). PA/HEALTH di-pass
+    // None supaya layer PDF skip block-nya.
+    let beneficiary_for_invoice: Option<String> = if plan.product_code == "LIFE" {
+        data.beneficiary_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    } else {
+        None
+    };
+    // Per-peserta premium (INSTANSI only) — dihitung sebagai total_premium
+    // dibagi jumlah peserta. Untuk INDIVIDU, None.
+    let per_participant_premium: Option<Decimal> = if data.applicant_type
+        == crate::dto::ApplicantType::Instansi
+        && !data.participants.is_empty()
+    {
+        Some(total_premium / Decimal::from(data.participants.len() as u64))
+    } else {
+        None
+    };
     // Susun alamat lengkap multi-baris (PDF word-wraps di 38 char/line).
     // Order: jalan, RT/RW, kelurahan-kecamatan, kota-provinsi-kodepos.
     let customer_address = format!(
@@ -2130,6 +2166,23 @@ async fn submit_insurance_application(
         "FEMALE" => "Perempuan",
         _ => "—",
     };
+    // Peserta Instansi — di-pass ke invoice PDF untuk halaman lampiran
+    // "DAFTAR PESERTA". Empty Vec untuk alur INDIVIDU (helper di pdf.rs
+    // skip halaman lampiran kalau kosong).
+    let participants: Vec<PdfParticipant> = data
+        .participants
+        .iter()
+        .enumerate()
+        .map(|(i, p)| PdfParticipant {
+            no: (i + 1) as u32,
+            nik: p.nik.clone(),
+            full_name: p.full_name.clone(),
+            birth_place: p.birth_place.clone(),
+            birth_date: p.birth_date,
+            gender: p.gender.clone(),
+            beneficiary_name: p.beneficiary_name.clone(),
+        })
+        .collect();
     let pdf_bytes = render_invoice_pdf(&InvoicePdfInput {
         invoice_no: &invoice_no,
         registration_no: &registration_no,
@@ -2141,13 +2194,29 @@ async fn submit_insurance_application(
         customer_email: &data.email,
         customer_mobile: &data.mobile_number,
         customer_address: &customer_address,
+        product_code: plan.product_code,
         product_name,
+        plan_tier: Some(plan.tier.to_string()),
         sum_assured: plan.sum_assured,
         premium: total_premium,
         coverage_term_years: data.coverage_term,
         due_date,
         status: "UNPAID",
         created_at: Utc::now().date_naive(),
+        applicant_type: applicant_type_str,
+        company_name: data
+            .company_name
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_string),
+        company_npwp: data
+            .company_npwp
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_string),
+        beneficiary_name: beneficiary_for_invoice,
+        per_participant_premium,
+        participants,
     })?;
     let pdf_ref = state
         .storage
@@ -2283,6 +2352,16 @@ struct InvoiceRow {
     paid_at: Option<chrono::DateTime<chrono::Utc>>,
     pdf_path: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
+    /// "INDIVIDU" | "INSTANSI" — sama seperti admin InvoiceRow.
+    applicant_type: String,
+    /// 1 untuk INDIVIDU, COUNT(registration_members) untuk INSTANSI.
+    participant_count: i64,
+    /// Kode produk (`"LIFE" | "PERSONAL_ACCIDENT" | "HEALTH"`) — untuk
+    /// display "Produk" di list view (frontend resolve via productLabel).
+    product: String,
+    /// Composite plan code (mis. `"LIFE_BASIC"`) — nullable untuk rows
+    /// lama (registrasi sebelum migration 0018).
+    plan_code: Option<String>,
 }
 
 async fn list_invoices(
@@ -2315,7 +2394,14 @@ async fn list_invoices(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no,
                i.premium_amount, i.due_date, i.status, i.paid_at,
-               i.pdf_path, i.created_at
+               i.pdf_path, i.created_at,
+               r.applicant_type,
+               CASE r.applicant_type
+                   WHEN 'INDIVIDU' THEN 1
+                   ELSE (SELECT COUNT(*) FROM registration_members rm WHERE rm.registration_id = r.id)
+               END AS participant_count,
+               r.product,
+               r.plan_code
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
          WHERE r.customer_id = $1
@@ -2349,7 +2435,14 @@ async fn get_invoice(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no,
                i.premium_amount, i.due_date, i.status, i.paid_at,
-               i.pdf_path, i.created_at
+               i.pdf_path, i.created_at,
+               r.applicant_type,
+               CASE r.applicant_type
+                   WHEN 'INDIVIDU' THEN 1
+                   ELSE (SELECT COUNT(*) FROM registration_members rm WHERE rm.registration_id = r.id)
+               END AS participant_count,
+               r.product,
+               r.plan_code
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
          WHERE r.customer_id = $1 AND i.id = $2

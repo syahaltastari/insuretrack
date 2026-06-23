@@ -34,8 +34,8 @@ use crate::{
         audit::{write as audit_write, AuditEntry},
         email::{send as send_email, Email, EmailType},
         pdf::{
-            render as render_pdf, render_receipt as render_receipt_pdf, PolicyPdfInput,
-            ReceiptPdfInput,
+            render as render_pdf, render_receipt as render_receipt_pdf, ParticipantSummary,
+            PolicyPdfInput, ReceiptPdfInput,
         },
     },
     state::AppState,
@@ -213,18 +213,29 @@ async fn payment_webhook(
     // Read registration + customer info to render PDF. Pakai struct
     // dengan FromRow derive (lebih reliable dari tuple besar — sqlx
     // tuple impl terbatas).
+    //
+    // Field `c.nik/address/birth_date/email` di-decode sebagai `Option`
+    // karena kolom tersebut NULLABLE di `customers` per
+    // 0008_relax_customer_for_split.sql — customer yang dibuat via
+    // POST /api/public/customers (portal_status PENDING) belum lengkapi
+    // form registrasi, jadi kolom-kolom ini masih NULL. Decode sebagai
+    // `String` non-Option akan trigger `UnexpectedNullError` saat sqlx
+    // coba konversi NULL → String. `unwrap_or_default()` di destructure
+    // supaya downstream (e-Policy, receipt, email) tetap dapat String
+    // non-null dengan placeholder.
     #[derive(sqlx::FromRow)]
     struct RegAndCustomer {
         registration_no: String,
         product: String,
+        plan_code: Option<String>,
         sum_assured: Decimal,
         premium: Decimal,
         coverage_term: i32,
         full_name: String,
-        nik: String,
-        address: String,
-        birth_date: chrono::NaiveDate,
-        email: String,
+        nik: Option<String>,
+        address: Option<String>,
+        birth_date: Option<chrono::NaiveDate>,
+        email: Option<String>,
         applicant_type: String,
         birth_place: Option<String>,
         gender: Option<String>,
@@ -238,6 +249,7 @@ async fn payment_webhook(
         r#"
         SELECT r.registration_no,
                r.product,
+               r.plan_code,
                r.sum_assured,
                i.premium_amount AS premium,
                r.coverage_term,
@@ -270,10 +282,16 @@ async fn payment_webhook(
     let premium = reg_row.premium;
     let coverage_term = reg_row.coverage_term;
     let full_name = reg_row.full_name;
-    let nik = reg_row.nik;
-    let address = reg_row.address;
-    let birth_date = reg_row.birth_date;
-    let email = reg_row.email;
+    // Field nullable — fallback ke default kosong. Customer PENDING yang
+    // di-webhook akan dapat placeholder di e-Policy/email; ini lebih
+    // baik dari 500 error yang block seluruh pipeline.
+    let nik = reg_row.nik.unwrap_or_default();
+    let address = reg_row.address.unwrap_or_default();
+    // NaiveDate::default() = 1970-01-01 (epoch) → sentinel "data belum
+    // diisi" supaya format_date_id tidak error dan PDF menampilkan
+    // tanggal yang jelas-jelas invalid.
+    let birth_date = reg_row.birth_date.unwrap_or_default();
+    let email = reg_row.email.unwrap_or_default();
     let applicant_type = reg_row.applicant_type;
     let birth_place = reg_row.birth_place;
     let gender = reg_row.gender;
@@ -469,6 +487,14 @@ async fn payment_webhook(
 
     // Render PDFs + save (di luar tx — mirror pattern invoice PDF).
     let product_name = product_name_from_code(&product);
+    // Plan tier di-derive dari plan_code (e.g. "LIFE_BASIC" → "BASIC").
+    // Sebelumnya hardcoded None dengan TODO derive-from-product+sum_assured
+    // — setelah migration 0018 plan_code ada di registrations, langsung
+    // derive di sini.
+    let plan_tier_for_policy: Option<String> = reg_row
+        .plan_code
+        .as_deref()
+        .and_then(|code| code.rsplit('_').next().map(str::to_string));
     for (
         policy_id,
         policy_no,
@@ -504,7 +530,7 @@ async fn payment_webhook(
             customer_email: p_email.as_deref().unwrap_or(""),
             customer_mobile: p_mobile.as_deref().unwrap_or(""),
             product_name,
-            plan_tier: None, // TODO: derive from product+sum_assured lookup
+            plan_tier: plan_tier_for_policy.clone(),
             sum_assured,
             premium: if applicant_type == "INSTANSI" {
                 per_participant_premium
@@ -534,19 +560,97 @@ async fn payment_webhook(
     // Invoice adalah tagihan (immutable post-issue); receipt adalah bukti resmi
     // bahwa pembayaran telah diterima, di-create sekali saat webhook PAID masuk.
     let receipt_paid_amount = body.paid_amount.unwrap_or(premium);
+    // Peserta Instansi untuk halaman lampiran "DAFTAR PESERTA" di receipt.
+    // Untuk INDIVIDU, kosongkan Vec supaya helper skip halaman lampiran.
+    let receipt_participants: Vec<ParticipantSummary> = if applicant_type == "INSTANSI" {
+        issued_policies
+            .iter()
+            .enumerate()
+            .map(
+                |(
+                    i,
+                    (
+                        _,
+                        _,
+                        _,
+                        p_nik,
+                        p_name,
+                        p_birth_date,
+                        _,
+                        p_birth_place,
+                        p_gender,
+                        _,
+                        _,
+                        p_beneficiary,
+                    ),
+                )| {
+                    ParticipantSummary {
+                        no: (i + 1) as u32,
+                        nik: p_nik.clone(),
+                        full_name: p_name.clone(),
+                        birth_place: p_birth_place.clone().unwrap_or_default(),
+                        birth_date: *p_birth_date,
+                        gender: p_gender.clone().unwrap_or_default(),
+                        beneficiary_name: p_beneficiary.clone(),
+                    }
+                },
+            )
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // Plan tier di-derive dari plan_code (e.g. "LIFE_BASIC" → "BASIC").
+    // None kalau plan_code null (rows lama sebelum migration 0018).
+    let plan_tier_for_receipt: Option<String> = reg_row
+        .plan_code
+        .as_deref()
+        .and_then(|code| code.rsplit('_').next().map(str::to_string));
+    // Beneficiary di receipt: LIFE only, dan ambil dari registration
+    // (bukan per-peserta). Untuk INSTANSI + LIFE, beneficiary per-peserta
+    // ada di lampiran; di cover page, pakai beneficiary_name registration
+    // (kalau ada) sebagai representatif.
+    let beneficiary_for_receipt: Option<String> = if product == "LIFE" {
+        beneficiary_name_reg
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    } else {
+        None
+    };
+    // Per-peserta premium untuk breakdown (INSTANSI only). Di-derive dari
+    // total premium / jumlah peserta.
+    let per_participant_for_receipt: Option<Decimal> = if applicant_type == "INSTANSI" {
+        let n = issued_policies.len();
+        if n > 0 {
+            Some(receipt_paid_amount / Decimal::from(n as u64))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let receipt_bytes = render_receipt_pdf(&ReceiptPdfInput {
         invoice_no: &body.invoice_no,
         registration_no: &registration_no,
         customer_name: &full_name,
         customer_nik: &nik,
         customer_email: &email,
+        product_code: &product,
         product_name,
+        plan_tier: plan_tier_for_receipt,
         coverage_term_years: coverage_term,
         sum_assured,
         paid_amount: receipt_paid_amount,
         payment_date: effective_date,
         payment_channel: body.payment_channel.as_deref(),
         payment_reference: body.payment_reference.as_deref(),
+        applicant_type: &applicant_type,
+        company_name: company_name.clone(),
+        company_npwp: company_npwp.clone(),
+        beneficiary_name: beneficiary_for_receipt,
+        per_participant_premium: per_participant_for_receipt,
+        participants: receipt_participants,
     })?;
     let receipt_ref = state
         .storage

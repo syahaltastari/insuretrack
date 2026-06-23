@@ -87,13 +87,21 @@ pub async fn write_invoice_pdf(
         customer_email: "customer@example.com",
         customer_mobile: "6281234567890",
         customer_address: "Alamat customer (placeholder seeder)",
+        product_code: "LIFE", // Seeder step 5: semua invoice pakai LIFE.
         product_name: &draft.product,
+        plan_tier: None, // Seeder tidak menyimpan tier — caller bisa extend.
         sum_assured: draft.sum_assured,
         premium: draft.premium,
         coverage_term_years: 1,
         due_date: draft.due_date,
         status: &draft.status,
         created_at: draft.created_at,
+        applicant_type: "INDIVIDU", // Seeder step 5: hanya INDIVIDU.
+        company_name: None,
+        company_npwp: None,
+        beneficiary_name: None,
+        per_participant_premium: None,
+        participants: Vec::new(), // Seeder tidak punya data peserta → skip lampiran.
     };
 
     let bytes = render_invoice(&input).map_err(|e| anyhow::anyhow!("render invoice pdf: {e}"))?;

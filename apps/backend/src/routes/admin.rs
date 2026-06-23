@@ -421,8 +421,10 @@ struct RegistrationRow {
     registration_no: String,
     customer_id: Uuid,
     customer_name: String,
-    customer_email: String,
-    customer_mobile: String,
+    // Kolom NULLABLE per 0008_relax_customer_for_split.sql — customer PENDING
+    // (dibuat via POST /api/public/customers) belum lengkapi form registrasi.
+    customer_email: Option<String>,
+    customer_mobile: Option<String>,
     product: String,
     sum_assured: Decimal,
     coverage_term: i32,
@@ -471,8 +473,8 @@ async fn list_registrations(
                 vec![
                     r.registration_no.clone(),
                     r.customer_name.clone(),
-                    r.customer_email.clone(),
-                    r.customer_mobile.clone(),
+                    r.customer_email.clone().unwrap_or_default(),
+                    r.customer_mobile.clone().unwrap_or_default(),
                     r.product.clone(),
                     r.sum_assured.to_string(),
                     r.coverage_term.to_string(),
@@ -554,8 +556,9 @@ struct RegistrationDetail {
     registration_no: String,
     customer_id: Uuid,
     customer_name: String,
-    customer_email: String,
-    customer_nik: String,
+    // NULLABLE per 0008_relax_customer_for_split.sql & 0017_registration_members.sql
+    customer_email: Option<String>,
+    customer_nik: Option<String>,
     product: String,
     sum_assured: Decimal,
     coverage_term: i32,
@@ -602,14 +605,30 @@ struct InvoiceRow {
     invoice_no: String,
     registration_no: String,
     customer_name: String,
-    customer_email: String,
-    customer_mobile: String,
+    // NULLABLE per 0008_relax_customer_for_split.sql & 0017_registration_members.sql
+    customer_email: Option<String>,
+    customer_mobile: Option<String>,
     premium_amount: Decimal,
     due_date: chrono::NaiveDate,
     status: String,
     paid_at: Option<chrono::DateTime<chrono::Utc>>,
     pdf_path: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
+    /// "INDIVIDU" | "INSTANSI" — wire format uppercase, sama dengan
+    /// registrations.applicant_type (lihat 0013_group_registration.sql).
+    /// Di-decode sebagai String polos (bukan enum) supaya FromRow derive
+    /// tidak perlu tambahan impl; DB sudah menyimpan uppercase.
+    applicant_type: String,
+    /// Jumlah peserta: 1 untuk INDIVIDU, COUNT(registration_members) untuk
+    /// INSTANSI. Di-compute di SQL dengan CASE supaya frontend tidak perlu
+    /// tahu logic applicant_type untuk display count.
+    participant_count: i64,
+    /// Kode produk (`"LIFE" | "PERSONAL_ACCIDENT" | "HEALTH"`) — untuk
+    /// display "Produk" di list view (frontend resolve via productLabel).
+    product: String,
+    /// Composite plan code (mis. `"LIFE_BASIC"`) — nullable untuk rows
+    /// lama (registrasi sebelum migration 0018).
+    plan_code: Option<String>,
 }
 
 async fn list_invoices(
@@ -684,7 +703,14 @@ async fn list_invoices(
             r#"
             SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
                    c.email AS customer_email, c.mobile_number AS customer_mobile,
-                   i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
+                   i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at,
+                   r.applicant_type,
+                   CASE r.applicant_type
+                       WHEN 'INDIVIDU' THEN 1
+                       ELSE (SELECT COUNT(*) FROM registration_members rm WHERE rm.registration_id = r.id)
+                   END AS participant_count,
+                   r.product,
+                   r.plan_code
               FROM invoices i
               JOIN registrations r ON r.id = i.registration_id
               JOIN customers c     ON c.id = r.customer_id
@@ -714,13 +740,17 @@ async fn list_invoices(
                     r.invoice_no.clone(),
                     r.registration_no.clone(),
                     r.customer_name.clone(),
-                    r.customer_email.clone(),
-                    r.customer_mobile.clone(),
+                    r.customer_email.clone().unwrap_or_default(),
+                    r.customer_mobile.clone().unwrap_or_default(),
+                    r.applicant_type.clone(),
+                    r.participant_count.to_string(),
                     r.premium_amount.to_string(),
                     r.due_date.to_string(),
                     r.status.clone(),
                     r.paid_at.map(|d| d.to_rfc3339()).unwrap_or_default(),
                     r.created_at.to_rfc3339(),
+                    r.product.clone(),
+                    r.plan_code.clone().unwrap_or_default(),
                 ]
             })
             .collect();
@@ -731,11 +761,15 @@ async fn list_invoices(
                 "customer_name",
                 "customer_email",
                 "customer_mobile",
+                "applicant_type",
+                "participant_count",
                 "premium_amount",
                 "due_date",
                 "status",
                 "paid_at",
                 "created_at",
+                "product",
+                "plan_code",
             ],
             body,
             "invoices",
@@ -781,7 +815,14 @@ async fn list_invoices(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
                c.email AS customer_email, c.mobile_number AS customer_mobile,
-               i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
+               i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at,
+               r.applicant_type,
+               CASE r.applicant_type
+                   WHEN 'INDIVIDU' THEN 1
+                   ELSE (SELECT COUNT(*) FROM registration_members rm WHERE rm.registration_id = r.id)
+               END AS participant_count,
+               r.product,
+               r.plan_code
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
           JOIN customers c     ON c.id = r.customer_id
@@ -824,7 +865,14 @@ async fn get_invoice(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
                c.email AS customer_email, c.mobile_number AS customer_mobile,
-               i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at
+               i.premium_amount, i.due_date, i.status, i.paid_at, i.pdf_path, i.created_at,
+               r.applicant_type,
+               CASE r.applicant_type
+                   WHEN 'INDIVIDU' THEN 1
+                   ELSE (SELECT COUNT(*) FROM registration_members rm WHERE rm.registration_id = r.id)
+               END AS participant_count,
+               r.product,
+               r.plan_code
           FROM invoices i
           JOIN registrations r ON r.id = i.registration_id
           JOIN customers c     ON c.id = r.customer_id
@@ -908,8 +956,9 @@ struct PolicyRow {
     policy_no: String,
     registration_no: String,
     customer_name: String,
-    customer_email: String,
-    customer_mobile: String,
+    // NULLABLE per 0008_relax_customer_for_split.sql & 0017_registration_members.sql
+    customer_email: Option<String>,
+    customer_mobile: Option<String>,
     product: String,
     sum_assured: Decimal,
     premium: Decimal,
@@ -1014,8 +1063,8 @@ async fn list_policies(
                     r.policy_no.clone(),
                     r.registration_no.clone(),
                     r.customer_name.clone(),
-                    r.customer_email.clone(),
-                    r.customer_mobile.clone(),
+                    r.customer_email.clone().unwrap_or_default(),
+                    r.customer_mobile.clone().unwrap_or_default(),
                     r.product.clone(),
                     r.sum_assured.to_string(),
                     r.premium.to_string(),
