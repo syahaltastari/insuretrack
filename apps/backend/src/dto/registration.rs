@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Tipe pendaftar. Wire format uppercase (`INDIVIDU` | `INSTANSI`)
 /// untuk konsistensi dengan status enum lain (OPEN/CLOSED, dll).
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ApplicantType {
     Individu,
     Instansi,

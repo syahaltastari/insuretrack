@@ -303,3 +303,87 @@ async fn webhook_issues_exactly_n_policies_for_instansi() {
         assert_eq!(p, rust_decimal::Decimal::from(5_000_000));
     }
 }
+
+/// Regression: customer PENDING (dibuat via POST /api/public/customers)
+/// punya kolom `nik/address/birth_date/email` NULL. Webhook harus
+/// handle ini tanpa 500 (`UnexpectedNullError`). Lihat
+/// `RegAndCustomer` decode di `routes/public.rs`.
+///
+/// Tanpa fix: sqlx gagal decode `c.address` (NULL) → String → 500.
+/// Dengan fix: decode `Option<T>` + `unwrap_or_default()` → webhook
+/// return 200 + 1 policy issued (placeholder values di PDF/email).
+#[tokio::test]
+#[serial]
+async fn webhook_handles_customer_with_null_profile() {
+    let app = common::spawn_app().await;
+
+    // Insert customer dengan profil MINIMAL (simulasi PENDING portal signup).
+    // Field `nik/address/birth_date/email` di-skip → NULL per schema
+    // (0008_relax_customer_for_split.sql).
+    let email = format!("pending-{}@test.local", Uuid::new_v4());
+    let (customer_id,): (Uuid,) = sqlx::query_as(
+        r#"INSERT INTO customers (full_name, email, mobile_number, password_hash, portal_status)
+           VALUES ('Pending User', $1, '081234567890', 'argon2id$placeholder', 'PENDING')
+           RETURNING id"#,
+    )
+    .bind(&email)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    // Registration + invoice (INDIVIDU) — minimal. `registrations` table
+    // tidak punya kolom identitas (semua di customers.id via FK).
+    let now = Utc::now();
+    let reg_no = format!("REG-{}-000003", now.format("%Y%m"));
+    let inv_no = format!("INV-{}-000003", now.format("%Y%m"));
+    let (reg_id,): (Uuid,) = sqlx::query_as(
+        r#"INSERT INTO registrations
+             (registration_no, customer_id, product, sum_assured, coverage_term,
+              status, applicant_type)
+           VALUES ($1, $2, 'LIFE', 100000000, 10, 'PENDING', 'INDIVIDU')
+           RETURNING id"#,
+    )
+    .bind(&reg_no)
+    .bind(customer_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"INSERT INTO invoices (invoice_no, registration_id, premium_amount, due_date, status)
+           VALUES ($1, $2, 9000000, now() + interval '7 days', 'UNPAID')"#,
+    )
+    .bind(&inv_no)
+    .bind(reg_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    // Hit webhook — tanpa fix, ini return 500 UnexpectedNullError.
+    let (status, value) = call_webhook(
+        &app,
+        &app.config.payment_webhook_secret,
+        json!({
+            "invoice_no": inv_no,
+            "payment_status": "PAID",
+            "payment_date": "2026-06-18",
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "webhook harus 200 OK walaupun customer PENDING (NULL address/nik/birth_date), \
+         dapat body: {value}"
+    );
+    assert_eq!(value["replayed"], json!(false));
+
+    // Policy tetap ter-issue walaupun customer profile belum lengkap.
+    let policy_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM policies WHERE registration_id = $1")
+            .bind(reg_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(policy_count.0, 1, "harus issue 1 policy");
+}
