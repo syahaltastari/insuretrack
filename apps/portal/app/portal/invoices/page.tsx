@@ -6,8 +6,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { StatusBadge } from "@insuretrack/ui";
-import { API_BASE } from "@insuretrack/api-client";
-import { getCustomerToken } from "@insuretrack/api-client";
+import { API_BASE, formatProductPlan, getCustomerToken } from "@insuretrack/api-client";
 
 type Invoice = {
   id: string;
@@ -19,6 +18,14 @@ type Invoice = {
   paid_at: string | null;
   pdf_path: string | null;
   created_at: string;
+  /** "INDIVIDU" | "INSTANSI" — lihat 0013_group_registration.sql. */
+  applicant_type: "INDIVIDU" | "INSTANSI";
+  /** 1 untuk INDIVIDU, N untuk INSTANSI (di-compute di SQL). */
+  participant_count: number;
+  /** Kode produk — lihat registrations.product + migration 0018. */
+  product: string;
+  /** Composite plan code (mis. `"LIFE_BASIC"`) — nullable untuk rows lama. */
+  plan_code: string | null;
 };
 
 type StatusFilter = "ALL" | "UNPAID" | "PAID" | "EXPIRED" | "CANCELLED";
@@ -263,6 +270,9 @@ export default function PortalInvoicesPage() {
               <tr>
                 <th>No. Invoice</th>
                 <th>No. Reg</th>
+                <th>Produk</th>
+                <th>Tipe</th>
+                <th style={{ textAlign: "right" }}>Peserta</th>
                 <th style={{ textAlign: "right" }}>Premi</th>
                 <th>Jatuh Tempo</th>
                 <th>Status</th>
@@ -282,6 +292,21 @@ export default function PortalInvoicesPage() {
                   <td className="mono">{inv.invoice_no}</td>
                   <td className="mono" style={{ color: "var(--warm-silver)" }}>
                     {inv.registration_no}
+                  </td>
+                  <td style={{ color: "var(--warm-charcoal)", fontSize: "0.85rem" }}>
+                    {formatProductPlan(inv.product, inv.plan_code)}
+                  </td>
+                  <td>
+                    <span
+                      className={`clay-badge ${
+                        inv.applicant_type === "INSTANSI" ? "blueberry" : "ube"
+                      }`}
+                    >
+                      {inv.applicant_type === "INSTANSI" ? "Instansi" : "Individu"}
+                    </span>
+                  </td>
+                  <td className="mono" style={{ textAlign: "right" }}>
+                    {inv.participant_count}
                   </td>
                   <td className="mono" style={{ textAlign: "right", fontWeight: 600 }}>
                     {formatIDR(inv.premium_amount)}

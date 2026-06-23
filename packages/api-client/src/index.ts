@@ -17,6 +17,7 @@ export type {
   ProductPlan,
   TierCode,
 } from "./dto/products";
+export { formatProductPlan, productLabel, tierLabel } from "./dto/products";
 export type {
   ApplicantType,
   ParticipantData,
