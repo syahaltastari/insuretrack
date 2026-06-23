@@ -7,6 +7,16 @@
 //! Breakdown queries (status / product counts) are NOT date-filtered —
 //! they always reflect the current state. This matches typical dashboard UX:
 //! trend charts respect the range, distribution charts always show "today".
+//!
+//! Optional filters (since admin-dashboard-enhancement):
+//! - `product` (LIFE | PERSONAL_ACCIDENT | HEALTH) — narrows trend & breakdown
+//!   counts to one product. Applied at every level.
+//! - `applicant_type` (INDIVIDU | INSTANSI) — narrows trend & breakdown
+//!   counts to one applicant type. Applied at every level.
+//!
+//! Period compare: when `compare_with_previous = true`, backend re-runs the
+//! six headline totals against `created_at <= from - 1` so the frontend can
+//! show "X baru dalam 30 hari terakhir" (delta = current - previous).
 
 use chrono::{Datelike, Duration, NaiveDate};
 use rust_decimal::Decimal;
@@ -78,6 +88,15 @@ pub struct DashboardQuery {
     pub to: Option<NaiveDate>,
     /// Bucket size. Optional — auto-picked from range if omitted.
     pub granularity: Option<Granularity>,
+    /// Filter by product code (LIFE | PERSONAL_ACCIDENT | HEALTH).
+    pub product: Option<String>,
+    /// Filter by applicant type (INDIVIDU | INSTANSI).
+    pub applicant_type: Option<String>,
+    /// When true, additionally compute headline totals as of the day
+    /// BEFORE `from` so the frontend can show period-over-period delta
+    /// (e.g. "+12 registrasi dalam 30 hari terakhir").
+    #[serde(default)]
+    pub compare_with_previous: Option<bool>,
 }
 
 impl DashboardQuery {
@@ -102,6 +121,24 @@ impl DashboardQuery {
             }
         };
         (default_from, to, default_gran)
+    }
+
+    /// Validate that filter values are within the allowed enum sets. Returns
+    /// `Some("...")` with a sanitised value when valid, `None` when omitted.
+    /// Backend logika: kita inlining string filter ke SQL, jadi range check
+    /// di sini WAJIB — bukan UX nice-to-have. Wire formatnya uppercase.
+    pub fn validated_product(&self) -> Option<String> {
+        match self.product.as_deref() {
+            Some("LIFE") | Some("PERSONAL_ACCIDENT") | Some("HEALTH") => self.product.clone(),
+            _ => None,
+        }
+    }
+
+    pub fn validated_applicant_type(&self) -> Option<String> {
+        match self.applicant_type.as_deref() {
+            Some("INDIVIDU") | Some("INSTANSI") => self.applicant_type.clone(),
+            _ => None,
+        }
     }
 }
 
@@ -142,23 +179,51 @@ pub struct BucketAmount {
     pub amount: Decimal,
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct StatusCount {
+    pub status: String,
+    pub count: i64,
+}
+
+/// Snapshot of headline totals for a single point in time, used to compute
+/// period-over-period deltas (e.g. "+12 registrasi dalam 30 hari terakhir").
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct DashboardSnapshot {
+    pub total_registrations: i64,
+    pub total_invoices: i64,
+    pub total_paid_invoices: i64,
+    pub total_unpaid_invoices: i64,
+    pub total_policies: i64,
+    pub total_premium_collected: Decimal,
+}
+
+/// Period comparison: `current` is the headline totals now; `previous` is
+/// the headline totals as of the day before the selected period started.
+/// Frontend computes `delta = current - previous` for each metric.
+#[derive(Debug, Serialize)]
+pub struct DashboardComparison {
+    /// Cutoff date for the previous snapshot (inclusive). Equal to `from - 1`.
+    pub as_of: NaiveDate,
+    pub current: DashboardSnapshot,
+    pub previous: DashboardSnapshot,
+}
+
 #[derive(Debug, Serialize)]
 pub struct DashboardCharts {
     pub granularity: Granularity,
     pub from: NaiveDate,
     pub to: NaiveDate,
+    pub product: Option<String>,
+    pub applicant_type: Option<String>,
     pub registrations_per_period: Vec<BucketCount>,
     pub policies_per_period: Vec<BucketCount>,
     pub revenue_per_period: Vec<BucketAmount>,
     pub invoice_status_breakdown: Vec<StatusCount>,
     pub claim_status_breakdown: Vec<StatusCount>,
     pub policy_product_breakdown: Vec<StatusCount>,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct StatusCount {
-    pub status: String,
-    pub count: i64,
+    /// Period comparison snapshot. `None` when `compare_with_previous` is
+    /// not requested (or when `from` is the first day of valid history).
+    pub comparison: Option<DashboardComparison>,
 }
 
 /// Build the contiguous list of bucket keys between `from` and `to`,
@@ -194,25 +259,67 @@ fn add_one_month(d: NaiveDate) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(d)
 }
 
+// ----- filter clause builders -----
+//
+// Karena `product` dan `applicant_type` divalidasi ke enum tertutup
+// (`DashboardQuery::validated_*`), string inlining ke SQL aman. Tidak
+// perlu parameterized binding — value space-nya kecil dan eksplisit.
+
+fn product_clause(product: &Option<String>) -> &'static str {
+    match product.as_deref() {
+        Some("LIFE") => " AND r.product = 'LIFE'",
+        Some("PERSONAL_ACCIDENT") => " AND r.product = 'PERSONAL_ACCIDENT'",
+        Some("HEALTH") => " AND r.product = 'HEALTH'",
+        _ => "",
+    }
+}
+
+fn applicant_type_clause(applicant_type: &Option<String>) -> &'static str {
+    match applicant_type.as_deref() {
+        Some("INDIVIDU") => " AND r.applicant_type = 'INDIVIDU'",
+        Some("INSTANSI") => " AND r.applicant_type = 'INSTANSI'",
+        _ => "",
+    }
+}
+
+fn extra_where(product: &Option<String>, applicant_type: &Option<String>) -> String {
+    let mut s = String::with_capacity(64);
+    s.push_str(product_clause(product));
+    s.push_str(applicant_type_clause(applicant_type));
+    s
+}
+
+/// Prefix untuk JOIN registrations agar filter applicant_type bisa di-apply.
+/// Source table punya `registration_id` (invoices, policies, claims via policy_id).
+/// Untuk registrations itself, return "" (filter langsung di registrations).
+fn join_registrations_via(source_col: &str) -> String {
+    format!(" JOIN registrations r ON r.id = {source_col}")
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn count_per_period(
     pool: &PgPool,
-    table: &str,
-    column: &str,
+    from_table: &str,
+    from_join: &str,
+    date_col: &str,
     granularity: Granularity,
     from: NaiveDate,
     to: NaiveDate,
+    extra_where_sql: &str,
 ) -> Result<Vec<BucketCount>, sqlx::Error> {
     let sql = format!(
         r#"
         SELECT to_char(date_trunc('{g}', {col}), 'YYYY-MM-DD') AS bucket,
                COUNT(*)::bigint                                AS count
-          FROM {tbl}
-         WHERE {col}::date BETWEEN $1 AND $2
+          FROM {tbl}{join}
+         WHERE {col}::date BETWEEN $1 AND $2{extra}
          GROUP BY 1
         "#,
         g = granularity.as_pg(),
-        col = column,
-        tbl = table,
+        col = date_col,
+        tbl = from_table,
+        join = from_join,
+        extra = extra_where_sql,
     );
     let rows: Vec<BucketCount> = sqlx::query_as(&sql)
         .bind(from)
@@ -225,28 +332,32 @@ async fn count_per_period(
 #[allow(clippy::too_many_arguments)]
 async fn sum_per_period(
     pool: &PgPool,
-    table: &str,
+    from_table: &str,
+    from_join: &str,
     amount_col: &str,
     date_col: &str,
     where_clause: &str,
     granularity: Granularity,
     from: NaiveDate,
     to: NaiveDate,
+    extra_where_sql: &str,
 ) -> Result<Vec<BucketAmount>, sqlx::Error> {
     let sql = format!(
         r#"
         SELECT to_char(date_trunc('{g}', {dc}), 'YYYY-MM-DD') AS bucket,
                COALESCE(SUM({ac}), 0)                       AS amount
-          FROM {tbl}
+          FROM {tbl}{join}
          WHERE {dc}::date BETWEEN $1 AND $2
-           AND {wc}
+           AND {wc}{extra}
          GROUP BY 1
         "#,
         g = granularity.as_pg(),
         dc = date_col,
         ac = amount_col,
-        tbl = table,
+        tbl = from_table,
+        join = from_join,
         wc = where_clause,
+        extra = extra_where_sql,
     );
     let rows: Vec<BucketAmount> = sqlx::query_as(&sql)
         .bind(from)
@@ -256,17 +367,135 @@ async fn sum_per_period(
     Ok(rows)
 }
 
-async fn count_group_by(
+/// Breakdown COUNT GROUP BY dengan filter product + applicant_type.
+/// Table bisa di-JOIN ke registrations via `join_sql` (biasanya
+/// `JOIN registrations r ON r.id = <table>.<col>`). Kalau table = registrations,
+/// pass `join_sql = ""` dan referensi kolom sebagai `r.<col>` di group_col.
+async fn count_group_by_filtered(
     pool: &PgPool,
-    table: &str,
-    column: &str,
+    from_table: &str,
+    join_sql: &str,
+    group_col: &str,
+    extra_where_sql: &str,
 ) -> Result<Vec<StatusCount>, sqlx::Error> {
     let sql = format!(
-        "SELECT {col} AS status, COUNT(*)::bigint AS count FROM {tbl} GROUP BY {col}",
-        col = column,
-        tbl = table,
+        r#"
+        SELECT {col} AS status, COUNT(*)::bigint AS count
+          FROM {tbl}{join}
+         WHERE 1=1{extra}
+         GROUP BY {col}
+        "#,
+        col = group_col,
+        tbl = from_table,
+        join = join_sql,
+        extra = extra_where_sql,
     );
     sqlx::query_as(&sql).fetch_all(pool).await
+}
+
+/// Headline totals for a single point in time. `as_of` filters by
+/// `created_at <= as_of` (or by status `PAID AND paid_at <= as_of` for
+/// paid-related counts) so we can compute "as of date X" snapshots.
+async fn snapshot_at(
+    pool: &PgPool,
+    as_of: NaiveDate,
+    product: &Option<String>,
+    applicant_type: &Option<String>,
+) -> Result<DashboardSnapshot, sqlx::Error> {
+    let prod = product_clause(product);
+    let app = applicant_type_clause(applicant_type);
+    // Registrations: created_at filter, no JOIN needed (registrations IS r).
+    let regs_sql = format!(
+        r#"
+        SELECT COUNT(*)::bigint
+          FROM registrations r
+         WHERE r.created_at::date <= $1{prod}{app}
+        "#,
+    );
+    // Invoices: JOIN via r.registration_id; total_collected filter on paid_at.
+    let inv_join = " JOIN registrations r ON r.id = i.registration_id";
+    let inv_total_sql = format!(
+        r#"
+        SELECT COUNT(*)::bigint
+          FROM invoices i{join}
+         WHERE i.created_at::date <= $1{prod}{app}
+        "#,
+        join = inv_join,
+    );
+    let inv_paid_sql = format!(
+        r#"
+        SELECT COUNT(*)::bigint
+          FROM invoices i{join}
+         WHERE i.status = 'PAID'
+           AND COALESCE(i.paid_at, i.created_at)::date <= $1{prod}{app}
+        "#,
+        join = inv_join,
+    );
+    let inv_unpaid_sql = format!(
+        r#"
+        SELECT COUNT(*)::bigint
+          FROM invoices i{join}
+         WHERE i.status = 'UNPAID'
+           AND i.created_at::date <= $1{prod}{app}
+        "#,
+        join = inv_join,
+    );
+    let inv_prem_sql = format!(
+        r#"
+        SELECT COALESCE(SUM(i.premium_amount), 0)
+          FROM invoices i{join}
+         WHERE i.status = 'PAID'
+           AND COALESCE(i.paid_at, i.created_at)::date <= $1{prod}{app}
+        "#,
+        join = inv_join,
+    );
+    // Policies: JOIN via r.registration_id.
+    let pol_join = " JOIN registrations r ON r.id = p.registration_id";
+    let pol_sql = format!(
+        r#"
+        SELECT COUNT(*)::bigint
+          FROM policies p{join}
+         WHERE p.created_at::date <= $1{prod}{app}
+        "#,
+        join = pol_join,
+    );
+
+    let (
+        total_registrations,
+        total_invoices,
+        total_paid_invoices,
+        total_unpaid_invoices,
+        total_policies,
+        total_premium_collected,
+    ) = tokio::try_join!(
+        sqlx::query_scalar::<_, i64>(&regs_sql)
+            .bind(as_of)
+            .fetch_one(pool),
+        sqlx::query_scalar::<_, i64>(&inv_total_sql)
+            .bind(as_of)
+            .fetch_one(pool),
+        sqlx::query_scalar::<_, i64>(&inv_paid_sql)
+            .bind(as_of)
+            .fetch_one(pool),
+        sqlx::query_scalar::<_, i64>(&inv_unpaid_sql)
+            .bind(as_of)
+            .fetch_one(pool),
+        sqlx::query_scalar::<_, i64>(&pol_sql)
+            .bind(as_of)
+            .fetch_one(pool),
+        sqlx::query_scalar::<_, Decimal>(&inv_prem_sql)
+            .bind(as_of)
+            .fetch_one(pool),
+    )?;
+
+    Ok(DashboardSnapshot {
+        total_registrations,
+        total_invoices,
+        total_paid_invoices,
+        total_unpaid_invoices,
+        total_policies,
+        total_premium_collected,
+    })
 }
 
 fn pad_counts(rows: Vec<BucketCount>, keys: &[String]) -> Vec<BucketCount> {
@@ -290,35 +519,115 @@ fn pad_amounts(rows: Vec<BucketAmount>, keys: &[String]) -> Vec<BucketAmount> {
 }
 
 pub async fn fetch_all(pool: &PgPool, q: DashboardQuery) -> Result<DashboardCharts, sqlx::Error> {
+    // Capture semua field dari q sebelum `q.resolve()` memindahkan struct.
+    let want_compare = q.compare_with_previous.unwrap_or(false);
+    let product = q.validated_product();
+    let applicant_type = q.validated_applicant_type();
     let (from, to, granularity) = q.resolve();
     let keys = bucket_keys(from, to, granularity);
+    let extra = extra_where(&product, &applicant_type);
 
-    let regs = count_per_period(pool, "registrations", "created_at", granularity, from, to).await?;
-    let pols = count_per_period(pool, "policies", "created_at", granularity, from, to).await?;
-    let rev = sum_per_period(
+    // Registrations trend: filter langsung di registrations (r.*).
+    let regs = count_per_period(
         pool,
-        "invoices",
-        "premium_amount",
-        "COALESCE(paid_at, created_at)",
-        "status = 'PAID'",
+        "registrations r",
+        "",
+        "r.created_at",
         granularity,
         from,
         to,
+        &extra,
     )
     .await?;
-    let inv_breakdown = count_group_by(pool, "invoices", "status").await?;
-    let claim_breakdown = count_group_by(pool, "claims", "status").await?;
-    let pol_breakdown = count_group_by(pool, "policies", "product").await?;
+
+    // Policies trend: JOIN registrations r via p.registration_id, lalu
+    // group by created_at di policies. Extra WHERE mengandung r.product
+    // dan r.applicant_type (lihat `extra_where`).
+    let pols = count_per_period(
+        pool,
+        "policies p",
+        &join_registrations_via("p.registration_id"),
+        "p.created_at",
+        granularity,
+        from,
+        to,
+        &extra,
+    )
+    .await?;
+
+    // Revenue trend: invoice paid, JOIN registrations r.
+    let rev = sum_per_period(
+        pool,
+        "invoices i",
+        &join_registrations_via("i.registration_id"),
+        "i.premium_amount",
+        "COALESCE(i.paid_at, i.created_at)",
+        "i.status = 'PAID'",
+        granularity,
+        from,
+        to,
+        &extra,
+    )
+    .await?;
+
+    // Breakdowns: status/product distribution dengan filter product+applicant_type.
+    // Tetap all-time (tidak ikut date range) — sesuai komentar di module
+    // header. Hanya product+applicant_type yang di-apply.
+    let inv_breakdown = count_group_by_filtered(
+        pool,
+        "invoices i",
+        &join_registrations_via("i.registration_id"),
+        "i.status",
+        &extra,
+    )
+    .await?;
+    let claim_breakdown = count_group_by_filtered(
+        pool,
+        "claims c",
+        " JOIN policies p ON p.id = c.policy_id JOIN registrations r ON r.id = p.registration_id",
+        "c.status",
+        &extra,
+    )
+    .await?;
+    let pol_breakdown = count_group_by_filtered(
+        pool,
+        "policies p",
+        &join_registrations_via("p.registration_id"),
+        "p.product",
+        &extra,
+    )
+    .await?;
+
+    // Period comparison: snapshot "now" vs "as of (from - 1)". Skip kalau
+    // user tidak request atau `from` terlalu awal (mencegah as_of negatif).
+    let comparison = if want_compare {
+        let as_of = from - Duration::days(1);
+        // tokio::try_join! paralelisme 2 snapshots (bukan 6 query serial).
+        let (cur, prev) = tokio::try_join!(
+            snapshot_at(pool, to, &product, &applicant_type),
+            snapshot_at(pool, as_of, &product, &applicant_type),
+        )?;
+        Some(DashboardComparison {
+            as_of,
+            current: cur,
+            previous: prev,
+        })
+    } else {
+        None
+    };
 
     Ok(DashboardCharts {
         granularity,
         from,
         to,
+        product,
+        applicant_type,
         registrations_per_period: pad_counts(regs, &keys),
         policies_per_period: pad_counts(pols, &keys),
         revenue_per_period: pad_amounts(rev, &keys),
         invoice_status_breakdown: inv_breakdown,
         claim_status_breakdown: claim_breakdown,
         policy_product_breakdown: pol_breakdown,
+        comparison,
     })
 }

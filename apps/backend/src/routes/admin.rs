@@ -122,6 +122,7 @@ pub fn router() -> Router<AppState> {
         .route("/me/password", axum::routing::post(change_password))
         .route("/registrations", get(list_registrations))
         .route("/registrations/:id", get(get_registration))
+        .route("/registrations/:id/members", get(list_registration_members))
         .route("/invoices", get(list_invoices))
         .route("/invoices/:id", get(get_invoice))
         .route("/invoices/:id/pdf", get(download_invoice_pdf))
@@ -560,16 +561,30 @@ struct RegistrationDetail {
     customer_email: Option<String>,
     customer_nik: Option<String>,
     product: String,
+    plan_code: Option<String>,
     sum_assured: Decimal,
     coverage_term: i32,
     status: String,
     created_at: chrono::DateTime<chrono::Utc>,
+    // Group registration fields (0013_group_registration.sql) — NULL untuk INDIVIDU.
+    applicant_type: String,
+    company_name: Option<String>,
+    company_npwp: Option<String>,
+    company_industry: Option<String>,
+    // Invoice fields (UUID dibutuhkan untuk link download PDF/receipt).
+    invoice_id: Option<Uuid>,
     invoice_no: Option<String>,
     invoice_status: Option<String>,
     premium_amount: Option<Decimal>,
     due_date: Option<chrono::NaiveDate>,
+    invoice_paid_at: Option<chrono::DateTime<chrono::Utc>>,
+    invoice_created_at: Option<chrono::DateTime<chrono::Utc>>,
+    // Policy fields (UUID dibutuhkan untuk link download e-policy PDF).
+    policy_id: Option<Uuid>,
     policy_no: Option<String>,
     policy_status: Option<String>,
+    policy_effective_date: Option<chrono::NaiveDate>,
+    policy_expiry_date: Option<chrono::NaiveDate>,
 }
 
 async fn get_registration(
@@ -581,9 +596,12 @@ async fn get_registration(
         r#"
         SELECT r.id, r.registration_no, r.customer_id,
                c.full_name AS customer_name, c.email AS customer_email, c.nik AS customer_nik,
-               r.product, r.sum_assured, r.coverage_term, r.status, r.created_at,
-               i.invoice_no, i.status AS invoice_status, i.premium_amount, i.due_date,
-               p.policy_no, p.status AS policy_status
+               r.product, r.plan_code, r.sum_assured, r.coverage_term, r.status, r.created_at,
+               r.applicant_type, r.company_name, r.company_npwp, r.company_industry,
+               i.id AS invoice_id, i.invoice_no, i.status AS invoice_status,
+               i.premium_amount, i.due_date, i.paid_at AS invoice_paid_at, i.created_at AS invoice_created_at,
+               p.id AS policy_id, p.policy_no, p.status AS policy_status,
+               p.effective_date AS policy_effective_date, p.expiry_date AS policy_expiry_date
           FROM registrations r
           JOIN customers c ON c.id = r.customer_id
           LEFT JOIN invoices i ON i.registration_id = r.id
@@ -597,6 +615,51 @@ async fn get_registration(
 
     row.map(Json)
         .ok_or(AppError::NotFound("registration".into()))
+}
+
+/// Tiap baris anggota instansi (1-N untuk INSTANSI, kosong untuk INDIVIDU).
+#[derive(Serialize, sqlx::FromRow)]
+struct RegistrationMemberRow {
+    member_id: Uuid,
+    customer_id: Uuid,
+    full_name: String,
+    nik: Option<String>,
+    email: Option<String>,
+    mobile_number: Option<String>,
+    birth_date: Option<chrono::NaiveDate>,
+    gender: Option<String>,
+    beneficiary_name: Option<String>,
+}
+
+async fn list_registration_members(
+    State(state): State<AppState>,
+    _: RequireAdmin,
+    Path(id): Path<Uuid>,
+) -> AppResult<Json<Vec<RegistrationMemberRow>>> {
+    // 404 kalau registration tidak ada — lebih informatif daripada return [].
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM registrations WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound("registration".into()));
+    }
+
+    let rows: Vec<RegistrationMemberRow> = sqlx::query_as(
+        r#"
+        SELECT m.id AS member_id, c.id AS customer_id, c.full_name, c.nik, c.email,
+               c.mobile_number, c.birth_date, c.gender, m.beneficiary_name
+          FROM registration_members m
+          JOIN customers c ON c.id = m.customer_id
+         WHERE m.registration_id = $1
+         ORDER BY c.full_name
+        "#,
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
 }
 
 #[derive(Serialize, sqlx::FromRow)]
