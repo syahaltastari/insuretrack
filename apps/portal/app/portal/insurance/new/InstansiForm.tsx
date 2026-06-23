@@ -122,36 +122,72 @@ export function InstansiForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visiblePlans]);
 
-  // Per-tab checkmark helpers
+  // Per-tab state — 'valid' | 'invalid' | 'empty'. 'konfirmasi' adalah
+  // review step, selalu 'empty' (tidak butuh checkmark). 'peserta'
+  // pakai state lokal (bukan RHF) jadi cek participants.length manual.
+  // Dipakai untuk render icon ✓/⚠ di tab trigger + submit-guard.
   const watched = methods.watch();
   const errors = methods.formState.errors;
-  const isTabValid = (key: TabKey): boolean => {
-    if (key === "peserta") return participants.length > 0;
-    if (key === "konfirmasi") return false; // Always a review step
+  const getTabState = (key: TabKey): "valid" | "invalid" | "empty" => {
+    if (key === "konfirmasi") return "empty";
+    if (key === "peserta") {
+      if (participants.length === 0) return "empty";
+      return "valid";
+    }
     if (key === "institution") {
-      return Boolean(
-        !errors.company_name &&
-          !errors.rep_nik &&
-          !errors.rep_full_name &&
-          !errors.rep_email &&
-          !errors.rep_mobile &&
-          watched.company_name?.trim() &&
+      const hasError = Boolean(
+        errors.company_name ||
+          errors.rep_nik ||
+          errors.rep_full_name ||
+          errors.rep_email ||
+          errors.rep_mobile,
+      );
+      if (hasError) return "invalid";
+      const allFilled = Boolean(
+        watched.company_name?.trim() &&
           watched.rep_nik?.trim() &&
           watched.rep_full_name?.trim() &&
           watched.rep_email?.trim() &&
           watched.rep_mobile?.trim(),
       );
+      return allFilled ? "valid" : "empty";
     }
-    if (key === "plan") {
-      return Boolean(
-        !errors.plan_code &&
-          !errors.coverage_term &&
-          watched.plan_code &&
-          watched.coverage_term,
-      );
-    }
-    return false;
+    // plan
+    if (errors.plan_code || errors.coverage_term) return "invalid";
+    return watched.plan_code && watched.coverage_term ? "valid" : "empty";
   };
+
+  // Order tetap + label untuk findFirstInvalidTab + ResultDialog.
+  const TAB_ORDER: readonly TabKey[] = ["institution", "plan", "peserta", "konfirmasi"];
+  const TAB_LABELS: Record<TabKey, string> = {
+    institution: "Data Instansi",
+    plan: "Informasi Asuransi",
+    peserta: "Data Peserta",
+    konfirmasi: "Konfirmasi",
+  };
+  const findFirstInvalidTab = (): TabKey | null => {
+    for (const t of TAB_ORDER) {
+      if (getTabState(t) === "invalid") return t;
+    }
+    return null;
+  };
+
+  // Enter-key submit handler (sama dengan Individu form).
+  useEffect(() => {
+    const count = methods.formState.submitCount;
+    if (count > 0 && !methods.formState.isValid) {
+      const firstBad = findFirstInvalidTab();
+      if (firstBad) {
+        setActiveTab(firstBad);
+        setResultDialog({
+          kind: "warning",
+          title: `Tab "${TAB_LABELS[firstBad]}" belum lengkap`,
+          description: "Perbaiki field yang ditandai (ikon ⚠), lalu kirim ulang.",
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [methods.formState.submitCount]);
 
   // Show beneficiary column only for LIFE
   const isLife = selectedProduct === "LIFE";
@@ -289,20 +325,47 @@ export function InstansiForm({
         <TabsList aria-label="Bagian form pendaftaran Instansi">
           <TabsTrigger value="institution">
             Data Instansi
-            {isTabValid("institution") && (
+            {getTabState("institution") === "valid" && (
               <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+            )}
+            {getTabState("institution") === "invalid" && (
+              <span
+                className="clay-tabs-warn"
+                aria-label="Belum lengkap"
+                title="Tab ini belum lengkap"
+              >
+                ⚠
+              </span>
             )}
           </TabsTrigger>
           <TabsTrigger value="plan">
             Informasi Asuransi
-            {isTabValid("plan") && (
+            {getTabState("plan") === "valid" && (
               <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+            )}
+            {getTabState("plan") === "invalid" && (
+              <span
+                className="clay-tabs-warn"
+                aria-label="Belum lengkap"
+                title="Tab ini belum lengkap"
+              >
+                ⚠
+              </span>
             )}
           </TabsTrigger>
           <TabsTrigger value="peserta">
             Data Peserta ({participants.length})
-            {isTabValid("peserta") && (
+            {getTabState("peserta") === "valid" && (
               <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+            )}
+            {getTabState("peserta") === "invalid" && (
+              <span
+                className="clay-tabs-warn"
+                aria-label="Belum lengkap"
+                title="Tab ini belum lengkap"
+              >
+                ⚠
+              </span>
             )}
           </TabsTrigger>
           <TabsTrigger value="konfirmasi">Konfirmasi</TabsTrigger>
@@ -650,8 +713,41 @@ export function InstansiForm({
       </Tabs>
 
       <button
-        type="submit"
-        disabled={submitting || portalStatus === "PENDING" || participants.length === 0}
+        type="button"
+        // type="button" + handleSubmit(onValid, onInvalid) — saat validasi
+        // zod gagal, switch ke tab invalid pertama + tampilkan dialog.
+        // Sama pattern dengan Individu form.
+        onClick={methods.handleSubmit(onSubmit, (errs) => {
+          // Peserta bukan field RHF, jadi error zod tidak cover
+          // participants.length === 0. Cek manual di sini.
+          if (participants.length === 0) {
+            setActiveTab("peserta");
+            setResultDialog({
+              kind: "warning",
+              title: "Tab \"Data Peserta\" belum lengkap",
+              description: "Tambahkan minimal 1 peserta sebelum mengirim.",
+            });
+            return;
+          }
+          const firstBad = findFirstInvalidTab();
+          if (firstBad) {
+            setActiveTab(firstBad);
+            setResultDialog({
+              kind: "warning",
+              title: `Tab "${TAB_LABELS[firstBad]}" belum lengkap`,
+              description:
+                "Perbaiki field yang ditandai (ikon ⚠), lalu kirim ulang.",
+            });
+          } else {
+            setResultDialog({
+              kind: "warning",
+              title: "Form belum lengkap",
+              description: "Periksa kembali semua isian, lalu kirim ulang.",
+            });
+          }
+          void errs;
+        })}
+        disabled={submitting || portalStatus === "PENDING"}
         className="clay-button solid-ube size-large"
         style={{ width: "100%" }}
       >

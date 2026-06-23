@@ -558,6 +558,28 @@ a:hover {
   font-weight: 700;
 }
 
+/* Warning icon untuk tab yang ada field invalid (submit-guard).
+   Dipakai untuk menarik mata user ke tab yang harus diperbaiki
+   setelah klik "Selesaikan Pendaftaran". */
+.clay-tabs-warn {
+  font-size: 0.9rem;
+  color: var(--pomegranate-400);
+  font-weight: 700;
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(232, 96, 96, 0.12);
+  line-height: 1;
+}
+.clay-tabs-trigger[data-state="active"] .clay-tabs-warn {
+  color: var(--pure-white);
+  background: rgba(255, 255, 255, 0.22);
+}
+
 /* ============================================================
    Inputs
    Single source of truth untuk SEMUA input (text, email, password,

@@ -64,6 +64,19 @@ const TAB_FIELDS = {
 
 type TabKey = keyof typeof TAB_FIELDS;
 
+// Urutan tetap untuk "klik submit, cari tab invalid pertama". Tidak
+// pakai insertion order object karena TypeScript bisa reorder.
+const TAB_ORDER: readonly TabKey[] = ["personal", "contact", "insurance", "ktp"];
+
+// Label human-readable untuk tab. Dipakai di ResultDialog error supaya
+// user tahu tab mana yang harus dilihat (bukan internal key "personal").
+const TAB_LABELS: Record<TabKey, string> = {
+  personal: "Data Pribadi",
+  contact: "Kontak",
+  insurance: "Informasi Asuransi",
+  ktp: "Upload KTP",
+};
+
 // `plan_code` adalah composite id (mis. "LIFE_BASIC") yang dikirim ke
 // backend. Validasi shape regex di sini — backend akan lookup & reject
 // unknown codes via find_plan().
@@ -199,23 +212,41 @@ function InsuranceNewPageInner() {
     mode: "onBlur",
   });
 
-  // Watch values per tab — untuk hitung checkmark "✓" di tab trigger.
+  // Watch values per tab — untuk hitung state tiap tab (valid/invalid/empty).
   // Watch granular (per field) supaya re-render minimal saat satu field
-  // berubah; compute `isTabValid` untuk tiap tab on the fly.
+  // berubah; compute `getTabState` untuk tiap tab on the fly.
   const watched = methods.watch();
   const errors = methods.formState.errors;
 
-  /** True kalau semua field di tab tsb tidak punya error DAN (untuk field
-   *  string) tidak kosong. Untuk `ktp` (File), cek `ktpName` dari state
-   *  (RHF `setValue` tidak trigger watch untuk File objects secara
-   *  reliable). */
-  const isTabValid = (key: TabKey): boolean => {
-    if (key === "ktp") return Boolean(ktpName);
-    return TAB_FIELDS[key].every((field) => {
-      if (errors[field as keyof typeof errors]) return false;
+  /** State tab — dipakai untuk render icon di trigger (✓ / ⚠ / nothing)
+   *  dan untuk logika submit-guard. 'invalid' > 'empty' > 'valid' untuk
+   *  visual priority: kalau ada error, user perlu lihat itu dulu. */
+  const getTabState = (key: TabKey): "valid" | "invalid" | "empty" => {
+    // Untuk 'ktp', file presence = ktpName. Error pada field 'ktp'
+    // tersimpan di RHF `errors.ktp` (kita set manual di submit handler).
+    if (key === "ktp") {
+      if (errors.ktp) return "invalid";
+      return ktpName ? "valid" : "empty";
+    }
+    const hasError = TAB_FIELDS[key].some(
+      (f) => errors[f as keyof typeof errors],
+    );
+    if (hasError) return "invalid";
+    const allFilled = TAB_FIELDS[key].every((field) => {
       const v = watched[field as keyof RegisterValues];
       return typeof v === "string" ? v.trim().length > 0 : Boolean(v);
     });
+    return allFilled ? "valid" : "empty";
+  };
+
+  /** Cari tab invalid pertama (urutan TAB_ORDER). Dipakai di onInvalid
+   *  submit handler supaya user lihat error tanpa harus menebak tab mana
+   *  yang harus dibuka. Return null kalau semua valid. */
+  const findFirstInvalidTab = (): TabKey | null => {
+    for (const t of TAB_ORDER) {
+      if (getTabState(t) === "invalid") return t;
+    }
+    return null;
   };
 
   // Plan untuk produk yang sedang dipilih (filtered dari catalog).
@@ -245,6 +276,28 @@ function InsuranceNewPageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog, selectedProduct]);
+
+  // Enter-key submit handler. `<Form>` (packages/forms) cuma terima
+  // `onSubmit` (valid case), jadi submit via Enter akan diam-diam gagal
+  // saat invalid. Subscribe ke `formState.submitCount` untuk reaktif:
+  // setiap attempt submit yang gagal, switch ke tab invalid pertama dan
+  // tampilkan ResultDialog. Trigger: `submitCount` increment (counter
+  // RHF, naik tiap submit attempt — bukan tiap keystroke).
+  useEffect(() => {
+    const count = methods.formState.submitCount;
+    if (count > 0 && !methods.formState.isValid) {
+      const firstBad = findFirstInvalidTab();
+      if (firstBad) {
+        setActiveTab(firstBad);
+        setResultDialog({
+          kind: "warning",
+          title: `Tab "${TAB_LABELS[firstBad]}" belum lengkap`,
+          description: "Perbaiki field yang ditandai (ikon ⚠), lalu kirim ulang.",
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [methods.formState.submitCount]);
 
   // Auth guard: redirect to login kalau belum authenticated. Customer
   // insurance application requires customer JWT (backend enforces via
@@ -503,26 +556,62 @@ function InsuranceNewPageInner() {
               <TabsList aria-label="Bagian form pendaftaran">
                 <TabsTrigger value="personal">
                   Data Pribadi
-                  {isTabValid("personal") && (
+                  {getTabState("personal") === "valid" && (
                     <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                  {getTabState("personal") === "invalid" && (
+                    <span
+                      className="clay-tabs-warn"
+                      aria-label="Belum lengkap"
+                      title="Tab ini belum lengkap"
+                    >
+                      ⚠
+                    </span>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="contact">
                   Kontak
-                  {isTabValid("contact") && (
+                  {getTabState("contact") === "valid" && (
                     <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                  {getTabState("contact") === "invalid" && (
+                    <span
+                      className="clay-tabs-warn"
+                      aria-label="Belum lengkap"
+                      title="Tab ini belum lengkap"
+                    >
+                      ⚠
+                    </span>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="insurance">
                   Informasi Asuransi
-                  {isTabValid("insurance") && (
+                  {getTabState("insurance") === "valid" && (
                     <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                  {getTabState("insurance") === "invalid" && (
+                    <span
+                      className="clay-tabs-warn"
+                      aria-label="Belum lengkap"
+                      title="Tab ini belum lengkap"
+                    >
+                      ⚠
+                    </span>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="ktp">
                   Upload KTP
-                  {isTabValid("ktp") && (
+                  {getTabState("ktp") === "valid" && (
                     <span className="clay-tabs-check" aria-label="Lengkap">✓</span>
+                  )}
+                  {getTabState("ktp") === "invalid" && (
+                    <span
+                      className="clay-tabs-warn"
+                      aria-label="Belum lengkap"
+                      title="Tab ini belum lengkap"
+                    >
+                      ⚠
+                    </span>
                   )}
                 </TabsTrigger>
               </TabsList>
@@ -807,7 +896,36 @@ function InsuranceNewPageInner() {
 
             <Reveal delay={300}>
               <button
-                type="submit"
+                type="button"
+                // type="button" + manual handleSubmit(onValid, onInvalid)
+                // supaya saat validasi zod gagal, kita bisa:
+                //   1. Cari tab invalid pertama.
+                //   2. setActiveTab(tabItu) — user langsung lihat error.
+                //   3. Tampilkan ResultDialog error dengan instruksi.
+                // Pendekatan ini menghindari "klik submit tidak bereaksi"
+                // saat user sedang di tab yang bukan tab invalid.
+                onClick={methods.handleSubmit(onSubmit, (errs) => {
+                  const firstBad = findFirstInvalidTab();
+                  if (firstBad) {
+                    setActiveTab(firstBad);
+                    setResultDialog({
+                      kind: "warning",
+                      title: `Tab "${TAB_LABELS[firstBad]}" belum lengkap`,
+                      description:
+                        "Perbaiki field yang ditandai (ikon ⚠), lalu kirim ulang.",
+                    });
+                  } else {
+                    // Fallback: error ada tapi tidak ke-attribute ke tab
+                    // manapun (mis. cross-field rule). Tampilkan generic.
+                    setResultDialog({
+                      kind: "warning",
+                      title: "Form belum lengkap",
+                      description: "Periksa kembali semua isian, lalu kirim ulang.",
+                    });
+                  }
+                  // Suppress unused-var warning untuk errs.
+                  void errs;
+                })}
                 disabled={submitting || portalStatus === "PENDING"}
                 className="clay-button solid-ube size-large"
                 style={{ width: "100%" }}

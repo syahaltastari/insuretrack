@@ -9,18 +9,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE } from "@insuretrack/api-client";
-import { getCustomerToken } from "@insuretrack/api-client";
+import { API_BASE, formatIdr, getCustomerToken } from "@insuretrack/api-client";
+import { PolicyPicker, type PolicyPickerItem } from "@/components/PolicyPicker";
 
-type Policy = {
-  id: string;
-  policy_no: string;
-  product: string;
-  sum_assured: string;
-  effective_date: string;
-  expiry_date: string;
-  status: string;
-};
+type Policy = PolicyPickerItem;
 
 // Mirror of backend `default_claim_type_for_product` di
 // `apps/backend/src/domain/claim.rs`. Dipakai untuk menampilkan
@@ -40,18 +32,6 @@ const PRODUCT_LABEL: Record<string, string> = {
   HEALTH: "Asuransi Kesehatan",
   PERSONAL_ACCIDENT: "Asuransi Kecelakaan Diri",
 };
-
-/** Format rupiah tanpa desimal (sesuai formatIdr di @insuretrack/api-client
- * tapi inline karena di sini belum di-share). */
-function formatRupiah(n: number | string): string {
-  const v = typeof n === "string" ? Number(n) : n;
-  if (!Number.isFinite(v)) return "—";
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(v);
-}
 
 /** Bangun template deskripsi berdasarkan polis + tanggal insiden.
  * Dipakai untuk auto-fill kolom description saat pertama kali.
@@ -289,7 +269,7 @@ export default function NewClaimPage() {
                   Jumlah Klaim (UP)
                 </span>
                 <span className="body">
-                  {formatRupiah(selectedPolicy.sum_assured)}
+                  {formatIdr(Number(selectedPolicy.sum_assured))}
                   <br />
                   <span
                     className="caption"
@@ -309,18 +289,18 @@ export default function NewClaimPage() {
           >
             <FormError message={formError} />
             <FormField label="Polis" name="policy_id" required>
-              <select
-                id="policy_id"
-                className="clay-select"
-                {...methods.register("policy_id")}
-              >
-                {policies.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.policy_no} — {PRODUCT_LABEL[p.product] ?? p.product} (UP:{" "}
-                    {formatRupiah(p.sum_assured)})
-                  </option>
-                ))}
-              </select>
+              <PolicyPicker
+                policies={policies}
+                name="policy_id"
+                selectedPolicyId={watchedPolicyId ?? ""}
+                onChange={(id) =>
+                  methods.setValue("policy_id", id, { shouldValidate: true })
+                }
+              />
+              {/* Hidden field untuk RHF register + validasi zod (schema
+                  expects policy_id non-empty). PolicyPicker handle UX,
+                  RHF cuma butuh nilai. */}
+              <input type="hidden" {...methods.register("policy_id")} />
             </FormField>
             <FormField label="Tanggal Insiden" name="incident_date" required>
               <input
