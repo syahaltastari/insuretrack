@@ -157,6 +157,46 @@ const SECTIONS: Section[] = [
       </p>
     ),
   },
+  {
+    id: "persetujuan-pengajuan",
+    title: "10. Persetujuan saat Pengajuan Asuransi",
+    body: (
+      <>
+        <p>
+          Dengan mencentang kotak persetujuan di halaman pengajuan asuransi,
+          Calon Tertanggung menyatakan dan menyetujui bahwa:
+        </p>
+        <ol style={{ paddingLeft: 20 }}>
+          <li>
+            Semua data yang diisi (identitas, alamat, kontak, dan data terkait
+            pengajuan) adalah benar, akurat, dan dapat dipertanggungjawabkan.
+          </li>
+          <li>
+            Calon Tertanggung bersedia memberikan dokumen pendukung asli
+            (KTP, dan dokumen lain yang relevan) sewaktu-waktu diminta oleh
+            PT AMA Salam Indonesia untuk proses verifikasi.
+          </li>
+          <li>
+            Polis asuransi baru akan diterbitkan setelah pembayaran premi lunas
+            dan konfirmasi diterima dari payment gateway.
+          </li>
+          <li>
+            PT AMA Salam Indonesia berhak menolak pengajuan atau membatalkan
+            polis yang telah diterbitkan apabila di kemudian hari ditemukan
+            ketidaksesuaian antara data yang diisi dengan dokumen asli atau
+            ketentuan polis yang berlaku.
+          </li>
+          <li>
+            Untuk produk Asuransi Jiwa: polis tunduk pada Syarat &amp;
+            Ketentuan Polis (Policy Wording) yang akan dikirimkan bersama
+            e-policy. S&amp;K pada halaman ini mengatur penggunaan
+            platform, sedangkan S&amp;K polis mengatur hak dan kewajiban
+            terkait pertanggungan.
+          </li>
+        </ol>
+      </>
+    ),
+  },
 ];
 
 export default function TermsPage() {

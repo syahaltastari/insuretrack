@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -94,6 +95,11 @@ export function InstansiForm({
     { registration_no: string; invoice_no: string } | null
   >(null);
   const [resultDialog, setResultDialog] = useState<ResultState>(IDLE);
+  // Consent checkboxes — sama dengan Individu form. Plain useState
+  // karena tidak dikirim ke backend (lihat diskusi consent UX).
+  const [consentDataAccuracy, setConsentDataAccuracy] = useState(false);
+  const [consentTermsPrivacy, setConsentTermsPrivacy] = useState(false);
+  const consentAllGiven = consentDataAccuracy && consentTermsPrivacy;
 
   const methods = useForm<InstansiValues>({
     resolver: zodResolver(instansiSchema) as never,
@@ -712,12 +718,112 @@ export function InstansiForm({
         </TabsContent>
       </Tabs>
 
+      {/* Consent checkboxes — di atas tombol submit. Lihat /terms
+          section 10 dan /privacy section 6 untuk teks lengkap. */}
+      <div
+        className="clay-card"
+        style={{
+          padding: 20,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          background: "var(--warm-cream)",
+        }}
+      >
+        <p
+          className="uppercase-label"
+          style={{ color: "var(--warm-silver)", margin: 0 }}
+        >
+          ✦ Persetujuan
+        </p>
+
+        <label
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            cursor: "pointer",
+            fontSize: "0.9rem",
+            lineHeight: 1.5,
+            color: "var(--clay-black)",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={consentDataAccuracy}
+            onChange={(e) => setConsentDataAccuracy(e.target.checked)}
+            className="clay-checkbox"
+            style={{ marginTop: 3, flexShrink: 0 }}
+            aria-required="true"
+          />
+          <span>
+            Saya menyatakan bahwa data instansi dan peserta yang saya isi
+            adalah <strong>benar dan dapat dipertanggungjawabkan</strong>,
+            serta bersedia memberikan dokumen pendukung asli bila diminta.
+          </span>
+        </label>
+
+        <label
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            cursor: "pointer",
+            fontSize: "0.9rem",
+            lineHeight: 1.5,
+            color: "var(--clay-black)",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={consentTermsPrivacy}
+            onChange={(e) => setConsentTermsPrivacy(e.target.checked)}
+            className="clay-checkbox"
+            style={{ marginTop: 3, flexShrink: 0 }}
+            aria-required="true"
+          />
+          <span>
+            Saya menyatakan bertindak atas nama instansi dan telah membaca
+            serta menyetujui{" "}
+            <Link
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--ube-800)", textDecoration: "underline" }}
+            >
+              Syarat &amp; Ketentuan
+            </Link>{" "}
+            dan{" "}
+            <Link
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--ube-800)", textDecoration: "underline" }}
+            >
+              Kebijakan Privasi
+            </Link>{" "}
+            InsureTrack.
+          </span>
+        </label>
+      </div>
+
       <button
         type="button"
         // type="button" + handleSubmit(onValid, onInvalid) — saat validasi
         // zod gagal, switch ke tab invalid pertama + tampilkan dialog.
         // Sama pattern dengan Individu form.
         onClick={methods.handleSubmit(onSubmit, (errs) => {
+          // Consent gate dulu — kalau user somehow submit (Enter key
+          // bypass disabled), tampilkan dialog spesifik.
+          if (!consentDataAccuracy || !consentTermsPrivacy) {
+            setResultDialog({
+              kind: "warning",
+              title: "Persetujuan belum lengkap",
+              description:
+                "Centang kedua kotak persetujuan di atas untuk melanjutkan.",
+            });
+            return;
+          }
           // Peserta bukan field RHF, jadi error zod tidak cover
           // participants.length === 0. Cek manual di sini.
           if (participants.length === 0) {
@@ -747,9 +853,9 @@ export function InstansiForm({
           }
           void errs;
         })}
-        disabled={submitting || portalStatus === "PENDING"}
+        disabled={submitting || portalStatus === "PENDING" || !consentAllGiven}
         className="clay-button solid-ube size-large"
-        style={{ width: "100%" }}
+        style={{ width: "100%", marginTop: 16 }}
       >
         {portalStatus === "PENDING"
           ? "Aktivasi email dulu untuk mendaftar"
@@ -757,6 +863,18 @@ export function InstansiForm({
             ? "Mengirim..."
             : `Selesaikan Pendaftaran`}
       </button>
+      {!consentAllGiven && portalStatus !== "PENDING" && (
+        <p
+          className="caption"
+          style={{
+            color: "var(--warm-silver)",
+            textAlign: "center",
+            margin: "8px 0 0 0",
+          }}
+        >
+          Centang kedua kotak persetujuan di atas untuk melanjutkan.
+        </p>
+      )}
 
       <ResultDialog
         open={resultDialog.kind !== "idle"}

@@ -4,6 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -144,6 +145,14 @@ function InsuranceNewPageInner() {
   const [selectedProduct, setSelectedProduct] = useState<ProductCode>("LIFE");
   // Tab aktif — diinisialisasi ke "personal". Controlled mode Radix Tabs.
   const [activeTab, setActiveTab] = useState<TabKey>("personal");
+  // Consent checkboxes. Plain useState (bukan RHF) karena:
+  //   1. Tidak dikirim ke backend (tidak ada schema field).
+  //   2. Cuma gate submit button + onInvalid handler.
+  // Spec FS-15 tidak require audit trail untuk consent capture; cukup
+  // client-side (lihat diskusi implementasi consent UX).
+  const [consentDataAccuracy, setConsentDataAccuracy] = useState(false);
+  const [consentTermsPrivacy, setConsentTermsPrivacy] = useState(false);
+  const consentAllGiven = consentDataAccuracy && consentTermsPrivacy;
   // Tipe pendaftaran — Individu (default) atau Instansi. Mengontrol
   // form mana yang di-render di bawah. Selected by ApplicantTypePicker
   // di top of form.
@@ -895,6 +904,97 @@ function InsuranceNewPageInner() {
             </Tabs>
 
             <Reveal delay={300}>
+              {/* Consent checkboxes — di atas tombol submit. Disabled state
+                  pada tombol menjelaskan sendiri kenapa tidak bisa diklik
+                  (sampai consent dicentang). Lihat /terms section 10 dan
+                  /privacy section 6 untuk teks lengkap yang dirujuk. */}
+              <div
+                className="clay-card"
+                style={{
+                  padding: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  background: "var(--warm-cream)",
+                }}
+              >
+                <p
+                  className="uppercase-label"
+                  style={{ color: "var(--warm-silver)", margin: 0 }}
+                >
+                  ✦ Persetujuan
+                </p>
+
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    lineHeight: 1.5,
+                    color: "var(--clay-black)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={consentDataAccuracy}
+                    onChange={(e) => setConsentDataAccuracy(e.target.checked)}
+                    className="clay-checkbox"
+                    style={{ marginTop: 3, flexShrink: 0 }}
+                    aria-required="true"
+                  />
+                  <span>
+                    Saya menyatakan bahwa data yang saya isi adalah{" "}
+                    <strong>benar dan dapat dipertanggungjawabkan</strong>,
+                    serta bersedia memberikan dokumen pendukung asli bila
+                    diminta.
+                  </span>
+                </label>
+
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                    lineHeight: 1.5,
+                    color: "var(--clay-black)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={consentTermsPrivacy}
+                    onChange={(e) => setConsentTermsPrivacy(e.target.checked)}
+                    className="clay-checkbox"
+                    style={{ marginTop: 3, flexShrink: 0 }}
+                    aria-required="true"
+                  />
+                  <span>
+                    Saya telah membaca dan menyetujui{" "}
+                    <Link
+                      href="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--ube-800)", textDecoration: "underline" }}
+                    >
+                      Syarat &amp; Ketentuan
+                    </Link>{" "}
+                    dan{" "}
+                    <Link
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--ube-800)", textDecoration: "underline" }}
+                    >
+                      Kebijakan Privasi
+                    </Link>{" "}
+                    InsureTrack.
+                  </span>
+                </label>
+              </div>
+
               <button
                 type="button"
                 // type="button" + manual handleSubmit(onValid, onInvalid)
@@ -905,6 +1005,19 @@ function InsuranceNewPageInner() {
                 // Pendekatan ini menghindari "klik submit tidak bereaksi"
                 // saat user sedang di tab yang bukan tab invalid.
                 onClick={methods.handleSubmit(onSubmit, (errs) => {
+                  // Consent gate — kalau user somehow submit (mis. via
+                  // Enter key di input, bypass disabled visual), check
+                  // ulang di sini. Tampilkan dialog spesifik supaya
+                  // user tahu apa yang kurang.
+                  if (!consentDataAccuracy || !consentTermsPrivacy) {
+                    setResultDialog({
+                      kind: "warning",
+                      title: "Persetujuan belum lengkap",
+                      description:
+                        "Centang kedua kotak persetujuan di atas untuk melanjutkan.",
+                    });
+                    return;
+                  }
                   const firstBad = findFirstInvalidTab();
                   if (firstBad) {
                     setActiveTab(firstBad);
@@ -926,9 +1039,11 @@ function InsuranceNewPageInner() {
                   // Suppress unused-var warning untuk errs.
                   void errs;
                 })}
-                disabled={submitting || portalStatus === "PENDING"}
+                disabled={
+                  submitting || portalStatus === "PENDING" || !consentAllGiven
+                }
                 className="clay-button solid-ube size-large"
-                style={{ width: "100%" }}
+                style={{ width: "100%", marginTop: 16 }}
               >
                 {portalStatus === "PENDING"
                   ? "Aktivasi email dulu untuk mendaftar"
@@ -936,6 +1051,18 @@ function InsuranceNewPageInner() {
                   ? "Mengirim..."
                   : "Selesaikan Pendaftaran"}
               </button>
+              {!consentAllGiven && portalStatus !== "PENDING" && (
+                <p
+                  className="caption"
+                  style={{
+                    color: "var(--warm-silver)",
+                    textAlign: "center",
+                    margin: "8px 0 0 0",
+                  }}
+                >
+                  Centang kedua kotak persetujuan di atas untuk melanjutkan.
+                </p>
+              )}
             </Reveal>
 
             <ResultDialog

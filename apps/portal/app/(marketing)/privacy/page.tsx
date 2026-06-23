@@ -156,8 +156,55 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: "pengajuan-polis",
+    title: "6. Penggunaan Data untuk Pengajuan Polis",
+    body: (
+      <>
+        <p>
+          Dalam konteks pengajuan asuransi, data pribadi yang Anda isi melalui
+          formulir digunakan untuk:
+        </p>
+        <ol style={{ paddingLeft: 20 }}>
+          <li>
+            Verifikasi identitas (NIK, nama, tanggal lahir) sesuai ketentuan
+            peraturan perundang-undangan yang berlaku.
+          </li>
+          <li>
+            Pembuatan polis, invoice, dan dokumen pendukung lainnya.
+          </li>
+          <li>
+            Koordinasi dengan payment gateway untuk pemrosesan premi.
+          </li>
+          <li>
+            Pengiriman e-policy, kuitansi pembayaran, dan notifikasi terkait
+            polis melalui email.
+          </li>
+          <li>
+            Penanganan klaim, apabila di kemudian hari diajukan.
+          </li>
+        </ol>
+        <p>Data tidak akan dialihkan ke pihak ketiga selain:</p>
+        <ul>
+          <li>Payment gateway (untuk proses pembayaran premi).</li>
+          <li>
+            Penyedia layanan email (untuk pengiriman e-policy dan notifikasi).
+          </li>
+          <li>
+            Otoritas pengawas atau instansi yang berwenang (apabila diminta
+            sesuai hukum yang berlaku).
+          </li>
+        </ul>
+        <p>
+          Periode retensi data mengikuti poin 5 (Hak Anda) di atas. Setelah
+          polis berakhir dan melewati masa retensi yang ditentukan, data
+          terkait polis akan dianonimkan atau dihapus sesuai kebijakan.
+        </p>
+      </>
+    ),
+  },
+  {
     id: "kontak",
-    title: "6. Hubungi Kami",
+    title: "7. Hubungi Kami",
     body: (
       <p>
         Pertanyaan tentang privasi? Email ke{" "}
