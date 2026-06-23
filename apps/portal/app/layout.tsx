@@ -19,7 +19,7 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "InsureTrack — Digital Insurance Platform",
+  title: "InsureTrack - Digital Insurance Platform",
   description: "Asuransi digital, prosesnya cepat, polis langsung terbit.",
 };
 
