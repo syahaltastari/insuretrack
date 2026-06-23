@@ -27,6 +27,7 @@ import {
 import { API_BASE, getAdminToken } from "@insuretrack/api-client";
 import { useAdminTable } from "@/lib/useAdminTable";
 import { ColumnVisibilityMenu } from "@/components/ColumnVisibilityMenu";
+import { AdminDownloadButton } from "@/components/AdminDownloadButton";
 import type {
   AdminColumnMeta,
   Column,
@@ -792,69 +793,6 @@ export function AdminListPage<T extends { id: string }>({
         </>
       )}
     </>
-  );
-}
-
-// ----- AdminDownloadButton -----
-//
-// Tombol download PDF generik untuk actions column. Fetch dengan Bearer
-// token admin, lalu trigger download via blob URL. Filename diambil dari
-// Content-Disposition header backend (backend set filename berupa invoice_no
-// / policy_no / receipt-invoice_no supaya file di folder Download bermakna).
-function AdminDownloadButton({
-  path,
-  label,
-  title,
-}: {
-  path: string;
-  label: string;
-  title?: string;
-}) {
-  const [loading, setLoading] = useState(false);
-
-  const handleClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (loading) return;
-    const token = getAdminToken();
-    setLoading(true);
-    try {
-      const r = await fetch(`${API_BASE}${path}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) {
-        toast.error("Gagal download: " + (r.status === 404 ? "file belum tersedia" : `HTTP ${r.status}`));
-        return;
-      }
-      // Ambil filename dari Content-Disposition header kalau ada,
-      // fallback ke nama generik agar file tetap bisa di-save.
-      const disposition = r.headers.get("content-disposition") ?? "";
-      const match = disposition.match(/filename="([^"]+)"/);
-      const filename = match?.[1] ?? path.split("/").pop() ?? "download.pdf";
-
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Gagal download PDF");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <button
-      className="clay-button ghost size-small"
-      onClick={handleClick}
-      disabled={loading}
-      title={title}
-      style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-    >
-      {loading ? "Mengunduh..." : label}
-    </button>
   );
 }
 
