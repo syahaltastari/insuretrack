@@ -31,9 +31,17 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
     // Pakai async probe ke `/customer/me` (cookie auto-attach). 200 =
     // authed, 401/throw = not authed. Probe ini run di setiap navigasi
     // (pathname change) supaya CTA stay in sync dengan actual state.
+    //
+    // Asymmetric update: hanya set ke `true` JANGAN ke `false`. Kalau
+    // SSR `initialAuthed=true` (cookie present di request) tapi
+    // checkSession return false (transient CORS/network/race), kita trust
+    // SSR — lebih baik user lihat "Portal" walaupun sebenarnya sesi
+    // invalid (next API call return 401), daripada flicker ke "Login".
+    // Logout explicit set ke false via `logout()` function.
     let cancelled = false;
     checkSession("customer").then((ok) => {
-      if (!cancelled) setAuthed(ok);
+      if (cancelled) return;
+      if (ok) setAuthed(true);
     });
     return () => {
       cancelled = true;

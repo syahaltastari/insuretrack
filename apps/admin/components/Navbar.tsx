@@ -25,14 +25,13 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    // Marketing navbar di admin app detect customer-auth (lihat memory
-    // [[hybrid-local-dev]] untuk konteks). Cookie session HttpOnly
-    // tidak bisa dibaca dari JS — pakai async probe ke `/customer/me`.
-    // 200 = customer terauthentikasi, 401 = tidak. Probe run di tiap
-    // navigasi (pathname change) supaya CTA stay in sync.
+    // Marketing navbar di admin app detect customer-auth. Asymmetric
+    // update (lihat portal Navbar untuk rationale): hanya set ke `true`,
+    // JANGAN revert ke `false` saat probe gagal. Trust SSR `initialAuthed`.
     let cancelled = false;
     checkSession("customer").then((ok) => {
-      if (!cancelled) setAuthed(ok);
+      if (cancelled) return;
+      if (ok) setAuthed(true);
     });
     return () => {
       cancelled = true;
