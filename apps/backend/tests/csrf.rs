@@ -190,3 +190,49 @@ async fn login_response_sets_both_cookies() {
     assert!(has_session, "session cookie HttpOnly harus di-set: {cookies:?}");
     assert!(has_csrf, "CSRF cookie (non-HttpOnly) harus di-set: {cookies:?}");
 }
+
+#[tokio::test]
+#[serial]
+async fn logout_endpoints_skip_csrf_check() {
+    // Logout ada di CSRF skip list —lihat `auth::csrf::CSRF_SKIP_PATHS`.
+    // Alasan: cross-origin dev mode cookie tidak visible, plus logout
+    // intrinsically low-risk (attacker forcing logout = annoying saja,
+    // no data loss). Verify dengan test: POST /api/customer/logout
+    // tanpa X-CSRF-Token harus 401 (RequireCustomer reject karena belum
+    // login) atau 204, BUKAN 403.
+    let app = common::spawn_app().await;
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/customer/logout")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let resp = app.router.clone().oneshot(req).await.unwrap();
+    // Tanpa session cookie → 401 dari RequireCustomer extractor.
+    // Yang penting: status BUKAN 403 (CSRF guard tidak reject).
+    assert_ne!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "logout harus skip CSRF guard — dapat 403 berarti CSRF block (salah)"
+    );
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "tanpa session harus 401, bukan 200/204"
+    );
+
+    // Sama untuk admin logout.
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/admin/logout")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let resp = app.router.clone().oneshot(req).await.unwrap();
+    assert_ne!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "admin logout harus skip CSRF guard"
+    );
+}

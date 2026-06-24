@@ -25,11 +25,24 @@ use axum_extra::extract::cookie::CookieJar;
 use crate::{error::AppError, state::AppState};
 
 /// Path yang di-skip dari CSRF check. Pola: endpoint yang tidak punya
-/// session cookie (sebelum login) atau yang pakai auth scheme lain
-/// (webhook). Update kalau ada endpoint publik baru yang mutating.
+/// session cookie (sebelum login), yang pakai auth scheme lain
+/// (webhook), atau yang intrinsically low-risk (logout).
+///
+/// Logout di-skip karena:
+///   1. Attacker forcing user logout = annoying tapi no data loss, no
+///      privilege escalation — low CSRF risk.
+///   2. Cross-origin dev mode: cookie CSRF di-set di origin backend
+///      (port 8080), FE di origin berbeda (port 3000) tidak bisa baca
+///      via document.cookie untuk mirror ke X-CSRF-Token. Same-origin
+///      rewrites di dev sudah workaround ini, tapi logout skip list
+///      adalah belt-and-suspenders untuk production juga.
+///   3. Logout endpoint return 401 kalau session invalid (RequireCustomer
+///      extractor) — CSRF guard redundant sebagai extra check.
 const CSRF_SKIP_PATHS: &[&str] = &[
     "/api/admin/login",
+    "/api/admin/logout",
     "/api/customer/login",
+    "/api/customer/logout",
     "/api/customer/activate",
     "/api/customer/password/reset",
     "/api/public/payment/webhook",
