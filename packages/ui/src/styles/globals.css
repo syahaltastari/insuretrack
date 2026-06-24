@@ -1312,15 +1312,67 @@ details > summary::marker { display: none; content: ""; }
 }
 
 /* ============================================================
-   Reveal animation helpers
-   ============================================================ */
+   Reveal animation helpers (CSS-based, hydration-safe)
+   ============================================================
+   Digunakan oleh _motion/reveal.tsx dan _motion/stagger-group.tsx.
+   Pakai CSS class (bukan framer-motion) karena framer-motion v11 +
+   React 19 SSR punya fundamental incompatibility yang trigger
+   hydration mismatch pada entrance animations. CSS transitions
+   identik secara visual dan 100% aman untuk SSR.
+
+   Pakai:
+     <div className="reveal">              ← hidden state
+     <div className="reveal reveal-in">     ← visible state (added by IO)
+   transitionDelay di-set inline via style prop untuk stagger.
+
+   Spring-feel: cubic-bezier(0.22, 1, 0.36, 1) = ease-out-expo,
+   durasi 700ms = gerakan lambat dan tenang, no bounce.
+*/
 .reveal {
-  /* inline style sets opacity + transform; transition lives inline too */
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
 }
 
-/* If user prefers reduced motion, kill the transition. */
+.reveal-in {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+/* Hover lift untuk card interaktif — replaces MotionCard (framer-motion). */
+.hover-lift {
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 240ms ease;
+  will-change: transform;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+.hover-lift:active {
+  transform: translateY(-2px);
+  transition-duration: 80ms;
+}
+
+/* Hover scale untuk CTA button — replaces MotionLink (framer-motion). */
+.hover-scale {
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.hover-scale:hover {
+  transform: scale(1.03);
+}
+.hover-scale:active {
+  transform: scale(0.98);
+  transition-duration: 80ms;
+}
+
+/* If user prefers reduced motion, kill semua transition. */
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
+  .reveal,
+  .hover-lift,
+  .hover-scale {
     opacity: 1 !important;
     transform: none !important;
     transition: none !important;

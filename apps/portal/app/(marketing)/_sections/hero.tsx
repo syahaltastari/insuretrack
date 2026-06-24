@@ -16,7 +16,7 @@ export function Hero() {
   return (
     <section className="clay-section py-28 md:py-36">
       <div className="clay-container">
-        <Reveal from="fade">
+        <Reveal>
           <div
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6"
             style={{ background: "var(--matcha-300)", color: "var(--matcha-600)" }}
@@ -26,7 +26,7 @@ export function Hero() {
           </div>
         </Reveal>
 
-        <Reveal from="up" delay={0.08}>
+        <Reveal delay={0.08}>
           <h1
             className="display-hero text-center mb-6"
             style={{ color: "var(--clay-black)" }}
@@ -37,7 +37,7 @@ export function Hero() {
           </h1>
         </Reveal>
 
-        <Reveal from="up" delay={0.18}>
+        <Reveal delay={0.18}>
           <p
             className="body-large text-center max-w-2xl mx-auto mb-10"
             style={{ color: "var(--warm-charcoal)" }}
@@ -46,7 +46,7 @@ export function Hero() {
           </p>
         </Reveal>
 
-        <Reveal from="up" delay={0.28}>
+        <Reveal delay={0.28}>
           <div className="flex flex-wrap gap-3 justify-center">
             <Link
               href="/portal/register"
