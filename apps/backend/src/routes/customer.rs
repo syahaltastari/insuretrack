@@ -29,7 +29,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    auth::{password::hash_password, password::verify_password, RequireCustomer, Role},
+    auth::{
+        build_auth_cookies, build_clear_cookies, generate_csrf_token, password::hash_password,
+        password::verify_password, RequireCustomer, Role,
+    },
     domain::{
         claim::can_transition as claim_can_transition,
         identifier::{next_id, EntityType},
@@ -56,6 +59,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/activate", post(activate))
         .route("/login", post(login))
+        .route("/logout", post(logout))
         .route("/password/reset", post(password_reset))
         .route("/password/reset/consume", post(password_reset_consume))
         .route("/me", get(me).patch(update_me))
@@ -107,7 +111,7 @@ fn customer_id_from(claims: &crate::auth::Claims) -> AppResult<Uuid> {
 async fn activate(
     State(state): State<AppState>,
     Json(req): Json<ActivateRequest>,
-) -> AppResult<Json<LoginResponse>> {
+) -> AppResult<Response> {
     let claims = state.tokens.verify(&req.token)?;
     if claims.purpose.as_deref() != Some("activation") || claims.role != Role::Customer {
         return Err(AppError::Unauthorized);
@@ -131,19 +135,23 @@ async fn activate(
         "customer (already active or not found)".into(),
     ))?;
 
+    const SESSION_TTL: i64 = 60 * 60 * 8;
     let token = state.tokens.issue(
         &customer.id.to_string(),
         Role::Customer,
         None,
         false,
-        60 * 60 * 8,
+        SESSION_TTL,
     )?;
-    Ok(Json(LoginResponse {
-        token,
+    let csrf = generate_csrf_token();
+    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
+
+    let body = Json(LoginResponse {
         role: "customer".to_string(),
         id: Some(customer.id),
         is_super_admin: None,
-    }))
+    });
+    Ok((StatusCode::OK, jar, body).into_response())
 }
 
 // ---- POST /login ----
@@ -151,7 +159,7 @@ async fn activate(
 async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
-) -> AppResult<Json<LoginResponse>> {
+) -> AppResult<Response> {
     let row: Option<CustomerCredRow> = sqlx::query_as(
         r#"
         SELECT id, email, full_name, password_hash, portal_status, is_active
@@ -183,13 +191,16 @@ async fn login(
     // submit_insurance_application) sehingga alur registrasi → aktivasi
     // → apply asuransi bisa dipandu step-by-step dari portal.
 
+    const SESSION_TTL: i64 = 60 * 60 * 8;
     let token = state.tokens.issue(
         &customer.id.to_string(),
         Role::Customer,
         None,
         false,
-        60 * 60 * 8,
+        SESSION_TTL,
     )?;
+    let csrf = generate_csrf_token();
+    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
 
     audit_write(
         &state.pool,
@@ -204,12 +215,38 @@ async fn login(
     )
     .await?;
 
-    Ok(Json(LoginResponse {
-        token,
+    let body = Json(LoginResponse {
         role: "customer".to_string(),
         id: Some(customer.id),
         is_super_admin: None,
-    }))
+    });
+    Ok((StatusCode::OK, jar, body).into_response())
+}
+
+/// POST /api/customer/logout — clear session + CSRF cookies, return 204.
+/// Idempotent. FE call ini saat user klik "Logout" di menu, lalu
+/// `router.replace("/portal/login")`.
+async fn logout(
+    State(state): State<AppState>,
+    RequireCustomer(claims): RequireCustomer,
+) -> AppResult<Response> {
+    let customer_id = customer_id_from(&claims)?;
+    let jar = build_clear_cookies(&state.config);
+
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &claims.sub,
+            action: "customer_logout",
+            entity_type: "customer",
+            entity_id: Some(customer_id),
+            metadata: None,
+            ip_address: None,
+        },
+    )
+    .await;
+
+    Ok((StatusCode::NO_CONTENT, jar).into_response())
 }
 
 // ---- POST /password/reset ----
@@ -284,7 +321,7 @@ async fn password_reset(
 async fn password_reset_consume(
     State(state): State<AppState>,
     Json(req): Json<PasswordResetConsumeRequest>,
-) -> AppResult<Json<LoginResponse>> {
+) -> AppResult<Response> {
     if req.new_password.len() < 8 {
         return Err(AppError::Validation(
             "Password baru minimal 8 karakter".into(),
@@ -325,19 +362,23 @@ async fn password_reset_consume(
     .await?;
 
     // Issue a fresh login token so the user is signed in immediately.
+    const SESSION_TTL: i64 = 60 * 60 * 8;
     let token = state.tokens.issue(
         &customer.id.to_string(),
         Role::Customer,
         None,
         false,
-        60 * 60 * 8,
+        SESSION_TTL,
     )?;
-    Ok(Json(LoginResponse {
-        token,
+    let csrf = generate_csrf_token();
+    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
+
+    let body = Json(LoginResponse {
         role: "customer".to_string(),
         id: Some(customer.id),
         is_super_admin: None,
-    }))
+    });
+    Ok((StatusCode::OK, jar, body).into_response())
 }
 
 // ---- GET /me ----

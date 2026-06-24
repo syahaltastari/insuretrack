@@ -25,7 +25,7 @@ async fn get_charts(app: &common::TestApp, query: &str) -> (StatusCode, Value) {
     let req = Request::builder()
         .method(Method::GET)
         .uri(format!("/api/admin/dashboard/charts?{query}"))
-        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::COOKIE, common::cookie_session(app, &token))
         .body(Body::empty())
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();
@@ -156,7 +156,7 @@ async fn charts_requires_admin_role() {
     let req = Request::builder()
         .method(Method::GET)
         .uri("/api/admin/dashboard/charts")
-        .header(header::AUTHORIZATION, format!("Bearer {cust_token}"))
+        .header(header::COOKIE, common::cookie_session(&app, &cust_token))
         .body(Body::empty())
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();

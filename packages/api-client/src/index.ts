@@ -1,13 +1,11 @@
 // Public API of @insuretrack/api-client
-export { API_BASE, ApiError, apiFetch } from "./api";
+export { API_BASE, ApiError, apiFetch, hasSessionCookie } from "./api";
 export {
-  getAdminToken,
-  setAdminToken,
-  clearAdminToken,
-  getCustomerToken,
-  setCustomerToken,
-  clearCustomerToken,
+  readCsrfCookie,
+  hasSessionCookie as hasSessionCookieBrowser,
+  AUTH_COOKIE_NAMES,
 } from "./auth";
+export { logoutAdmin, logoutCustomer } from "./logout";
 export { cn, formatIdr, formatIdrShort } from "./utils";
 export type {
   Product,

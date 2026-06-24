@@ -9,8 +9,7 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { API_BASE } from "@insuretrack/api-client";
-import { setCustomerToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 import { Navbar } from "@/components/Navbar";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema } from "@insuretrack/forms";
@@ -38,14 +37,12 @@ function LoginInner() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const r = await fetch(`${API_BASE}/customer/login`, {
+      // Login endpoint di CSRF skip-list backend. Backend set 2 cookie
+      // di response — browser auto-attach ke request berikutnya.
+      await apiFetch("/customer/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: values.email.trim(), password: values.password }),
       });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json?.error?.message ?? "Login gagal");
-      setCustomerToken(json.token);
       router.replace(next);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Login gagal");

@@ -5,8 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { API_BASE } from "@insuretrack/api-client";
-import { getCustomerToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 
 type Me = {
   customer_id: string;
@@ -33,15 +32,13 @@ export default function PortalDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) return;
     (async () => {
       try {
-        const r = await fetch(`${API_BASE}/customer/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        setMe(await r.json());
+        // Cookie auth: apiFetch attach session otomatis. Kalau tidak
+        // ada session, backend return 401 → throw → masuk `catch`
+        // (Shell layer redirect ke /login kalau user belum auth).
+        const m = await apiFetch<Me>("/customer/me");
+        setMe(m);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Gagal load");
       }

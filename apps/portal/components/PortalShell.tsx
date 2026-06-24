@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@insuretrack/ui";
-import { clearCustomerToken, getCustomerToken } from "@insuretrack/api-client";
+import { hasSessionCookie } from "@insuretrack/api-client";
 import { CustomerUserMenu, fetchCustomerProfile, type CustomerProfile } from "@/components/CustomerUserMenu";
 
 const navItems: Array<{ href: string; label: string; icon: IconName }> = [
@@ -39,21 +39,23 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const [minimizedHydrated, setMinimizedHydrated] = useState(false);
 
   useEffect(() => {
-    // Halaman publik (login, register, dll.) tidak butuh token.
+    // Halaman publik (login, register, dll.) tidak butuh auth.
     // setReady(true) langsung supaya shell render — kalau tidak, user
     // stuck di loading state selamanya.
     if (pathname && PUBLIC_PORTAL_PATHS.has(pathname)) {
       setReady(true);
       return;
     }
-    const token = getCustomerToken();
-    if (!token) {
+    // Setelah migrasi cookie: cookie HttpOnly, JS tidak bisa baca value.
+    // `hasSessionCookie()` cek nama cookie ada; backend authorize
+    // sebenarnya via session JWT di Set-Cookie.
+    if (!hasSessionCookie()) {
       router.replace("/portal/login");
       return;
     }
     setReady(true);
     // Fetch profile untuk user menu (topbar kanan). Best-effort —
-    // kalau gagal, menu tetap render dengan inisial "·".
+    // kalau gagal (401 dari backend), menu tetap render dengan inisial "·".
     fetchCustomerProfile().then(setProfile);
   }, [router, pathname]);
 

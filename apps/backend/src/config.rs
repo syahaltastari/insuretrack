@@ -46,6 +46,32 @@ pub struct Config {
     pub inquiry_auto_close_days: i64,
 
     pub port: u16,
+
+    // === Auth cookies (cookie-only, no Authorization header) ===
+    /// Name untuk session cookie (default `insuretrack_session`). JWT
+    /// yang di-issue saat login di-set ke cookie ini dengan HttpOnly+Secure+SameSite=Lax.
+    pub session_cookie_name: String,
+    /// Name untuk CSRF token cookie (default `insuretrack_csrf`). Tidak
+    /// HttpOnly — JS baca via `document.cookie` lalu kirim sebagai
+    /// header `X-CSRF-Token` di setiap request mutating.
+    pub csrf_cookie_name: String,
+    /// Optional Domain attribute untuk kedua cookie. Kosongkan untuk
+    /// host-only cookie (default, cukup untuk dev). Di production dengan
+    /// subdomain (`api.X`, `portal.X`, `admin.X`) set ke `.X` agar cookie
+    /// dikirim ke `api.X` saat frontend call fetch ke sana. Leading dot
+    /// opsional di modern browser, kita pass-through apa adanya.
+    pub cookie_domain: String,
+    /// `Secure` flag — set true di HTTPS, false di localhost HTTP dev.
+    /// Backend tidak auto-detect; operator wajib set manual per env.
+    pub cookie_secure: bool,
+
+    /// === CORS ===
+    /// Comma-separated list of allowed origin untuk CORS. Wajib set
+    /// eksplisit di production (contoh: `https://portal.insuretrack.id,
+    /// https://admin.insuretrack.id`). Kalau kosong, fallback ke
+    /// `http://localhost:3000,http://localhost:3001` (dev) + warning
+    /// log di startup.
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl Config {
@@ -136,6 +162,24 @@ impl Config {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8080),
+            session_cookie_name: env::var("SESSION_COOKIE_NAME")
+                .unwrap_or_else(|_| "insuretrack_session".to_string()),
+            csrf_cookie_name: env::var("CSRF_COOKIE_NAME")
+                .unwrap_or_else(|_| "insuretrack_csrf".to_string()),
+            cookie_domain: env::var("COOKIE_DOMAIN").unwrap_or_default(),
+            cookie_secure: env::var("COOKIE_SECURE")
+                .ok()
+                .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
+                .unwrap_or(false),
+            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
+                .ok()
+                .map(|s| {
+                    s.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 }

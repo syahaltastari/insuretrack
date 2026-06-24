@@ -1,4 +1,4 @@
-// API client (server & browser safe). Token-based auth helper.
+// API client (server & browser safe). Cookie-based auth, CSRF auto-attach.
 //
 // Dua env var dipakai karena beda konteks eksekusi:
 // - `NEXT_PUBLIC_API_URL` di-bake ke client bundle, dipakai browser untuk
@@ -8,13 +8,16 @@
 //   service `backend` di internal network. Fallback ke public URL untuk
 //   local dev di luar Docker (`pnpm dev` di host).
 
-// Append `/api` ke base URL, strip trailing slash kalau ada.
-// Konsisten dengan `API_BASE_INTERNAL` di bawah — baik PUBLIC maupun
-// INTERNAL base URL diharapkan TIDAK include `/api` suffix di env var;
-// client cukup set `http://api.example.com` (atau `http://backend:8080`).
-// `appendApi` helper sentralisasi logic ini agar tidak duplikasi.
-const appendApi = (base: string): string =>
-  `${base.replace(/\/+$/, "")}/api`;
+// Append `/api` ke base URL, strip trailing slash kalau ada. Kalau base
+// sudah diakhiri `/api` (mis. `NEXT_PUBLIC_API_URL=/api` di dev mode
+// dengan Next.js rewrites), pass-through tanpa double-prefix.
+// Konsisten dengan `API_BASE_INTERNAL` di bawah — base URL diharapkan
+// TIDAK include `/api` suffix (production pakai `http://api.example.com`)
+// KECUALI untuk same-origin proxy mode (`/api`) yang dipakai di dev.
+const appendApi = (base: string): string => {
+  const trimmed = base.replace(/\/+$/, "");
+  return trimmed === "" || trimmed.endsWith("/api") ? trimmed || "/api" : `${trimmed}/api`;
+};
 
 export const API_BASE_PUBLIC =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL
@@ -43,19 +46,104 @@ export class ApiError extends Error {
   }
 }
 
+// CSRF cookie name — di-bake ke client bundle via NEXT_PUBLIC_* env, atau
+// fallback ke default. Sinkron dengan `auth.ts` SESSION_COOKIE_NAME.
+const CSRF_COOKIE_NAME =
+  (typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_CSRF_COOKIE_NAME) ||
+  "insuretrack_csrf";
+
+const SESSION_COOKIE_NAME =
+  (typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME) ||
+  "insuretrack_session";
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * SSR-only: baca cookies dari Next.js `cookies()` API dan serialize
+ * ke `Cookie:` header value. Return `undefined` di non-Next.js
+ * context (vitest, dll.) atau kalau `next/headers` tidak di-load.
+ */
+async function readIncomingCookiesForSsr(): Promise<string | undefined> {
+  try {
+    // Dynamic import — `next/headers` hanya ada di Next.js runtime.
+    // Di unit test (vitest) module ini absent → return undefined.
+    const mod = await import("next/headers").catch(() => null);
+    if (!mod) return undefined;
+    const jar = await mod.cookies();
+    const session = jar.get(SESSION_COOKIE_NAME);
+    const csrf = jar.get(CSRF_COOKIE_NAME);
+    const parts: string[] = [];
+    if (session) parts.push(`${SESSION_COOKIE_NAME}=${session.value}`);
+    if (csrf) parts.push(`${CSRF_COOKIE_NAME}=${csrf.value}`);
+    return parts.length ? parts.join("; ") : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Browser-only: baca CSRF token dari `document.cookie`. Return `null`
+ * kalau cookie absent (user belum login) atau di server-side.
+ */
+function readCsrfFromDocument(): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${CSRF_COOKIE_NAME}=([^;]+)`),
+  );
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/**
+ * Fetch wrapper. Auth via httpOnly cookie (browser auto-attach) atau via
+ * SSR-forwarded cookie (server-side fetch). CSRF token auto-attach di
+ * request mutating.
+ *
+ * Konvensi request:
+ * - GET/HEAD/OPTIONS: aman, no CSRF needed.
+ * - POST/PUT/PATCH/DELETE: butuh `X-CSRF-Token` header yang cocok dengan
+ *   `insuretrack_csrf` cookie. Helper baca dari cookie (browser) atau
+ *   skip-list di backend (login/activate/reset/webhook).
+ * - Content-Type: auto-set `application/json` kecuali body FormData.
+ *
+ * Session token TIDAK di-attach manual — browser auto-attach `Cookie:`
+ * untuk same-site request; SSR explicitly forwards via `next/headers`.
+ */
 export async function apiFetch<T = unknown>(
   path: string,
-  init: RequestInit & { token?: string } = {},
+  init: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
+
+  // 1. Content-Type default untuk JSON body (skip FormData — browser
+  //    set dengan boundary yang harus match).
   if (init.body && !headers.has("Content-Type") && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (init.token) {
-    headers.set("Authorization", `Bearer ${init.token}`);
+
+  const method = (init.method ?? "GET").toUpperCase();
+
+  // 2. CSRF: untuk request mutating di browser, mirror CSRF cookie
+  //    value ke header. Di SSR, cookie sudah di-forward via `Cookie:`
+  //    header di bawah — CSRF guard backend baca X-CSRF-Token dari
+  //    header ATAU cocokkan cookie vs header (kita yang forward).
+  if (MUTATING_METHODS.has(method) && typeof window !== "undefined") {
+    const csrf = readCsrfFromDocument();
+    if (csrf && !headers.has("X-CSRF-Token")) {
+      headers.set("X-CSRF-Token", csrf);
+    }
   }
 
-  const r = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  // 3. SSR cookie forwarding: kalau di server-side, baca `next/headers`
+  //    cookies() dan attach sebagai `Cookie:` header. Tidak dilakukan di
+  //    browser — browser auto-attach session cookie.
+  if (typeof window === "undefined") {
+    const cookie = await readIncomingCookiesForSsr();
+    if (cookie) headers.set("Cookie", cookie);
+  }
+
+  const r = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: "include" });
   const text = await r.text();
   const json = text ? JSON.parse(text) : null;
 
@@ -68,4 +156,12 @@ export async function apiFetch<T = unknown>(
     );
   }
   return json as T;
+}
+
+/** `true` kalau user punya session cookie di browser. Cross-tab safe. */
+export function hasSessionCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie
+    .split(";")
+    .some((c) => c.trim().startsWith(`${SESSION_COOKIE_NAME}=`));
 }

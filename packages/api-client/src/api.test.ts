@@ -1,18 +1,32 @@
 // Unit test untuk apiFetch — cover header logic, error envelope parsing,
-// empty body, dan token attachment.
+// empty body, dan CSRF auto-attach.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, apiFetch } from "./api";
 
 const originalFetch = globalThis.fetch;
+const originalDocument = (globalThis as { document?: unknown }).document;
 
 describe("apiFetch", () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn();
+    // Default mock document.cookie kosong (no session/CSRF).
+    setDocumentCookie("");
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    setDocumentCookie(null);
   });
+
+  function setDocumentCookie(value: string | null) {
+    if (value === null) {
+      delete (globalThis as { document?: unknown }).document;
+    } else {
+      (globalThis as { document?: unknown }).document = {
+        cookie: value,
+      };
+    }
+  }
 
   function mockResponse(status: number, body: unknown) {
     // jsdom Response constructor menolak 204 status (sebagian besar browser
@@ -46,15 +60,6 @@ describe("apiFetch", () => {
     // Browser auto-set dengan boundary — kalau kita set manual, dia akan
     // salah. apiFetch harus skip Content-Type supaya browser yang handle.
     expect(init.headers.has("content-type")).toBe(false);
-  });
-
-  it("attaches Authorization: Bearer when token supplied", async () => {
-    (globalThis.fetch as any).mockResolvedValue(mockResponse(200, {}));
-
-    await apiFetch("/secure", { token: "jwt-abc" });
-
-    const [, init] = (globalThis.fetch as any).mock.calls[0];
-    expect(init.headers.get("authorization")).toBe("Bearer jwt-abc");
   });
 
   it("returns parsed JSON on 2xx", async () => {
@@ -97,5 +102,47 @@ describe("apiFetch", () => {
       status: 500,
       code: "UNKNOWN",
     });
+  });
+
+  it("mutating request auto-attaches X-CSRF-Token from document.cookie", async () => {
+    setDocumentCookie("insuretrack_session=abc; insuretrack_csrf=csrf-xyz");
+    (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
+
+    await apiFetch("/admin/foo", { method: "POST", body: "{}" });
+
+    const [, init] = (globalThis.fetch as any).mock.calls[0];
+    expect(init.headers.get("x-csrf-token")).toBe("csrf-xyz");
+  });
+
+  it("GET request does NOT attach X-CSRF-Token (skip CSRF check)", async () => {
+    setDocumentCookie("insuretrack_csrf=csrf-xyz");
+    (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
+
+    await apiFetch("/admin/me");
+
+    const [, init] = (globalThis.fetch as any).mock.calls[0];
+    expect(init.headers.has("x-csrf-token")).toBe(false);
+  });
+
+  it("does NOT attach X-CSRF-Token when cookie absent", async () => {
+    setDocumentCookie(""); // no csrf cookie
+    (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
+
+    await apiFetch("/admin/foo", { method: "POST", body: "{}" });
+
+    const [, init] = (globalThis.fetch as any).mock.calls[0];
+    // Backend will reject (403) — FE tidak fabricate token.
+    expect(init.headers.has("x-csrf-token")).toBe(false);
+  });
+
+  it("attaches credentials: 'include' for cross-origin cookie inclusion", async () => {
+    setDocumentCookie("insuretrack_session=abc");
+    (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
+
+    await apiFetch("/admin/me");
+
+    const [, init] = (globalThis.fetch as any).mock.calls[0];
+    // Penting untuk cross-origin request agar browser kirim cookie.
+    expect(init.credentials).toBe("include");
   });
 });

@@ -28,8 +28,8 @@ import { z } from "zod";
 import {
   API_BASE,
   ApiError,
+  apiFetch,
   formatIdr,
-  getCustomerToken,
   type ApplicantType,
   type ParticipantData,
   type ProductCatalogData,
@@ -214,11 +214,6 @@ export function InstansiForm({
     }
     setSubmitting(true);
     setResultDialog(IDLE);
-    const token = getCustomerToken();
-    if (!token) {
-      router.replace("/portal/login?next=/portal/insurance/new");
-      return;
-    }
     try {
       const fd = new FormData();
       fd.append(
@@ -253,19 +248,11 @@ export function InstansiForm({
       );
       // No id_card file untuk Instansi (KTP per peserta belum di-upload
       // di MVP — bisa ditambah di iterasi berikut).
-      const r = await fetch(`${API_BASE}/customer/registrations`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        throw new ApiError(
-          r.status,
-          json?.error?.code ?? "ERR",
-          json?.error?.message ?? "Gagal submit registrasi.",
-        );
-      }
+      // apiFetch handles multipart + CSRF auto-attach.
+      const json = await apiFetch<{
+        registration_no: string;
+        invoice_no: string;
+      }>("/customer/registrations", { method: "POST", body: fd });
       setResult({ registration_no: json.registration_no, invoice_no: json.invoice_no });
     } catch (err) {
       setResultDialog(mapSubmitError(err));

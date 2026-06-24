@@ -9,7 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE, formatIdr, getCustomerToken } from "@insuretrack/api-client";
+import { apiFetch, formatIdr } from "@insuretrack/api-client";
 import { PolicyPicker, type PolicyPickerItem } from "@/components/PolicyPicker";
 
 type Policy = PolicyPickerItem;
@@ -103,12 +103,7 @@ export default function NewClaimPage() {
   const watchedDescription = methods.watch("description");
 
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) return;
-    fetch(`${API_BASE}/customer/policies?status=ACTIVE&page=1&page_size=50`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
+    apiFetch<{ data?: Policy[] }>("/customer/policies?status=ACTIVE&page=1&page_size=50")
       .then((j) => {
         const list: Policy[] = j.data ?? [];
         setPolicies(list);
@@ -144,8 +139,6 @@ export default function NewClaimPage() {
   }, [selectedPolicy, watchedIncidentDate, watchedDescription, methods]);
 
   const onSubmit = async (values: ClaimFormValues) => {
-    const token = getCustomerToken();
-    if (!token) return;
     const docsRaw = values.documents;
     const docs: File[] = docsRaw instanceof FileList ? Array.from(docsRaw) : [];
     for (const f of docs) {
@@ -169,13 +162,8 @@ export default function NewClaimPage() {
         }),
       );
       for (const f of docs) fd.append("documents", f);
-      const r = await fetch(`${API_BASE}/customer/claims`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json?.error?.message ?? "Gagal submit klaim");
+      // apiFetch handles CSRF auto-attach + Content-Type skip untuk FormData.
+      await apiFetch("/customer/claims", { method: "POST", body: fd });
       router.replace("/portal/claims");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Gagal");

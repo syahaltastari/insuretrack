@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@insuretrack/ui";
-import { API_BASE } from "@insuretrack/api-client";
-import { clearCustomerToken, getCustomerToken } from "@insuretrack/api-client";
+import { apiFetch, logoutCustomer } from "@insuretrack/api-client";
 
 export type CustomerProfile = {
   customer_id: string;
@@ -46,8 +45,14 @@ export function CustomerUserMenu({ profile }: { profile: CustomerProfile | null 
   const display = profile?.full_name?.trim() || profile?.email || "Customer";
   const subline = profile?.email ?? "";
 
-  const onLogout = () => {
-    clearCustomerToken();
+  const onLogout = async () => {
+    try {
+      // Backend POST /api/customer/logout → Set-Cookie Max-Age=0 untuk
+      // session + csrf cookie. Browser auto-hapus.
+      await logoutCustomer();
+    } catch {
+      // Logout endpoint failure shouldn't block UX — tetap redirect.
+    }
     router.replace("/portal/login");
   };
 
@@ -98,17 +103,15 @@ export function CustomerUserMenu({ profile }: { profile: CustomerProfile | null 
 
 /**
  * Fetch the logged-in customer's profile. Returns null if not authenticated
- * or the request fails (e.g. 401 with stale token).
+ * or the request fails (e.g. 401 with stale cookie).
+ *
+ * Cookie di-attach otomatis oleh browser — tidak bisa early-bail dengan
+ * localStorage. Backend return 401 kalau session tidak valid → kita
+ * return null.
  */
 export async function fetchCustomerProfile(): Promise<CustomerProfile | null> {
-  const token = getCustomerToken();
-  if (!token) return null;
   try {
-    const r = await fetch(`${API_BASE}/customer/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!r.ok) return null;
-    const json = (await r.json()) as {
+    const json = await apiFetch<{
       customer_id: string;
       email: string;
       full_name: string;
@@ -117,7 +120,7 @@ export async function fetchCustomerProfile(): Promise<CustomerProfile | null> {
       total_sum_assured: string;
       open_claim_count: number;
       open_inquiry_count: number;
-    };
+    }>("/customer/me");
     return {
       customer_id: json.customer_id,
       email: json.email,

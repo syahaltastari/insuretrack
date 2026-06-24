@@ -8,10 +8,14 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use sqlx::postgres::PgPoolOptions;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    trace::TraceLayer,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use insuretrack_backend::{
+    auth::csrf_guard,
     config::Config,
     routes,
     services::{email::EmailSender, resend::ResendClient, storage},
@@ -55,9 +59,19 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(resend) as Arc<dyn EmailSender>,
     );
 
-    let app = routes::build(state)
+    // CORS: explicit allowlist (tidak bisa pakai `*` saat credentials
+    // enabled — browser modern reject kombinasi itu). Origin list baca
+    // dari `CORS_ALLOWED_ORIGINS` env (comma-separated) atau fallback
+    // ke localhost dev ports.
+    let cors = build_cors_layer(&cfg);
+
+    let app = routes::build(state.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            csrf_guard,
+        ))
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+        .layer(cors);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     tracing::info!("insuretrack-backend listening on {}", addr);
@@ -66,4 +80,51 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// CORS allowlist baca dari `CORS_ALLOWED_ORIGINS` env (comma-separated).
+/// Default = dev: portal :3000 + admin :3001. Di production set ke
+/// `https://portal.${DOMAIN},https://admin.${DOMAIN}`. `allow_credentials(true)`
+/// wajib agar browser kirim cookie cross-origin (login response Set-Cookie).
+fn build_cors_layer(cfg: &Config) -> CorsLayer {
+    use axum::http::{header, HeaderName, HeaderValue, Method};
+
+    let allowed: Vec<HeaderValue> = cfg
+        .cors_allowed_origins
+        .iter()
+        .filter_map(|s| HeaderValue::from_str(s).ok())
+        .collect();
+
+    let allow_origin = if allowed.is_empty() {
+        // Fallback: dev defaults. Log warning sekali saat startup
+        // (operator harus set eksplisit di prod).
+        tracing::warn!(
+            "CORS_ALLOWED_ORIGINS not set — falling back to localhost dev origins. \
+             Set explicitly in production."
+        );
+        AllowOrigin::list([
+            HeaderValue::from_static("http://localhost:3000"),
+            HeaderValue::from_static("http://localhost:3001"),
+        ])
+    } else {
+        AllowOrigin::list(allowed)
+    };
+
+    CorsLayer::new()
+        .allow_origin(allow_origin)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION, // legacy: beberapa test masih pakai, harmless
+            HeaderName::from_static("x-csrf-token"),
+        ])
+        .allow_credentials(true)
+        .max_age(Duration::from_secs(3600))
 }

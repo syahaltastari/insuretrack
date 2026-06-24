@@ -17,30 +17,40 @@ use uuid::Uuid;
 use insuretrack_backend::auth::jwt::Role;
 
 // ---- Helpers --------------------------------------------------------------
+//
+// Setelah migrasi ke cookie auth, request admin butuh `Cookie:` header
+// (session) untuk GET, dan `Cookie:` + `X-CSRF-Token` untuk mutating.
 
-async fn admin_headers(app: &common::TestApp) -> (String, Uuid) {
+const TEST_CSRF: &str = "test-csrf-token";
+
+/// Seed admin + return (token, admin_id). Caller bangun Cookie header
+/// sendiri via `common::cookie_session` (GET) atau `common::cookie_with_csrf`
+/// (mutating). Decoupling ini supaya caller bisa akses token untuk debugging
+/// atau test tertentu.
+async fn admin_auth(app: &common::TestApp) -> (String, Uuid) {
     let token = common::admin_token(app, Role::Admin, true).await;
     let admin_id: (Uuid,) = sqlx::query_as("SELECT id FROM admin_users WHERE username = 'testadmin'")
         .fetch_one(&app.pool)
         .await
         .unwrap();
-    (format!("Bearer {token}"), admin_id.0)
+    (token, admin_id.0)
 }
 
-fn get_json(uri: &str, auth: &str) -> Request<Body> {
+fn get_json(app: &common::TestApp, uri: &str, token: &str) -> Request<Body> {
     Request::builder()
         .method(Method::GET)
         .uri(uri)
-        .header(header::AUTHORIZATION, auth)
+        .header(header::COOKIE, common::cookie_session(app, token))
         .body(Body::empty())
         .unwrap()
 }
 
-fn post_empty(uri: &str, auth: &str) -> Request<Body> {
+fn post_empty(app: &common::TestApp, uri: &str, token: &str) -> Request<Body> {
     Request::builder()
         .method(Method::POST)
         .uri(uri)
-        .header(header::AUTHORIZATION, auth)
+        .header(header::COOKIE, common::cookie_with_csrf(app, token, TEST_CSRF))
+        .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::empty())
         .unwrap()
 }
@@ -51,14 +61,14 @@ fn post_empty(uri: &str, auth: &str) -> Request<Body> {
 #[serial]
 async fn list_customers_returns_paginated() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     // Seed 3 customers.
     for i in 0..3 {
         common::seed_customer(&app.pool, &format!("c{i}@test.local"), "PENDING").await;
     }
 
     let (status, body) = common::response_json(
-        common::send(&app, get_json("/api/admin/customers?page=1&page_size=2", &auth)).await,
+        common::send(&app, get_json(&app, "/api/admin/customers?page=1&page_size=2", &token)).await,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -72,13 +82,13 @@ async fn list_customers_returns_paginated() {
 #[serial]
 async fn list_customers_search_filters_by_email() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     common::seed_customer(&app.pool, "alpha@test.local", "ACTIVE").await;
     common::seed_customer(&app.pool, "beta@test.local", "ACTIVE").await;
     common::seed_customer(&app.pool, "gamma@other.local", "ACTIVE").await;
 
     let (_, body) = common::response_json(
-        common::send(&app, get_json("/api/admin/customers?q=alpha", &auth)).await,
+        common::send(&app, get_json(&app, "/api/admin/customers?q=alpha", &token)).await,
     )
     .await;
     assert_eq!(body["total"], 1);
@@ -89,13 +99,13 @@ async fn list_customers_search_filters_by_email() {
 #[serial]
 async fn list_customers_filter_by_portal_status() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     common::seed_customer(&app.pool, "p1@test.local", "PENDING").await;
     common::seed_customer(&app.pool, "p2@test.local", "PENDING").await;
     common::seed_customer(&app.pool, "a1@test.local", "ACTIVE").await;
 
     let (_, body) = common::response_json(
-        common::send(&app, get_json("/api/admin/customers?status=PENDING", &auth)).await,
+        common::send(&app, get_json(&app, "/api/admin/customers?status=PENDING", &token)).await,
     )
     .await;
     assert_eq!(body["total"], 2);
@@ -105,7 +115,7 @@ async fn list_customers_filter_by_portal_status() {
 #[serial]
 async fn list_customers_filter_by_is_active() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "x@test.local", "ACTIVE").await;
     // Deactivate
     sqlx::query("UPDATE customers SET is_active = FALSE, deactivated_at = now() WHERE id = $1")
@@ -116,7 +126,7 @@ async fn list_customers_filter_by_is_active() {
     common::seed_customer(&app.pool, "y@test.local", "ACTIVE").await;
 
     let (_, body) = common::response_json(
-        common::send(&app, get_json("/api/admin/customers?active=false", &auth)).await,
+        common::send(&app, get_json(&app, "/api/admin/customers?active=false", &token)).await,
     )
     .await;
     assert_eq!(body["total"], 1);
@@ -127,10 +137,10 @@ async fn list_customers_filter_by_is_active() {
 #[serial]
 async fn list_customers_csv_format() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     common::seed_customer(&app.pool, "csv@test.local", "ACTIVE").await;
 
-    let resp = common::send(&app, get_json("/api/admin/customers?format=csv", &auth)).await;
+    let resp = common::send(&app, get_json(&app, "/api/admin/customers?format=csv", &token)).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let ct = resp
         .headers()
@@ -172,7 +182,7 @@ async fn list_customers_requires_admin_token() {
 #[serial]
 async fn get_customer_detail_embeds_counts() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let customer_id = common::seed_customer(&app.pool, "d@test.local", "ACTIVE").await;
 
     // Seed 2 registrations untuk customer ini
@@ -191,7 +201,7 @@ async fn get_customer_detail_embeds_counts() {
 
     let resp = common::send(
         &app,
-        get_json(&format!("/api/admin/customers/{customer_id}"), &auth),
+        get_json(&app, &format!("/api/admin/customers/{customer_id}"), &token),
     )
     .await;
     let (status, body) = common::response_json(resp).await;
@@ -209,12 +219,12 @@ async fn get_customer_detail_embeds_counts() {
 #[serial]
 async fn get_customer_not_found_returns_404() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let random_id = Uuid::new_v4();
     let (status, _) = common::response_json(
         common::send(
             &app,
-            get_json(&format!("/api/admin/customers/{random_id}"), &auth),
+            get_json(&app, &format!("/api/admin/customers/{random_id}"), &token),
         )
         .await,
     )
@@ -228,11 +238,11 @@ async fn get_customer_not_found_returns_404() {
 #[serial]
 async fn deactivate_then_activate_toggles_is_active() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "tog@test.local", "ACTIVE").await;
 
     // Deactivate
-    let resp = common::send(&app, post_empty(&format!("/api/admin/customers/{id}/deactivate"), &auth)).await;
+    let resp = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let row: (bool, Option<chrono::DateTime<chrono::Utc>>) =
         sqlx::query_as("SELECT is_active, deactivated_at FROM customers WHERE id = $1")
@@ -244,7 +254,7 @@ async fn deactivate_then_activate_toggles_is_active() {
     assert!(row.1.is_some(), "deactivated_at harus di-set");
 
     // Activate
-    let resp = common::send(&app, post_empty(&format!("/api/admin/customers/{id}/activate"), &auth)).await;
+    let resp = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/activate"), &token)).await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let row: (bool, Option<chrono::DateTime<chrono::Utc>>) =
         sqlx::query_as("SELECT is_active, deactivated_at FROM customers WHERE id = $1")
@@ -261,13 +271,13 @@ async fn deactivate_then_activate_toggles_is_active() {
 #[serial]
 async fn deactivate_already_inactive_returns_404() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "ai@test.local", "ACTIVE").await;
     // First deactivate: success
-    let r1 = common::send(&app, post_empty(&format!("/api/admin/customers/{id}/deactivate"), &auth)).await;
+    let r1 = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
     assert_eq!(r1.status(), StatusCode::NO_CONTENT);
     // Second: 404
-    let r2 = common::send(&app, post_empty(&format!("/api/admin/customers/{id}/deactivate"), &auth)).await;
+    let r2 = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
     assert_eq!(r2.status(), StatusCode::NOT_FOUND);
 }
 
@@ -275,10 +285,10 @@ async fn deactivate_already_inactive_returns_404() {
 #[serial]
 async fn deactivate_creates_audit_log() {
     let app = common::spawn_app().await;
-    let (auth, admin_id) = admin_headers(&app).await;
+    let (token, admin_id) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "audit@test.local", "ACTIVE").await;
 
-    common::send(&app, post_empty(&format!("/api/admin/customers/{id}/deactivate"), &auth)).await;
+    common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
 
     let entry: (String, String, String, Option<serde_json::Value>) = sqlx::query_as(
         "SELECT actor, action, entity_type, metadata \
@@ -303,7 +313,7 @@ async fn deactivate_creates_audit_log() {
 #[serial]
 async fn deactivated_customer_cannot_login() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "block@test.local", "ACTIVE").await;
     // Set password yang valid (argon2 hash placeholder dari seed_customer
     // adalah 'argon2id$placeholder' — tidak valid hash, jadi kita UPDATE
@@ -318,7 +328,7 @@ async fn deactivated_customer_cannot_login() {
         .unwrap();
 
     // Deactivate
-    common::send(&app, post_empty(&format!("/api/admin/customers/{id}/deactivate"), &auth)).await;
+    common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
 
     // Coba login → harus 401
     let req = Request::builder()
@@ -337,7 +347,7 @@ async fn deactivated_customer_cannot_login() {
 #[serial]
 async fn active_customer_can_login() {
     let app = common::spawn_app().await;
-    let _ = admin_headers(&app).await; // touch admin to ensure schema
+    let _ = admin_auth(&app).await; // touch admin to ensure schema
     let id = common::seed_customer(&app.pool, "ok@test.local", "ACTIVE").await;
     use insuretrack_backend::auth::password;
     let h = password::hash_password("Test1234!").unwrap();
@@ -366,13 +376,13 @@ async fn active_customer_can_login() {
 #[serial]
 async fn reset_password_returns_plaintext_and_works_for_login() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "reset@test.local", "ACTIVE").await;
 
     let (_, body) = common::response_json(
         common::send(
             &app,
-            post_empty(&format!("/api/admin/customers/{id}/reset-password"), &auth),
+            post_empty(&app, &format!("/api/admin/customers/{id}/reset-password"), &token),
         )
         .await,
     )
@@ -398,13 +408,13 @@ async fn reset_password_returns_plaintext_and_works_for_login() {
 #[serial]
 async fn reset_password_audit_stores_length_not_plaintext() {
     let app = common::spawn_app().await;
-    let (auth, admin_id) = admin_headers(&app).await;
+    let (token, admin_id) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "raudit@test.local", "ACTIVE").await;
 
     let (_, body) = common::response_json(
         common::send(
             &app,
-            post_empty(&format!("/api/admin/customers/{id}/reset-password"), &auth),
+            post_empty(&app, &format!("/api/admin/customers/{id}/reset-password"), &token),
         )
         .await,
     )
@@ -436,7 +446,7 @@ async fn reset_password_audit_stores_length_not_plaintext() {
 #[serial]
 async fn resend_activation_for_pending_sends_email() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "ra@test.local", "PENDING").await;
     app.email.clear();
 
@@ -444,8 +454,9 @@ async fn resend_activation_for_pending_sends_email() {
         common::send(
             &app,
             post_empty(
+                &app,
                 &format!("/api/admin/customers/{id}/resend-activation"),
-                &auth,
+                &token,
             ),
         )
         .await,
@@ -467,15 +478,16 @@ async fn resend_activation_for_pending_sends_email() {
 #[serial]
 async fn resend_activation_refuses_if_already_active() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "already@test.local", "ACTIVE").await;
 
     let (status, body) = common::response_json(
         common::send(
             &app,
             post_empty(
+                &app,
                 &format!("/api/admin/customers/{id}/resend-activation"),
-                &auth,
+                &token,
             ),
         )
         .await,
@@ -492,13 +504,14 @@ async fn resend_activation_refuses_if_already_active() {
 #[serial]
 async fn resend_activation_for_missing_customer_returns_404() {
     let app = common::spawn_app().await;
-    let (auth, _) = admin_headers(&app).await;
+    let (token, _) = admin_auth(&app).await;
     let random_id = Uuid::new_v4();
     let resp = common::send(
         &app,
         post_empty(
+            &app,
             &format!("/api/admin/customers/{random_id}/resend-activation"),
-            &auth,
+            &token,
         ),
     )
     .await;

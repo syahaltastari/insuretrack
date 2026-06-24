@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 
+const BACKEND_ORIGIN =
+  process.env.BACKEND_URL ?? "http://localhost:8080";
+
 const nextConfig: NextConfig = {
   // output: "standalone" agar image Docker kecil dan hanya berisi file yang
   // dibutuhkan runtime. Aktif di build produksi.
@@ -23,6 +26,28 @@ const nextConfig: NextConfig = {
     "@insuretrack/forms",
     "@insuretrack/ui",
   ],
+  // Proxy `/api/*` ke backend Rust di port 8080. Tanpa ini, FE di :3000
+  // fetch langsung ke :8080 — browser simpan cookie di `localhost:8080`
+  // (host-only), FE di :3000 tidak bisa baca via `document.cookie`.
+  // Dengan rewrite, browser fetch ke same-origin (`localhost:3000/api/...`),
+  // Next.js dev server forward ke backend, dan `Set-Cookie` di response
+  // ke FE dev server apply ke FE origin. Cookie terbaca di client side.
+  //
+  // Di production dengan Traefik + subdomain (api.X, portal.X, admin.X),
+  // FE mengarah ke `https://api.X` (cross-origin tapi cross-subdomain cookie
+  // via `Domain=.X`). Rewrite ini TIDAK diperlukan di prod — tapi aktif
+  // tidak masalah karena prod pakai Docker dengan Traefik yang route
+  // `/api/*` di subdomain berbeda (rewrite di Next.js hanya match jika
+  // request hit FE host).
+  rewrites: async () =>
+    process.env.NODE_ENV === "production"
+      ? []
+      : [
+          {
+            source: "/api/:path*",
+            destination: `${BACKEND_ORIGIN}/api/:path*`,
+          },
+        ],
   // Webpack alias untuk fix dep resolution issue di Windows. Beberapa
   // paket (mis. `prop-types` via `recharts` chain) declare `react-is`
   // sebagai dep, dan webpack пытается resolve ke
@@ -41,9 +66,12 @@ const nextConfig: NextConfig = {
     return config;
   },
   // Default API URL untuk build lokal. Saat run di Docker, env disuntik
-  // saat build via docker-compose.
+  // saat build via docker-compose. Default ke same-origin path
+  // (`/api`) supaya rewrite Next.js dev server proxy ke backend —
+  // hasilnya cookie di-set ke FE origin (browser bisa baca via
+  // `document.cookie`).
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api",
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "/api",
   },
 };
 

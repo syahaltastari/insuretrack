@@ -1,31 +1,65 @@
-// Token storage helper. MVP: localStorage (client only).
-// Production: httpOnly cookie via API route or backend Set-Cookie.
+// Cookie auth helpers (browser only).
+//
+// Setelah migrasi dari localStorage ke httpOnly cookie, FE tidak lagi
+// simpan token di JavaScript — token ada di `document.cookie` (HttpOnly
+// = invisible, tapi cookie tetap dikirim otomatis oleh browser per-request).
+//
+// Yang masih bisa di-baca JS:
+//   - `insuretrack_csrf` cookie (companion non-HttpOnly) — dipakai untuk
+//     mirror ke `X-CSRF-Token` header di setiap request mutating.
+//   - `insuretrack_session` cookie — HttpOnly, return undefined di sini.
+//     FE cukup tahu "ada session atau tidak" via probe ke `/admin/me` atau
+//     `/customer/me`.
+//
+// Nama cookie configurable via env (NEXT_PUBLIC_SESSION_COOKIE_NAME /
+// NEXT_PUBLIC_CSRF_COOKIE_NAME) — default = `insuretrack_session` /
+// `insuretrack_csrf` (lihat backend `Config`).
 
-const ADMIN_TOKEN_KEY = "insuretrack_admin_token";
-const CUSTOMER_TOKEN_KEY = "insuretrack_customer_token";
+const SESSION_COOKIE_NAME =
+  (typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME) ||
+  "insuretrack_session";
 
-export function getAdminToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(ADMIN_TOKEN_KEY);
-}
-export function setAdminToken(token: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(ADMIN_TOKEN_KEY, token);
-}
-export function clearAdminToken() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(ADMIN_TOKEN_KEY);
+const CSRF_COOKIE_NAME =
+  (typeof process !== "undefined" &&
+    process.env.NEXT_PUBLIC_CSRF_COOKIE_NAME) ||
+  "insuretrack_csrf";
+
+/**
+ * Baca `insuretrack_csrf` cookie value. Return `null` di server-side
+ * (cookies() ada tapi tidak applicable untuk FE mirror) atau kalau
+ * cookie absent.
+ *
+ * Pakai di client component SEBELUM fetch mutating: ambil value, kirim
+ * sebagai header `X-CSRF-Token`. Backend cocokkan dengan companion
+ * cookie (double-submit pattern).
+ */
+export function readCsrfCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${CSRF_COOKIE_NAME}=([^;]+)`),
+  );
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
-export function getCustomerToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(CUSTOMER_TOKEN_KEY);
+/**
+ * Probe sederhana apakah user punya session cookie (bukan token —
+ * cookie value HttpOnly, JS tidak bisa baca). TRUE kalau cookie name
+ * ada di `document.cookie`, irrespective of value.
+ *
+ * Untuk cross-app detection (mis. Navbar admin detect customer-login),
+ * pakai ini sebagai hint, lalu confirm via GET `/customer/me`. Jangan
+ * pakai sebagai authz — selalu verify via endpoint.
+ */
+export function hasSessionCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie
+    .split(";")
+    .some((c) => c.trim().startsWith(`${SESSION_COOKIE_NAME}=`));
 }
-export function setCustomerToken(token: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(CUSTOMER_TOKEN_KEY, token);
-}
-export function clearCustomerToken() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(CUSTOMER_TOKEN_KEY);
-}
+
+/** Expose cookie names untuk diagnostic atau test. */
+export const AUTH_COOKIE_NAMES = {
+  session: SESSION_COOKIE_NAME,
+  csrf: CSRF_COOKIE_NAME,
+} as const;

@@ -32,7 +32,7 @@ import {
   FilterChipBar,
   type FilterChip,
 } from "@insuretrack/ui";
-import { API_BASE, ApiError, formatIdr, getAdminToken } from "@insuretrack/api-client";
+import { apiFetch, formatIdr } from "@insuretrack/api-client";
 
 type Stats = {
   total_registrations: number;
@@ -256,8 +256,6 @@ export default function AdminDashboard() {
 
   // ----- Data fetch (triggered by URL changes) -----
   const load = useCallback(async () => {
-    const token = getAdminToken();
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
@@ -272,19 +270,13 @@ export default function AdminDashboard() {
       if (applicantTypeFromUrl) params.set("applicant_type", applicantTypeFromUrl);
       if (compareFromUrl) params.set("compare_with_previous", "true");
 
+      // Cookie auth: browser auto-attach session, apiFetch auto-attach
+      // CSRF token (untuk GET tidak perlu — endpoint ini read-only).
+      // Tidak ada `Authorization: Bearer` lagi — tidak ada localStorage
+      // token yang harus di-pass manual.
       const [s, c] = await Promise.all([
-        fetch(`${API_BASE}/admin/dashboard/stats`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).then(async (r) => {
-          if (!r.ok) throw new ApiError(r.status, "ERR", "Gagal load stats");
-          return r.json();
-        }),
-        fetch(`${API_BASE}/admin/dashboard/charts?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).then(async (r) => {
-          if (!r.ok) throw new ApiError(r.status, "ERR", "Gagal load charts");
-          return r.json();
-        }),
+        apiFetch<Stats>("/admin/dashboard/stats"),
+        apiFetch<Charts>(`/admin/dashboard/charts?${params.toString()}`),
       ]);
       setStats(s);
       setCharts(c);

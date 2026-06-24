@@ -20,7 +20,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE, getAdminToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 
 type InquiryStatus = "OPEN" | "ANSWERED" | "CLOSED";
 const STATUSES: InquiryStatus[] = ["OPEN", "ANSWERED", "CLOSED"];
@@ -192,21 +192,10 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
   // Fetch detail saat expanded pertama kali
   useEffect(() => {
     if (!expanded || detail) return;
-    const token = getAdminToken();
-    if (!token) return;
     setDetailLoading(true);
     setDetailError(null);
-    fetch(`${API_BASE}/admin/inquiries/${inquiry.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (r) => {
-        if (!r.ok) {
-          const j = await r.json().catch(() => ({}));
-          throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-        }
-        return r.json();
-      })
-      .then((j: AdminInquiryDetail) => setDetail(j))
+    apiFetch<AdminInquiryDetail>(`/admin/inquiries/${inquiry.id}`)
+      .then((j) => setDetail(j))
       .catch((e) =>
         setDetailError(e instanceof Error ? e.message : "Gagal load detail"),
       )
@@ -217,26 +206,13 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
   const anySubmitting = replySubmitting || closeSubmitting;
 
   const sendReply = async (values: ReplyValues) => {
-    const token = getAdminToken();
-    if (!token) return;
     setReplySubmitting(true);
     setReplyError(null);
     try {
-      const r = await fetch(
-        `${API_BASE}/admin/inquiries/${inquiry.id}/messages`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ message: values.message.trim() }),
-        },
-      );
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
+      await apiFetch(`/admin/inquiries/${inquiry.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ message: values.message.trim() }),
+      });
       methods.reset({ message: "" });
       onUpdated();
     } catch (e) {
@@ -247,27 +223,14 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
   };
 
   const handleClose = async () => {
-    const token = getAdminToken();
-    if (!token) return;
     setCloseSubmitting(true);
     setCloseError(null);
     try {
       const note = methods.getValues("message").trim();
-      const r = await fetch(
-        `${API_BASE}/admin/inquiries/${inquiry.id}/close`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(note ? { note } : {}),
-        },
-      );
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
+      await apiFetch(`/admin/inquiries/${inquiry.id}/close`, {
+        method: "POST",
+        body: JSON.stringify(note ? { note } : {}),
+      });
       methods.reset({ message: "" });
       setCloseOpen(false);
       toast.success(`Tiket ${inquiry.inquiry_no} berhasil ditutup`);
@@ -546,8 +509,6 @@ export default function AdminInquiriesPage() {
   }, [qFromUrl, dateFieldFromUrl, dateFromUrl, dateToUrl, sortByFromUrl, sortDirFromUrl]);
 
   useEffect(() => {
-    const token = getAdminToken();
-    if (!token) return;
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ page: "1", page_size: "50" });
@@ -559,13 +520,9 @@ export default function AdminInquiriesPage() {
     if (sortBy) params.set("sort_by", sortBy);
     if (sortBy) params.set("sort_dir", sortDir);
 
-    fetch(`${API_BASE}/admin/inquiries?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+    apiFetch<{ data: AdminInquiry[] }>(
+      `/admin/inquiries?${params.toString()}`,
+    )
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setLoading(false));

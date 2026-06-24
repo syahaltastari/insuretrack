@@ -194,7 +194,12 @@ pub async fn spawn_app() -> TestApp {
         storage.clone(),
         email.clone(),
     );
-    let router = routes::build(state);
+    // Apply CSRF guard layer — sama dengan main.rs. Tanpa ini test
+    // bypass CSRF defense yang sebenarnya diaktif di production.
+    use axum::middleware::from_fn_with_state;
+    use insuretrack_backend::auth::csrf_guard;
+    let router = routes::build(state.clone())
+        .layer(from_fn_with_state(state.clone(), csrf_guard));
 
     TestApp {
         router,
@@ -227,6 +232,14 @@ fn test_config() -> Config {
         admin_notification_email: Some("admin@test.local".into()),
         inquiry_auto_close_days: 7,
         port: 0,
+        session_cookie_name: "insuretrack_session".into(),
+        csrf_cookie_name: "insuretrack_csrf".into(),
+        cookie_domain: String::new(),
+        cookie_secure: false,
+        cors_allowed_origins: vec![
+            "http://localhost:3000".into(),
+            "http://localhost:3001".into(),
+        ],
     }
 }
 
@@ -301,6 +314,32 @@ pub fn activation_token(app: &TestApp, customer_id: Uuid) -> String {
             3600,
         )
         .expect("issue activation token")
+}
+
+// ---- Cookie header helpers ------------------------------------------------
+//
+// Backend baca auth dari cookie, bukan `Authorization: Bearer`. Untuk
+// simulasi browser mengirim cookie di request, test set `Cookie:` header
+// secara manual. Helper ini build nilai header-nya.
+//
+// Untuk request mutating (POST/PATCH/DELETE/PUT), middleware CSRF juga
+// butuh `X-CSRF-Token` header yang cocok dengan value `insuretrack_csrf`
+// cookie — lihat `cookie_with_csrf` + caller wajib set header itu sendiri.
+
+/// Cookie header value untuk GET request: cukup session cookie.
+/// CSRF tidak dikirim karena GET aman (skip CSRF).
+pub fn cookie_session(app: &TestApp, jwt: &str) -> String {
+    format!("{}={}", app.config.session_cookie_name, jwt)
+}
+
+/// Cookie header value untuk request mutating: session + CSRF.
+/// Caller WAJIB juga set header `X-CSRF-Token: <csrf>` supaya middleware
+/// bisa cocokkan dengan cookie value di atas.
+pub fn cookie_with_csrf(app: &TestApp, jwt: &str, csrf: &str) -> String {
+    format!(
+        "{}={}; {}={}",
+        app.config.session_cookie_name, jwt, app.config.csrf_cookie_name, csrf
+    )
 }
 
 // ---- HTTP helpers ---------------------------------------------------------

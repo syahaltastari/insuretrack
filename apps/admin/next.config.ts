@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 
+const BACKEND_ORIGIN =
+  process.env.BACKEND_URL ?? "http://localhost:8080";
+
 const nextConfig: NextConfig = {
   // output: "standalone" agar image Docker kecil dan hanya berisi file yang
   // dibutuhkan runtime. Aktif di build produksi.
@@ -18,10 +21,21 @@ const nextConfig: NextConfig = {
     "@insuretrack/forms",
     "@insuretrack/ui",
   ],
-  // Default API URL untuk build lokal. Saat run di Docker, env disuntik
-  // saat build via docker-compose.
+  // Proxy `/api/*` ke backend Rust di port 8080 (dev mode only).
+  // Lihat apps/portal/next.config.ts untuk penjelasan lengkap.
+  rewrites: async () =>
+    process.env.NODE_ENV === "production"
+      ? []
+      : [
+          {
+            source: "/api/:path*",
+            destination: `${BACKEND_ORIGIN}/api/:path*`,
+          },
+        ],
+  // Default API URL untuk build lokal. Default ke same-origin path
+  // supaya rewrite Next.js dev server proxy ke backend.
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api",
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "/api",
   },
 };
 

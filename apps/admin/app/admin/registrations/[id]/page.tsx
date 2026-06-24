@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Building2, FileCheck, Printer, Receipt, Shield, User } from "lucide-react";
 import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
-import { API_BASE, ApiError, formatIdr, getAdminToken } from "@insuretrack/api-client";
+import { apiFetch, formatIdr } from "@insuretrack/api-client";
 import { AdminDownloadButton } from "@/components/AdminDownloadButton";
 
 type RegistrationDetail = {
@@ -224,12 +224,6 @@ export default function RegistrationDetailPage() {
   // supaya payload awal tetap kecil untuk INDIVIDU.
   useEffect(() => {
     if (!id) return;
-    const token = getAdminToken();
-    if (!token) {
-      setError({ kind: "other", message: "Sesi admin tidak ditemukan. Silakan login ulang." });
-      setLoading(false);
-      return;
-    }
 
     let cancelled = false;
     setLoading(true);
@@ -237,52 +231,37 @@ export default function RegistrationDetailPage() {
 
     (async () => {
       try {
-        const r = await fetch(`${API_BASE}/admin/registrations/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (r.status === 404) {
-          if (!cancelled) {
-            setError({ kind: "notfound", message: "Registrasi tidak ditemukan." });
-            setLoading(false);
-          }
-          return;
-        }
-        if (!r.ok) {
-          const txt = await r.text().catch(() => "");
-          throw new ApiError(r.status, "ERR", txt || `HTTP ${r.status}`);
-        }
-        const json = (await r.json()) as RegistrationDetail;
+        const json = await apiFetch<RegistrationDetail>(`/admin/registrations/${id}`);
         if (!cancelled) {
           setData(json);
           setLoading(false);
           // Fetch members hanya kalau INSTANSI (individu tidak punya).
+          // Error di members di-swallow agar tidak block seluruh detail page.
           if (json.applicant_type === "INSTANSI") {
             setMembersLoading(true);
-            fetch(`${API_BASE}/admin/registrations/${id}/members`, {
-              headers: { Authorization: `Bearer ${token}` },
-            })
-              .then(async (mr) => {
-                if (!mr.ok) return [];
-                return (await mr.json()) as RegistrationMember[];
-              })
-              .then((list) => {
-                if (!cancelled) setMembers(list);
-              })
-              .catch(() => {
-                /* silent — tabel kosong lebih helpful daripada error
-                   blocking seluruh detail page */
-              })
-              .finally(() => {
-                if (!cancelled) setMembersLoading(false);
-              });
+            try {
+              const list = await apiFetch<RegistrationMember[]>(
+                `/admin/registrations/${id}/members`,
+              );
+              if (!cancelled) setMembers(list);
+            } catch {
+              /* silent — tabel kosong lebih helpful daripada error */
+            } finally {
+              if (!cancelled) setMembersLoading(false);
+            }
           }
         }
       } catch (e) {
+        const err = e as { status?: number; message?: string };
         if (!cancelled) {
-          setError({
-            kind: "other",
-            message: e instanceof Error ? e.message : "Gagal load detail registrasi",
-          });
+          if (err.status === 404) {
+            setError({ kind: "notfound", message: "Registrasi tidak ditemukan." });
+          } else {
+            setError({
+              kind: "other",
+              message: err.message ?? "Gagal load detail registrasi",
+            });
+          }
           setLoading(false);
         }
       }

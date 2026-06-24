@@ -18,20 +18,23 @@ pub struct LoginRequest {
 
 #[derive(Debug, Serialize)]
 pub struct LoginResponse {
-    pub token: String,
+    /// Role yang baru di-auth: `"admin"` atau `"customer"`. FE pakai
+    /// untuk conditional render / redirect (mis. admin → /admin/dashboard,
+    /// customer → /portal/dashboard).
     pub role: String,
     /// ID of the authenticated entity. `customer_id` for customer role,
     /// `admin_id` for admin role. Provided to FE to avoid decoding JWT
-    /// or making a roundtrip to /me for common cases (avatar, breadcrumb,
-    /// topbar greeting). Optional so legacy call sites that don't fill
-    /// it can still compile.
+    /// atau roundtrip ke /me untuk kasus umum (avatar, breadcrumb, topbar).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<Uuid>,
     /// Admin-only flag: true kalau akun punya hak mengelola user lain.
-    /// `skip_serializing_if` agar customer login response tetap ramping
-    /// (field ini tidak relevan untuk customer).
+    /// `skip_serializing_if` agar customer login response tetap ramping.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_super_admin: Option<bool>,
+    // Catatan: `token` field di-drop karena JWT sekarang di-deliver via
+    // Set-Cookie header (HttpOnly, tidak accessible dari JS). Response
+    // body hanya membawa metadata yang aman untuk dilihat FE. CSRF token
+    // ada di companion cookie non-HttpOnly (lihat `auth::cookies`).
 }
 
 #[derive(Debug, Deserialize)]

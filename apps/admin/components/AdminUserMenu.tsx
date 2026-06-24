@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@insuretrack/ui";
-import { API_BASE } from "@insuretrack/api-client";
-import { clearAdminToken, getAdminToken } from "@insuretrack/api-client";
+import { apiFetch, logoutAdmin } from "@insuretrack/api-client";
 
 export type AdminProfile = {
   id: string;
@@ -51,8 +50,16 @@ export function AdminUserMenu({ profile }: { profile: AdminProfile | null }) {
   const display = profile?.full_name?.trim() || profile?.username || "Admin";
   const role = profile?.role ?? "admin";
 
-  const onLogout = () => {
-    clearAdminToken();
+  const onLogout = async () => {
+    try {
+      // Backend POST /api/admin/logout → Set-Cookie Max-Age=0 untuk
+      // session + csrf cookie. Browser auto-hapus.
+      await logoutAdmin();
+    } catch {
+      // Logout endpoint failure shouldn't block UX — tetap redirect ke
+      // login. Browser mungkin masih punya cookie tapi berikutnya akan
+      // 401 dari server.
+    }
     router.replace("/admin/login");
   };
 
@@ -102,17 +109,15 @@ export function AdminUserMenu({ profile }: { profile: AdminProfile | null }) {
 
 /**
  * Fetch the logged-in admin's profile. Returns null if not authenticated
- * or the request fails (e.g. 401 with stale token).
+ * or the request fails (e.g. 401 with stale cookie).
+ *
+ * Cookie di-attach otomatis oleh browser — kita tidak bisa early-bail
+ * dengan check localStorage lagi. Kalau tidak ada session, backend
+ * return 401 dan kita return null (sama dengan stale token lama).
  */
 export async function fetchAdminProfile(): Promise<AdminProfile | null> {
-  const token = getAdminToken();
-  if (!token) return null;
   try {
-    const r = await fetch(`${API_BASE}/admin/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!r.ok) return null;
-    return (await r.json()) as AdminProfile;
+    return await apiFetch<AdminProfile>("/admin/me");
   } catch {
     return null;
   }

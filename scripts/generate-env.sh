@@ -14,6 +14,9 @@
 # Yang di-generate otomatis: POSTGRES_PASSWORD, JWT_SECRET,
 # PAYMENT_WEBHOOK_SECRET. Yang harus diisi manual: RESEND_API_KEY
 # (dari Resend dashboard), DOMAIN, dan opsional ACME_EMAIL.
+# Plus: COOKIE_DOMAIN & COOKIE_SECURE (lihat block "Session cookies"
+# di bawah) — perlu di-set di production untuk cookie share
+# antar subdomain + HTTPS-only.
 # =============================================================================
 
 set -euo pipefail
@@ -112,6 +115,17 @@ DATABASE_URL=postgres://insurance_admin:$POSTGRES_PASSWORD@db:5432/digital_insur
 # ---- Auth & secrets ------------------------------------------------------
 JWT_SECRET=$JWT_SECRET
 PAYMENT_WEBHOOK_SECRET=$PAYMENT_WEBHOOK_SECRET
+
+# ---- Session cookies (httpOnly, double-submit CSRF) ----------------------
+# Default value cukup untuk dev. Production:
+#   COOKIE_DOMAIN=.${DOMAIN}     (leading dot — share cookie di *.DOMAIN)
+#   COOKIE_SECURE=true            (HTTPS only)
+#   CORS_ALLOWED_ORIGINS=https://portal.${DOMAIN},https://admin.${DOMAIN}
+SESSION_COOKIE_NAME=insuretrack_session
+CSRF_COOKIE_NAME=insuretrack_csrf
+COOKIE_DOMAIN=
+COOKIE_SECURE=false
+CORS_ALLOWED_ORIGINS=
 
 # ---- Storage backend -----------------------------------------------------
 STORAGE_BACKEND=local

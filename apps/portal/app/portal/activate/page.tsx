@@ -5,8 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { API_BASE } from "@insuretrack/api-client";
-import { setCustomerToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 
 function ActivateInner() {
   const router = useRouter();
@@ -39,14 +38,12 @@ function ActivateInner() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const r = await fetch(`${API_BASE}/customer/activate`, {
+      // Activate endpoint di CSRF skip-list backend. Backend set session
+      // cookie + csrf cookie di response.
+      await apiFetch("/customer/activate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json?.error?.message ?? "Aktivasi gagal");
-      setCustomerToken(json.token);
       router.replace("/portal/dashboard");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Aktivasi gagal");

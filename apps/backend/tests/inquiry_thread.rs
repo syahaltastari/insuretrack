@@ -36,6 +36,8 @@ async fn seed_open_inquiry(pool: &sqlx::PgPool) -> (Uuid, Uuid) {
     (customer_id, inquiry_id)
 }
 
+const TEST_CSRF: &str = "test-csrf-token";
+
 async fn customer_message(
     app: &common::TestApp,
     customer_id: Uuid,
@@ -47,7 +49,8 @@ async fn customer_message(
         .method(Method::POST)
         .uri(format!("/api/customer/inquiries/{inquiry_id}/messages"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::COOKIE, common::cookie_with_csrf(app, &token, TEST_CSRF))
+        .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::from(json!({ "message": msg }).to_string()))
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();
@@ -60,7 +63,8 @@ async fn admin_message(app: &common::TestApp, inquiry_id: Uuid, msg: &str) -> (S
         .method(Method::POST)
         .uri(format!("/api/admin/inquiries/{inquiry_id}/messages"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::COOKIE, common::cookie_with_csrf(app, &token, TEST_CSRF))
+        .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::from(json!({ "message": msg }).to_string()))
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();
@@ -73,7 +77,8 @@ async fn admin_close(app: &common::TestApp, inquiry_id: Uuid) -> (StatusCode, Va
         .method(Method::POST)
         .uri(format!("/api/admin/inquiries/{inquiry_id}/close"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::COOKIE, common::cookie_with_csrf(app, &token, TEST_CSRF))
+        .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::from("{}"))
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();

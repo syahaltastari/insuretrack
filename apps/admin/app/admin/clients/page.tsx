@@ -26,8 +26,7 @@ import {
   urlOptionalSchema,
   optionalString,
 } from "@insuretrack/forms";
-import { API_BASE, ApiError } from "@insuretrack/api-client";
-import { getAdminToken } from "@insuretrack/api-client";
+import { API_BASE, apiFetch } from "@insuretrack/api-client";
 
 type Client = {
   id: string;
@@ -151,8 +150,6 @@ export default function AdminClientsPage() {
   };
 
   const onSubmit = async (values: ClientFormValues) => {
-    const token = getAdminToken();
-    if (!token) return;
     const logoFile = (values.logo instanceof FileList ? values.logo[0] : values.logo) as
       | File
       | undefined;
@@ -184,23 +181,12 @@ export default function AdminClientsPage() {
       };
       fd.append("data", JSON.stringify(data));
       if (logoFile) fd.append("logo", logoFile);
-      const url = editing
-        ? `${API_BASE}/admin/clients/${editing.id}`
-        : `${API_BASE}/admin/clients`;
+      // Cookie auth: browser auto-attach session, apiFetch auto-attach
+      // CSRF token. FormData body lewat tanpa Content-Type (browser set
+      // dengan boundary — lihat apiFetch).
+      const path = editing ? `/admin/clients/${editing.id}` : "/admin/clients";
       const method = editing ? "PATCH" : "POST";
-      const r = await fetch(url, {
-        method,
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new ApiError(
-          r.status,
-          j?.error?.code ?? "ERR",
-          j?.error?.message ?? `HTTP ${r.status}`,
-        );
-      }
+      await apiFetch(path, { method, body: fd });
       toast.success(editing ? "Klien diperbarui" : "Klien ditambahkan");
       closeForm();
       setRefreshKey((k) => k + 1);
@@ -212,17 +198,8 @@ export default function AdminClientsPage() {
   };
 
   const deleteClient = async (c: Client) => {
-    const token = getAdminToken();
-    if (!token) return;
     try {
-      const r = await fetch(`${API_BASE}/admin/clients/${c.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok && r.status !== 204) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
+      await apiFetch(`/admin/clients/${c.id}`, { method: "DELETE" });
       toast.success(`Klien "${c.name}" dihapus`);
       setRefreshKey((k) => k + 1);
     } catch (e) {

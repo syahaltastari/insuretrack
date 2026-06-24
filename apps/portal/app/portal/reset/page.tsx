@@ -12,8 +12,7 @@ import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema, passwordSchema } from "@insuretrack/forms";
-import { API_BASE } from "@insuretrack/api-client";
-import { setCustomerToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 
 const requestSchema = z.object({
   email: emailSchema.refine((s) => s.length > 0, { message: "Email wajib diisi" }),
@@ -50,24 +49,16 @@ function ResetInner() {
     setSubmitting(true);
     setRequestError(null);
     try {
-      const r = await fetch(`${API_BASE}/customer/password/reset`, {
+      // /customer/password/reset di CSRF skip-list backend (anti-enumeration,
+      // selalu return 200). Anti-enumeration tetap berlaku — response
+      // tidak bocorin "email tidak ada" vs "email ada".
+      await apiFetch("/customer/password/reset", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: values.email.trim().toLowerCase() }),
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
-      // Backend selalu return {ok: true} (anti-enumeration: tidak bisa
-      // membedakan "email tidak ada" vs "email ada & link terkirim").
-      // Email reset akan diterima customer dalam beberapa menit kalau
-      // akun terdaftar & aktif.
       setRequestSent(true);
       toast.success("Link reset password sudah dikirim ke email Anda");
     } catch (e) {
-      // Untuk error jaringan (TypeError "Failed to fetch"), tampilkan
-      // pesan generic — sama dengan pattern di form lain.
       const msg = e instanceof TypeError
         ? "Tidak dapat terhubung ke server. Periksa koneksi Anda dan coba lagi."
         : e instanceof Error
@@ -89,27 +80,19 @@ function ResetInner() {
     setSubmitting(true);
     setConsumeError(null);
     try {
-      const r = await fetch(`${API_BASE}/customer/password/reset/consume`, {
+      // /customer/password/reset/consume di CSRF skip-list backend
+      // (pakai purpose="password_reset" JWT di body, bukan session cookie).
+      // Backend set session + csrf cookie di response kalau sukses —
+      // user otomatis login.
+      await apiFetch("/customer/password/reset/consume", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token,
           new_password: values.new_password,
         }),
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
-      const j = await r.json();
-      if (j?.token) {
-        setCustomerToken(j.token);
-        toast.success("Password berhasil diubah. Mengarahkan ke portal...");
-        setTimeout(() => router.replace("/portal/dashboard"), 800);
-      } else {
-        toast.success("Password berhasil diubah");
-        setTimeout(() => router.replace("/portal/login"), 800);
-      }
+      toast.success("Password berhasil diubah. Mengarahkan ke portal...");
+      setTimeout(() => router.replace("/portal/dashboard"), 800);
     } catch (e) {
       setConsumeError(e instanceof Error ? e.message : "Gagal ubah password");
     } finally {
