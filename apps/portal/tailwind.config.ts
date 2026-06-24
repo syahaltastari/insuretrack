@@ -5,6 +5,14 @@ import type { Config } from "tailwindcss";
  * system (plain CSS di @insuretrack/ui/styles/globals.css). shadcn-style
  * components (Dialog, AlertDialog, Sonner toasts) pakai Tailwind utility
  * classes; sisanya tetap .clay-* class system.
+ *
+ * Brand color palette di-expose sebagai Tailwind utilities (mis.
+ * `bg-matcha-300`, `text-ube-800`, `border-oat-border`) supaya section
+ * components bisa pakai utility-first syntax tanpa hardcode inline
+ * `style={{ color: "var(--...)" }}` kecuali untuk one-off cases.
+ *
+ * Semua warna di bawah reference CSS variables yang didefinisikan di
+ * packages/ui/src/styles/globals.css. Single source of truth tetap di CSS.
  */
 const config: Config = {
   darkMode: ["class"],
@@ -21,6 +29,7 @@ const config: Config = {
     },
     extend: {
       colors: {
+        // shadcn-style semantic aliases (existing)
         border: "var(--oat-border)",
         input: "var(--oat-border)",
         ring: "var(--focus-ring, rgb(20 110 245))",
@@ -46,11 +55,66 @@ const config: Config = {
           DEFAULT: "var(--matcha-600)",
           foreground: "var(--pure-white)",
         },
+        // Brand palette — direct access ke design tokens.
+        // Pakai di section components untuk utility-first styling.
+        matcha: {
+          300: "var(--matcha-300)",
+          600: "var(--matcha-600)",
+          800: "var(--matcha-800)",
+        },
+        slushie: {
+          500: "var(--slushie-500)",
+          800: "var(--slushie-800)",
+        },
+        lemon: {
+          400: "var(--lemon-400)",
+          500: "var(--lemon-500)",
+          700: "var(--lemon-700)",
+          800: "var(--lemon-800)",
+        },
+        ube: {
+          300: "var(--ube-300)",
+          800: "var(--ube-800)",
+          900: "var(--ube-900)",
+        },
+        pomegranate: {
+          400: "var(--pomegranate-400)",
+        },
+        blueberry: {
+          800: "var(--blueberry-800)",
+        },
+        clay: {
+          black: "var(--clay-black)",
+          white: "var(--pure-white)",
+        },
+        warm: {
+          cream: "var(--warm-cream)",
+          silver: "var(--warm-silver)",
+          charcoal: "var(--warm-charcoal)",
+        },
+        dark: {
+          charcoal: "var(--dark-charcoal)",
+        },
+        oat: {
+          border: "var(--oat-border)",
+          light: "var(--oat-light)",
+        },
+        cool: {
+          border: "var(--cool-border)",
+        },
+        darkBorder: "var(--dark-border)",
+        lightFrost: "var(--light-frost)",
       },
       borderRadius: {
         lg: "var(--radius-card)",
         md: "calc(var(--radius-card) - 2px)",
         sm: "var(--radius-sharp)",
+        // Brand-specific radii dari design system
+        standard: "var(--radius-standard)",
+        badge: "var(--radius-badge)",
+        feature: "var(--radius-feature)",
+        section: "var(--radius-section)",
+        pill: "var(--radius-pill)",
       },
       keyframes: {
         "accordion-down": {
