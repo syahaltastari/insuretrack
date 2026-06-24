@@ -3,6 +3,7 @@ export { API_BASE, ApiError, apiFetch, hasSessionCookie } from "./api";
 export {
   readCsrfCookie,
   hasSessionCookie as hasSessionCookieBrowser,
+  checkSession,
   AUTH_COOKIE_NAMES,
 } from "./auth";
 export { logoutAdmin, logoutCustomer } from "./logout";

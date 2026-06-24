@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { hasSessionCookie, logoutCustomer } from "@insuretrack/api-client";
+import { checkSession, logoutCustomer } from "@insuretrack/api-client";
 
 const navItems = [
   { href: "/#products", label: "Produk" },
@@ -21,10 +21,17 @@ export function Navbar() {
 
   useEffect(() => {
     // Marketing navbar di admin app detect customer-auth (lihat memory
-    // [[hybrid-local-dev]] untuk konteks). `hasSessionCookie` cek nama
-    // cookie global — admin yang punya akun customer akan trigger TRUE,
-    // sesuai behavior lama.
-    setAuthed(hasSessionCookie());
+    // [[hybrid-local-dev]] untuk konteks). Cookie session HttpOnly
+    // tidak bisa dibaca dari JS — pakai async probe ke `/customer/me`.
+    // 200 = customer terauthentikasi, 401 = tidak. Probe run di tiap
+    // navigasi (pathname change) supaya CTA stay in sync.
+    let cancelled = false;
+    checkSession("customer").then((ok) => {
+      if (!cancelled) setAuthed(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -41,7 +48,7 @@ export function Navbar() {
 
   const buyPolis = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (hasSessionCookie()) {
+    if (authed) {
       router.push("/portal/dashboard");
     } else {
       router.push("/portal/login?next=/register");

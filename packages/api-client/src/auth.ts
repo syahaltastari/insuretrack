@@ -4,12 +4,18 @@
 // simpan token di JavaScript — token ada di `document.cookie` (HttpOnly
 // = invisible, tapi cookie tetap dikirim otomatis oleh browser per-request).
 //
-// Yang masih bisa di-baca JS:
+// CATATAN PENTING tentang `hasSessionCookie()`: session cookie
+// (`insuretrack_session`) di-set dengan flag `HttpOnly`. Browser
+// MENYEMBUNYIKAN cookie HttpOnly sepenuhnya dari `document.cookie` —
+// baik name maupun value tidak visible. Akibatnya,
+// `hasSessionCookie()` SELALU return `false` untuk session cookie yang
+// valid. Untuk deteksi auth client-side, pakai async `checkSession()`
+// di bawah yang probe ke endpoint backend (cookie auto-attach via
+// `credentials: include`).
+//
+// Yang masih bisa di-baca JS langsung di `document.cookie`:
 //   - `insuretrack_csrf` cookie (companion non-HttpOnly) — dipakai untuk
 //     mirror ke `X-CSRF-Token` header di setiap request mutating.
-//   - `insuretrack_session` cookie — HttpOnly, return undefined di sini.
-//     FE cukup tahu "ada session atau tidak" via probe ke `/admin/me` atau
-//     `/customer/me`.
 //
 // Nama cookie configurable via env (NEXT_PUBLIC_SESSION_COOKIE_NAME /
 // NEXT_PUBLIC_CSRF_COOKIE_NAME) — default = `insuretrack_session` /
@@ -43,19 +49,42 @@ export function readCsrfCookie(): string | null {
 }
 
 /**
- * Probe sederhana apakah user punya session cookie (bukan token —
- * cookie value HttpOnly, JS tidak bisa baca). TRUE kalau cookie name
- * ada di `document.cookie`, irrespective of value.
- *
- * Untuk cross-app detection (mis. Navbar admin detect customer-login),
- * pakai ini sebagai hint, lalu confirm via GET `/customer/me`. Jangan
- * pakai sebagai authz — selalu verify via endpoint.
+ * ⚠️ TIDAK reliable untuk HttpOnly session cookie. `insuretrack_session`
+ * adalah HttpOnly → browser sembunyikan dari `document.cookie`. Function
+ * ini hanya detect NON-HttpOnly cookies (mis. CSRF cookie, atau session
+ * cookie dari sistem lain). Untuk deteksi session yang benar, pakai
+ * `checkSession()` (async probe ke `/me` endpoint).
  */
 export function hasSessionCookie(): boolean {
   if (typeof document === "undefined") return false;
   return document.cookie
     .split(";")
     .some((c) => c.trim().startsWith(`${SESSION_COOKIE_NAME}=`));
+}
+
+/**
+ * Probe async ke backend `/customer/me` atau `/admin/me` untuk cek
+ * apakah user terauthentikasi. Cookie session di-attach otomatis oleh
+ * browser (HttpOnly tetap dikirim) — backend return 200 kalau valid,
+ * 401 kalau tidak.
+ *
+ * Return `true` kalau ada session valid, `false` kalau tidak (termasuk
+ * network error — caller harus treat sebagai "unknown", bukan
+ * "definitely logged out"). Backend role check terpisah di handler
+ * masing-masing (`/customer/me` butuh role customer, `/admin/me` butuh
+ * role admin).
+ */
+export async function checkSession(
+  role: "customer" | "admin",
+): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    const { apiFetch } = await import("./api");
+    await apiFetch(`${role}/me`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Expose cookie names untuk diagnostic atau test. */

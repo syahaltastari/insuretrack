@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@insuretrack/ui";
-import { hasSessionCookie } from "@insuretrack/api-client";
+import { checkSession } from "@insuretrack/api-client";
 import { CustomerUserMenu, fetchCustomerProfile, type CustomerProfile } from "@/components/CustomerUserMenu";
 
 const navItems: Array<{ href: string; label: string; icon: IconName }> = [
@@ -46,16 +46,11 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       setReady(true);
       return;
     }
-    // Setelah migrasi cookie: cookie HttpOnly, JS tidak bisa baca value.
-    // `hasSessionCookie()` cek nama cookie ada; backend authorize
-    // sebenarnya via session JWT di Set-Cookie.
-    if (!hasSessionCookie()) {
-      router.replace("/portal/login");
-      return;
-    }
+    // Cookie session HttpOnly — JS tidak bisa deteksi via `document.cookie`.
+    // Trust Next.js middleware (server-side, baca cookie via req.cookies)
+    // untuk auth gate. Di sini cukup fetch profile; kalau backend 401
+    // (stale cookie / logout), return null dan menu render placeholder.
     setReady(true);
-    // Fetch profile untuk user menu (topbar kanan). Best-effort —
-    // kalau gagal (401 dari backend), menu tetap render dengan inisial "·".
     fetchCustomerProfile().then(setProfile);
   }, [router, pathname]);
 

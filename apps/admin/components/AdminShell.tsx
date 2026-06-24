@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@insuretrack/ui";
 import { AdminUserMenu, fetchAdminProfile, type AdminProfile } from "@/components/AdminUserMenu";
-import { hasSessionCookie } from "@insuretrack/api-client";
+import { checkSession } from "@insuretrack/api-client";
 
 const navItems: Array<{ href: string; label: string; icon: IconName; superAdminOnly?: boolean }> = [
   { href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
@@ -60,13 +60,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       setReady(true);
       return;
     }
-    // Setelah migrasi cookie, token TIDAK visible dari JS. Cookie HttpOnly
-    // di-bawa otomatis oleh browser. `hasSessionCookie()` cuma cek nama
-    // cookie ada (hint); authorize sebenarnya tetap di backend.
-    if (!hasSessionCookie()) {
-      router.replace("/admin/login");
-      return;
-    }
+    // Cookie session HttpOnly — JS tidak bisa deteksi via `document.cookie`.
+    // Trust Next.js middleware (server-side, baca cookie via req.cookies)
+    // untuk auth gate. Di sini cukup fetch profile; kalau backend 401
+    // (stale cookie / logout), return null dan menu render placeholder.
     setReady(true);
     fetchAdminProfile().then(setProfile);
   }, [router, pathname]);

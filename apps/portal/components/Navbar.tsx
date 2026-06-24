@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { hasSessionCookie, logoutCustomer } from "@insuretrack/api-client";
+import { checkSession, logoutCustomer } from "@insuretrack/api-client";
 
 const navItems = [
   { href: "/#products", label: "Produk" },
@@ -20,11 +20,17 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    // Setelah migrasi ke cookie auth: `hasSessionCookie()` cek nama cookie
-    // (HttpOnly, value tidak visible). TRUE = "seseorang sedang login".
-    // Untuk role-specific (admin vs customer), middleware/shell sudah
-    // redirect — Navbar ini cuma CTA marketing.
-    setAuthed(hasSessionCookie());
+    // Cookie session HttpOnly — JS tidak bisa deteksi via `document.cookie`.
+    // Pakai async probe ke `/customer/me` (cookie auto-attach). 200 =
+    // authed, 401/throw = not authed. Probe ini run di setiap navigasi
+    // (pathname change) supaya CTA stay in sync dengan actual state.
+    let cancelled = false;
+    checkSession("customer").then((ok) => {
+      if (!cancelled) setAuthed(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -41,7 +47,7 @@ export function Navbar() {
 
   const buyPolis = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (hasSessionCookie()) {
+    if (authed) {
       router.push("/portal/dashboard");
     } else {
       router.push("/portal/login?next=/portal/dashboard");
