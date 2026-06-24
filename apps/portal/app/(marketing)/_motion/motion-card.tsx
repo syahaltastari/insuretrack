@@ -1,16 +1,18 @@
 "use client";
 
 /**
- * MotionCard — wrapper card dengan hover lift (y: -4px).
+ * MotionCard — wrapper card dengan hover lift (y: -4px) pakai motion.dev.
  *
- * Pakai motion.div dengan `whileHover` dan `whileTap` untuk interaksi
- * premium. Entrance animation di-handle parent (Reveal/StaggerGroup).
+ * Pakai `motion.div` dengan `whileHover` dan `whileTap`. Entrance
+ * animation di-handle parent (StaggerGroup/Reveal) via CSS — di sini
+ * fokus pada interaksi hover/tap. Tidak ada `initial`/`animate`, jadi
+ * tidak ada SSR/hydration issue.
  */
 
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode } from "react";
 
-const SPRING = { type: "spring" as const, stiffness: 120, damping: 28, mass: 0.8 };
+const SPRING = { type: "spring" as const, stiffness: 240, damping: 24, mass: 0.6 };
 
 export function MotionCard({
   children,
@@ -29,7 +31,7 @@ export function MotionCard({
     <motion.div
       className={className}
       whileHover={{ y: -4 }}
-      whileTap={{ y: -2 }}
+      whileTap={{ y: -2, scale: 0.99 }}
       transition={SPRING}
     >
       {children}
