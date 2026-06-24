@@ -3,13 +3,13 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiFetch } from "@insuretrack/api-client";
+import { apiFetch, checkSession } from "@insuretrack/api-client";
 import { Navbar } from "@/components/Navbar";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema } from "@insuretrack/forms";
@@ -26,6 +26,26 @@ function LoginInner() {
   const next = sp.get("next") ?? "/portal/dashboard";
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Kalau user sudah punya session valid, skip form dan redirect ke
+  // dashboard. `ready=false` sampai check selesai — mencegah flash
+  // form ke user yang sudah login. Probe pakai `checkSession("customer")`
+  // (async, cookie auto-attach).
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkSession("customer").then((authed) => {
+      if (cancelled) return;
+      if (authed) {
+        router.replace(next);
+      } else {
+        setReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [router, next]);
 
   const methods = useForm<LoginValues>({
     resolver: zodResolver(loginSchema) as never,
@@ -50,6 +70,24 @@ function LoginInner() {
       setSubmitting(false);
     }
   };
+
+  // Sambil session check running, render placeholder supaya tidak ada
+  // flash form. Setelah ready=true → render form normal.
+  if (!ready) {
+    return (
+      <main
+        className="clay-section"
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background: "var(--warm-cream)",
+        }}
+      >
+        <p style={{ color: "var(--warm-silver)" }}>Memuat...</p>
+      </main>
+    );
+  }
 
   return (
     <>

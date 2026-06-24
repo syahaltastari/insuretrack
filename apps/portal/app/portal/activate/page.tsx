@@ -3,9 +3,9 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@insuretrack/api-client";
+import { apiFetch, checkSession } from "@insuretrack/api-client";
 
 function ActivateInner() {
   const router = useRouter();
@@ -13,6 +13,25 @@ function ActivateInner() {
   const token = sp.get("token") ?? "";
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Kalau user sudah login, activation flow tidak relevan (akun
+  // diasumsikan sudah ACTIVE). Redirect ke dashboard. Probe pakai
+  // `checkSession("customer")` — cookie auto-attach.
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkSession("customer").then((authed) => {
+      if (cancelled) return;
+      if (authed) {
+        router.replace("/portal/dashboard");
+      } else {
+        setReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   // Activation flow disederhanakan: password SUDAH di-set saat register
   // (POST /api/public/customers). Halaman ini tinggal konfirmasi token
@@ -30,6 +49,24 @@ function ActivateInner() {
             Pastikan Anda membuka link aktivasi dari email dengan lengkap.
           </p>
         </div>
+      </main>
+    );
+  }
+
+  // Sambil session check running, render placeholder supaya tidak ada
+  // flash "token not found" → form ke user yang sudah login.
+  if (!ready) {
+    return (
+      <main
+        style={{
+          height: "100dvh",
+          minHeight: "100vh",
+          width: "100vw",
+          background: "var(--warm-cream)",
+          padding: 24,
+        }}
+      >
+        <p style={{ color: "var(--warm-silver)" }}>Memuat...</p>
       </main>
     );
   }

@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema, passwordSchema } from "@insuretrack/forms";
-import { apiFetch } from "@insuretrack/api-client";
+import { apiFetch, checkSession } from "@insuretrack/api-client";
 
 const requestSchema = z.object({
   email: emailSchema.refine((s) => s.length > 0, { message: "Email wajib diisi" }),
@@ -38,6 +38,25 @@ function ResetInner() {
   const [consumeError, setConsumeError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [requestSent, setRequestSent] = useState(false);
+  // Kalau user sudah login, reset password tidak relevan (asumsi
+  // user tahu passwordnya). Redirect ke dashboard. Probe pakai
+  // `checkSession("customer")` — cookie auto-attach.
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkSession("customer").then((authed) => {
+      if (cancelled) return;
+      if (authed) {
+        router.replace("/portal/dashboard");
+      } else {
+        setReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   // ----- Mode 1: no token → email form -----
   const requestMethods = useForm<RequestValues>({
@@ -101,6 +120,28 @@ function ResetInner() {
   };
 
   const requestRootErr = requestMethods.formState.errors.root?.message;
+
+  // Sambil session check running, render placeholder supaya tidak ada
+  // flash form. Setelah ready=true → render form normal.
+  if (!ready) {
+    return (
+      <>
+        <Navbar />
+        <main
+          className="clay-section"
+          style={{
+            minHeight: "100vh",
+            display: "grid",
+            placeItems: "center",
+            background: "var(--warm-cream)",
+            paddingTop: 48,
+          }}
+        >
+          <p style={{ color: "var(--warm-silver)" }}>Memuat...</p>
+        </main>
+      </>
+    );
+  }
 
   return (
     <>

@@ -3,14 +3,14 @@
 // Skip static prerender — Next.js 15 + React 19 RC incompatibility.
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { apiFetch } from "@insuretrack/api-client";
+import { apiFetch, checkSession } from "@insuretrack/api-client";
 
 const loginSchema = z.object({
   username: z.string().trim().min(3, "Username minimal 3 karakter").max(64),
@@ -22,6 +22,24 @@ export default function AdminLoginPage() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Kalau admin sudah login, skip form dan redirect ke dashboard.
+  // Probe pakai `checkSession("admin")` — cookie auto-attach.
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkSession("admin").then((authed) => {
+      if (cancelled) return;
+      if (authed) {
+        router.replace("/admin/dashboard");
+      } else {
+        setReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const methods = useForm<LoginValues>({
     resolver: zodResolver(loginSchema) as never,
@@ -48,6 +66,25 @@ export default function AdminLoginPage() {
       setSubmitting(false);
     }
   };
+
+  // Sambil session check running, render placeholder supaya tidak ada
+  // flash form. Setelah ready=true → render form normal.
+  if (!ready) {
+    return (
+      <main
+        style={{
+          height: "100vh",
+          width: "100vw",
+          display: "grid",
+          placeItems: "center",
+          background: "var(--warm-cream)",
+          padding: 24,
+        }}
+      >
+        <p style={{ color: "var(--warm-silver)" }}>Memuat...</p>
+      </main>
+    );
+  }
 
   return (
     <main
