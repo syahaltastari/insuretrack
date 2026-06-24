@@ -12,11 +12,16 @@ const navItems = [
   { href: "/#contact", label: "Kontak" },
 ];
 
-export function Navbar() {
+/**
+ * Marketing Navbar untuk admin app (lihat memory [[hybrid-local-dev]]
+ * untuk konteks). `initialAuthed` di-pass dari server component supaya
+ * initial render tidak flash "Login" → "Portal".
+ */
+export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [authed, setAuthed] = useState(false);
+  const [authed, setAuthed] = useState(initialAuthed);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {

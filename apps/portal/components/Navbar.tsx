@@ -12,11 +12,18 @@ const navItems = [
   { href: "/#contact", label: "Kontak" },
 ];
 
-export function Navbar() {
+/**
+ * Marketing Navbar dengan auth-aware CTA. `initialAuthed` di-pass dari
+ * server component (MarketingLayout baca `cookies()` server-side) supaya
+ * initial render sudah benar (no flash "Login" → "Portal"). Setelah mount,
+ * useEffect re-check via `/customer/me` untuk kasus cookie berubah
+ * (login/logout) tanpa navigasi.
+ */
+export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [authed, setAuthed] = useState(false);
+  const [authed, setAuthed] = useState(initialAuthed);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
