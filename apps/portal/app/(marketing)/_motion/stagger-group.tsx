@@ -7,12 +7,19 @@
  * `FADE_UP`, lalu parent orchestrate stagger via `staggerChildren`.
  * Default: 120ms antar child, 100ms delay sebelum child pertama muncul.
  *
+ * ## Hydration safety
+ *
+ * Sama dengan Reveal: pakai `useInView` + `animate`, BUKAN
+ * `whileInView`. State `hidden` konsisten antara SSR dan client first
+ * render; animasi trigger post-mount via `useInView` hook. Lihat
+ * comment di `reveal.tsx` untuk penjelasan detail.
+ *
  * A11y: respect `useReducedMotion()` → render semua child instan.
  */
 
-import { motion, useReducedMotion, type Variants } from "framer-motion";
-import { Children, type ReactNode } from "react";
-import { FADE_UP, STAGGER_PARENT, VIEWPORT_ONCE } from "../_lib/animations";
+import { motion, useInView, useReducedMotion, type Variants } from "framer-motion";
+import { Children, useRef, type ReactNode } from "react";
+import { FADE_UP, STAGGER_PARENT } from "../_lib/animations";
 
 export function StaggerGroup({
   children,
@@ -27,6 +34,8 @@ export function StaggerGroup({
   /** Detik delay sebelum child pertama. Default 0.1s. */
   baseDelay?: number;
 }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const inView = useInView(ref, { once: true, amount: 0.2, margin: "0px 0px -8% 0px" });
   const reduced = useReducedMotion();
   const parentVariants: Variants = {
     ...STAGGER_PARENT,
@@ -35,16 +44,21 @@ export function StaggerGroup({
     },
   };
 
+  // Reduced motion: render plain wrapper, no variants, no stagger.
+  if (reduced) {
+    return <div className={className}>{children}</div>;
+  }
+
   return (
     <motion.div
+      ref={ref}
       initial="hidden"
-      whileInView="visible"
-      viewport={VIEWPORT_ONCE}
-      variants={reduced ? undefined : parentVariants}
+      animate={inView ? "visible" : "hidden"}
+      variants={parentVariants}
       className={className}
     >
       {Children.map(children, (child, i) => (
-        <motion.div key={i} variants={reduced ? undefined : FADE_UP}>
+        <motion.div key={i} variants={FADE_UP}>
           {child}
         </motion.div>
       ))}
