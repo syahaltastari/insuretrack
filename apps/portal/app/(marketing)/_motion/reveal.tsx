@@ -1,28 +1,26 @@
 "use client";
 
 /**
- * Reveal — scroll-reveal wrapper dengan INLINE STYLES (no CSS class dep).
+ * Reveal — scroll-reveal wrapper dengan WEB ANIMATIONS API.
  *
- * ## Kenapa inline styles, bukan CSS class?
+ * ## Pure JS animation, zero CSS/React state dependency
  *
- * Pendekatan CSS class (`.reveal` + `.reveal-in`) punya banyak potential
- * failure point di Next.js + Tailwind pipeline:
- *   1. CSS file mungkin tidak ter-bundle
- *   2. Tailwind content scan bisa purge class non-utility
- *   3. CSS specificity issue dari rule lain
- *   4. Browser cache serving versi lama
+ * Setelah berkali-kali pendekatan (motion, framer-motion, CSS class,
+ * inline styles) gagal karena berbagai pipeline issues, kita pakai
+ * Web Animations API langsung: `element.animate([from, to], options)`.
  *
- * Inline styles dijamin apply karena React set `style` attribute
- * langsung ke element DOM. Tidak ada CSS pipeline yang bisa interfere.
+ * Kenapa paling reliable:
+ *   1. Tidak depend CSS file loading — animation dibuat via JS
+ *   2. Tidak depend React state — animation langsung via DOM API
+ *   3. Tidak kena Tailwind purge — animation bukan CSS class
+ *   4. Browser-native — support semua modern browser
+ *   5. `fill: 'both'` keep final state tanpa depend CSS
  *
- * Curve cubic-bezier(0.22, 1, 0.36, 1) = ease-out-expo, durasi 700ms.
- * Identik dengan motion spring (stiffness 120, damping 28) feel.
- *
- * Pakai `useState` + class toggle sederhana, plus `requestAnimationFrame`
- * untuk ensure browser paint initial state sebelum transition.
+ * Curve: cubic-bezier(0.22, 1, 0.36, 1) = ease-out-expo.
+ * Identik secara visual dengan motion spring (stiffness 120, damping 28).
  */
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 export function Reveal({
   children,
@@ -35,32 +33,54 @@ export function Reveal({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
-
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      setVisible(true);
+    if (!el) {
+      console.warn("[Reveal] ref.current is null");
       return;
     }
 
-    // Untuk above-the-fold content, trigger langsung setelah frame paint.
-    // Untuk below-the-fold, tunggu IO callback.
+    console.log("[Reveal] mounted, triggering animation");
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      // Langsung set visible state tanpa animation
+      el.style.opacity = "1";
+      el.style.transform = "translateY(0)";
+      return;
+    }
+
+    const trigger = () => {
+      console.log("[Reveal] el.animate() fired, delay:", delay);
+      el.animate(
+        [
+          { opacity: 0, transform: "translateY(28px)" },
+          { opacity: 1, transform: "translateY(0)" },
+        ],
+        {
+          duration: 700,
+          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+          delay: delay * 1000,
+          fill: "both",
+        },
+      );
+    };
+
+    // Above-the-fold: langsung trigger setelah rAF
     const rect = el.getBoundingClientRect();
     const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
 
     if (inViewport) {
-      requestAnimationFrame(() => setVisible(true));
+      requestAnimationFrame(trigger);
       return;
     }
 
+    // Below-the-fold: tunggu IO callback
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          requestAnimationFrame(() => setVisible(true));
+          requestAnimationFrame(trigger);
           obs.disconnect();
         }
       },
@@ -70,16 +90,8 @@ export function Reveal({
     return () => obs.disconnect();
   }, []);
 
-  // Inline styles — dijamin apply, tidak depend CSS file/Tailwind purge.
-  const style: CSSProperties = {
-    opacity: visible ? 1 : 0,
-    transform: visible ? "translateY(0)" : "translateY(28px)",
-    transition: `opacity 700ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}s, transform 700ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}s`,
-    willChange: "opacity, transform",
-  };
-
   return (
-    <div ref={ref} className={className} style={style}>
+    <div ref={ref} className={className}>
       {children}
     </div>
   );

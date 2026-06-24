@@ -1,21 +1,14 @@
 "use client";
 
 /**
- * StaggerGroup — wraps children dengan inline-style stagger reveal.
+ * StaggerGroup — wraps children dengan Web Animations API stagger.
  *
- * Sama dengan Reveal: inline styles untuk bypass CSS pipeline issues.
- * Parent observe viewport; setelah in-view, toggle visible state di
- * setiap child wrapper dengan `transitionDelay` per index.
+ * Sama rationale dengan Reveal: pure JS animation, zero CSS dependency.
+ * Parent observe viewport; setelah in-view, trigger animation di tiap
+ * child wrapper dengan per-child delay untuk stagger effect.
  */
 
-import {
-  Children,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { Children, useEffect, useRef, type ReactNode } from "react";
 
 export function StaggerGroup({
   children,
@@ -31,30 +24,57 @@ export function StaggerGroup({
   baseDelay?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const parent = ref.current;
-    if (!parent) return;
-
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      setVisible(true);
+    if (!parent) {
+      console.warn("[StaggerGroup] ref.current is null");
       return;
     }
+
+    console.log("[StaggerGroup] mounted, will animate", parent.children.length, "children");
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const childWrappers = Array.from(parent.children) as HTMLElement[];
+
+    if (reduced) {
+      childWrappers.forEach((el) => {
+        el.style.opacity = "1";
+        el.style.transform = "translateY(0)";
+      });
+      return;
+    }
+
+    const trigger = () => {
+      console.log("[StaggerGroup] animating children");
+      childWrappers.forEach((el, i) => {
+        el.animate(
+          [
+            { opacity: 0, transform: "translateY(28px)" },
+            { opacity: 1, transform: "translateY(0)" },
+          ],
+          {
+            duration: 700,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            delay: (baseDelay + i * step) * 1000,
+            fill: "both",
+          },
+        );
+      });
+    };
 
     const rect = parent.getBoundingClientRect();
     const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
 
     if (inViewport) {
-      requestAnimationFrame(() => setVisible(true));
+      requestAnimationFrame(trigger);
       return;
     }
 
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          requestAnimationFrame(() => setVisible(true));
+          requestAnimationFrame(trigger);
           obs.disconnect();
         }
       },
@@ -66,20 +86,9 @@ export function StaggerGroup({
 
   return (
     <div ref={ref} className={className}>
-      {Children.map(children, (child, i) => {
-        const delay = baseDelay + i * step;
-        const style: CSSProperties = {
-          opacity: visible ? 1 : 0,
-          transform: visible ? "translateY(0)" : "translateY(28px)",
-          transition: `opacity 700ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}s, transform 700ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}s`,
-          willChange: "opacity, transform",
-        };
-        return (
-          <div style={style}>
-            {child}
-          </div>
-        );
-      })}
+      {Children.map(children, (child) => (
+        <div>{child}</div>
+      ))}
     </div>
   );
 }
