@@ -1,29 +1,27 @@
 "use client";
 
 /**
- * Reveal — scroll-reveal wrapper berbasis CSS transitions.
+ * Reveal — scroll-reveal wrapper berbasis CSS transitions + direct DOM.
  *
- * ## Mengapa CSS, bukan motion.dev?
+ * ## Critical: requestAnimationFrame untuk trigger transition
  *
- * Motion v12 + React 19 + Next.js 15 SSR masih punya fundamental
- * incompatibility untuk pattern entrance dengan `initial` +
- * `whileInView` + variants. Server render motion.div dengan style
- * hidden, client mount apply animate state instan, React 19 strict
- * hydration check tangkap mismatch.
+ * Naive approach (`useState` + className toggle) sering GAGAL trigger
+ * CSS transition karena React batches state update dengan initial
+ * render. Browser tidak sempat compute initial style (opacity:0)
+ * sebelum class di-toggle ke reveal-in (opacity:1), sehingga tidak
+ * ada property change yang perlu di-animate.
  *
- * CSS transitions aman untuk SSR: class string sama persis antara
- * server dan client first render. Yang berbeda hanya toggle
- * 'reveal-in' class post-mount — itu tidak trigger hydration check.
+ * Fix: gunakan `requestAnimationFrame` setelah mount untuk ensure
+ * browser sudah render initial state, BARU tambah class `reveal-in`.
+ * Dengan cara ini, browser melihat perubahan opacity:0 → opacity:1
+ * sebagai distinct frames, dan transition fire.
  *
- * Curve cubic-bezier(0.22, 1, 0.36, 1) = ease-out-expo, durasi 700ms.
- * Identik secara visual dengan motion spring (stiffness 120, damping 28).
- *
- * Note: motion.dev tetap dipakai di MotionCard (hover lift) dan
- * MotionLink (hover scale + tap) — komponen itu tidak punya entrance
- * animation, jadi tidak ada SSR issue.
+ * Plus: untuk above-the-fold content, langsung trigger animation
+ * (cek via getBoundingClientRect) — tidak perlu tunggu IO callback
+ * yang asynchronous.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 export function Reveal({
   children,
@@ -36,22 +34,38 @@ export function Reveal({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
-    // Respect reduced motion — langsung visible tanpa animation.
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      el.classList.add("reveal-in");
+      return;
+    }
+
+    // Untuk above-the-fold content, trigger langsung setelah frame paint.
+    // Untuk below-the-fold, tunggu IO callback.
+    const rect = el.getBoundingClientRect();
+    const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
+
+    if (inViewport) {
+      // requestAnimationFrame ensure browser sudah paint initial state
+      // (opacity:0, transform:translateY(28px)) SEBELUM kita add reveal-in.
+      // Tanpa ini, transition tidak fire karena browser skip intermediate frame.
+      requestAnimationFrame(() => {
+        el.classList.add("reveal-in");
+      });
       return;
     }
 
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisible(true);
+          requestAnimationFrame(() => {
+            el.classList.add("reveal-in");
+          });
           obs.disconnect();
         }
       },
@@ -64,7 +78,7 @@ export function Reveal({
   return (
     <div
       ref={ref}
-      className={`reveal ${visible ? "reveal-in" : ""} ${className ?? ""}`}
+      className={`reveal ${className ?? ""}`}
       style={{ transitionDelay: `${delay}s` }}
     >
       {children}

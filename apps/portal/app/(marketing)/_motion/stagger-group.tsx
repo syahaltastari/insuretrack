@@ -3,23 +3,15 @@
 /**
  * StaggerGroup — wraps children dengan CSS-based stagger reveal.
  *
- * ## Plain divs, bukan motion.div
- *
- * Motion v12 + React 19 SSR punya fundamental incompatibility untuk
- * pattern `motion.div` + `initial` + variants — `Children.map` yang
- * wrap tiap child dalam motion.div trigger hydration mismatch karena
- * server render motion.div dengan style hidden tapi DROP children,
- * client render dengan animate state + children included.
- *
- * CSS transitions aman: tiap child wrapper adalah plain `<div>` dengan
- * `className="reveal"` (hidden) + `transitionDelay` per index untuk
- * stagger. Toggle `reveal-in` post-mount via IntersectionObserver.
+ * Sama dengan Reveal: gunakan direct DOM manipulation +
+ * requestAnimationFrame untuk ensure CSS transition fire dengan benar.
  *
  * Parent wrapper adalah plain `<div>` dengan className dari caller
- * (mis. `clay-grid cols-3`).
+ * (mis. `clay-grid cols-3`). Tiap child dibungkus plain `<div>` dengan
+ * `transitionDelay` per index untuk stagger effect.
  */
 
-import { Children, useEffect, useRef, useState, type ReactNode } from "react";
+import { Children, useEffect, useRef, type ReactNode } from "react";
 
 export function StaggerGroup({
   children,
@@ -35,27 +27,40 @@ export function StaggerGroup({
   baseDelay?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    const parent = ref.current;
+    if (!parent) return;
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      // Tambah reveal-in ke semua child wrappers langsung
+      parent.querySelectorAll(".reveal").forEach((el) => el.classList.add("reveal-in"));
+      return;
+    }
+
+    const rect = parent.getBoundingClientRect();
+    const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
+
+    if (inViewport) {
+      requestAnimationFrame(() => {
+        parent.querySelectorAll(".reveal").forEach((el) => el.classList.add("reveal-in"));
+      });
       return;
     }
 
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisible(true);
+          requestAnimationFrame(() => {
+            parent.querySelectorAll(".reveal").forEach((el) => el.classList.add("reveal-in"));
+          });
           obs.disconnect();
         }
       },
       { threshold: 0.2, rootMargin: "0px 0px -8% 0px" },
     );
-    obs.observe(el);
+    obs.observe(parent);
     return () => obs.disconnect();
   }, []);
 
@@ -63,7 +68,7 @@ export function StaggerGroup({
     <div ref={ref} className={className}>
       {Children.map(children, (child, i) => (
         <div
-          className={`reveal ${visible ? "reveal-in" : ""}`}
+          className="reveal"
           style={{ transitionDelay: `${baseDelay + i * step}s` }}
         >
           {child}
