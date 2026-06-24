@@ -11,8 +11,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   API_BASE,
+  apiFetch,
   ApiError,
-  getCustomerToken,
   type ApplicantType,
   type ProductCatalogData,
   type ProductCatalogResponse,
@@ -309,54 +309,38 @@ function InsuranceNewPageInner() {
   }, [methods.formState.submitCount]);
 
   // Auth guard: redirect to login kalau belum authenticated. Customer
-  // insurance application requires customer JWT (backend enforces via
+  // insurance application requires customer cookie (backend enforces via
   // RequireCustomer middleware di POST /api/customer/registrations).
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) {
-      router.replace("/portal/login?next=/portal/insurance/new");
-      return;
-    }
     // Prefill form dari profil customer: data akun (email/nama/HP) plus
     // data insurance sebelumnya (kalau pernah apply — nullable). Best-effort
-    // — kalau fetch gagal, user tetap bisa isi manual.
-    fetch(`${API_BASE}/customer/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (r) => {
-        if (!r.ok) return null;
-        return r.json() as Promise<{
-          full_name: string;
-          email: string;
-          mobile_number: string;
-          portal_status: string;
-          nik: string | null;
-          birth_place: string | null;
-          birth_date: string | null;
-          gender: string | null;
-          address: string | null;
-          rt_rw: string | null;
-          village: string | null;
-          district: string | null;
-          city: string | null;
-          province: string | null;
-          postal_code: string | null;
-        }>;
-      })
+    // — kalau fetch gagal (401 = belum login → redirect), user tetap
+    // bisa isi manual.
+    apiFetch<{
+      full_name: string;
+      email: string;
+      mobile_number: string;
+      portal_status: string;
+      nik: string | null;
+      birth_place: string | null;
+      birth_date: string | null;
+      gender: string | null;
+      address: string | null;
+      rt_rw: string | null;
+      village: string | null;
+      district: string | null;
+      city: string | null;
+      province: string | null;
+      postal_code: string | null;
+    } | null>("/customer/me")
       .then((p) => {
         if (!p) return;
-        // Simpan portal_status untuk banner aktivasi. Backend akan reject
-        // submit (EMAIL_NOT_ACTIVATED) kalau user PENDING, jadi tampilkan
-        // banner upfront agar user tidak isi form sia-sia.
         setPortalStatus(p.portal_status);
         methods.reset({
           ...methods.getValues(),
           full_name: p.full_name ?? "",
           email: p.email ?? "",
           mobile_number: p.mobile_number ?? "",
-          // Insurance fields — null/undefined fallback ke empty string
-          // (Zod string schema reject null). Validasi NIK/TTL akan
-          // trigger error kalau field wajib masih kosong.
           nik: p.nik ?? "",
           birth_place: p.birth_place ?? "",
           birth_date: p.birth_date ?? "",
@@ -370,8 +354,12 @@ function InsuranceNewPageInner() {
           postal_code: p.postal_code ?? "",
         });
       })
-      .catch(() => {
-        // Silent — user isi manual kalau prefill gagal.
+      .catch((err) => {
+        // 401 = belum login → bounce ke /login. Lainnya silent — user
+        // bisa isi manual kalau prefill gagal.
+        if (err && typeof err === "object" && "status" in err && err.status === 401) {
+          router.replace("/portal/login?next=/portal/insurance/new");
+        }
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
@@ -392,11 +380,6 @@ function InsuranceNewPageInner() {
     }
     setSubmitting(true);
     setResultDialog(IDLE);
-    const token = getCustomerToken();
-    if (!token) {
-      router.replace("/portal/login?next=/portal/insurance/new");
-      return;
-    }
     try {
       const fd = new FormData();
       fd.append(
@@ -426,19 +409,11 @@ function InsuranceNewPageInner() {
         }),
       );
       fd.append("id_card", ktp);
-      const r = await fetch(`${API_BASE}/customer/registrations`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        throw new ApiError(
-          r.status,
-          json?.error?.code ?? "ERR",
-          json?.error?.message ?? "Gagal submit registrasi.",
-        );
-      }
+      // apiFetch handles multipart + CSRF auto-attach.
+      const json = await apiFetch<{
+        registration_no: string;
+        invoice_no: string;
+      }>("/customer/registrations", { method: "POST", body: fd });
       setResult({ registration_no: json.registration_no, invoice_no: json.invoice_no });
     } catch (err) {
       setResultDialog(mapSubmitError(err));

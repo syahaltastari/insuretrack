@@ -6,8 +6,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { StatusBadge } from "@insuretrack/ui";
-import { API_BASE } from "@insuretrack/api-client";
-import { getCustomerToken } from "@insuretrack/api-client";
+import { API_BASE, apiFetch } from "@insuretrack/api-client";
 
 type Claim = {
   id: string;
@@ -36,23 +35,17 @@ export default function PortalClaimsPage() {
   const [activePolicyCount, setActivePolicyCount] = useState<number | null>(null);
 
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) return;
     setLoading(true);
-    fetch(`${API_BASE}/customer/claims?page=1&page_size=50`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
+    // Cookie auth: apiFetch attach session otomatis. Dua fetch paralel
+    // untuk claims + active policy count.
+    apiFetch<{ data?: Claim[] }>("/customer/claims?page=1&page_size=50")
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
 
-    // Fetch active policies count (best-effort — failure tidak block UI utama).
-    fetch(`${API_BASE}/customer/policies?status=ACTIVE&page=1&page_size=1`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j: PoliciesResponse | null) => setActivePolicyCount(j?.total ?? 0))
+    // Best-effort — failure tidak block UI utama.
+    apiFetch<{ total?: number }>("/customer/policies?status=ACTIVE&page=1&page_size=1")
+      .then((j) => setActivePolicyCount(j.total ?? 0))
       .catch(() => setActivePolicyCount(0));
   }, []);
 

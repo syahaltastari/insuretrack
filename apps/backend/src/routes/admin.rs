@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    auth::{password::verify_password, RequireAdmin, Role},
+    auth::{
+        build_auth_cookies, build_clear_cookies, generate_csrf_token, password::verify_password,
+        RequireAdmin, Role,
+    },
     dto::{DashboardStats, LoginRequest, LoginResponse},
     error::{AppError, AppResult},
     repo::{filters as filters_helper, Page, PageQuery},
@@ -28,6 +31,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/login", post(login))
+        .route("/logout", post(logout))
         .route("/dashboard/stats", get(dashboard_stats))
         .route("/dashboard/charts", get(dashboard_charts))
         .route("/me", get(get_me).patch(update_me))
@@ -66,7 +70,7 @@ pub fn router() -> Router<AppState> {
 async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
-) -> AppResult<Json<LoginResponse>> {
+) -> AppResult<Response> {
     let row: Option<(Uuid, String, String, bool, bool)> = sqlx::query_as(
         "SELECT id, username, password_hash, is_active, is_super_admin \
            FROM admin_users WHERE username = $1",
@@ -95,13 +99,16 @@ async fn login(
         .execute(&state.pool)
         .await;
 
+    const SESSION_TTL: i64 = 60 * 60 * 8;
     let token = state.tokens.issue(
         &admin_id.to_string(),
         Role::Admin,
         None,
         is_super_admin,
-        60 * 60 * 8,
+        SESSION_TTL,
     )?;
+    let csrf = generate_csrf_token();
+    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
 
     audit_write(
         &state.pool,
@@ -116,12 +123,38 @@ async fn login(
     )
     .await?;
 
-    Ok(Json(LoginResponse {
-        token,
+    let body = Json(LoginResponse {
         role: "admin".to_string(),
         id: Some(admin_id),
         is_super_admin: Some(is_super_admin),
-    }))
+    });
+    Ok((StatusCode::OK, jar, body).into_response())
+}
+
+/// POST /api/admin/logout — clear session + CSRF cookies, return 204.
+/// FE juga harus `router.replace("/admin/login")` setelah call berhasil.
+/// Idempotent: kalau cookie sudah absent, Max-Age=0 tetap no-op.
+async fn logout(
+    State(state): State<AppState>,
+    RequireAdmin(claims): RequireAdmin,
+) -> AppResult<Response> {
+    let admin_id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let jar = build_clear_cookies(&state.config);
+
+    let _ = audit_write(
+        &state.pool,
+        AuditEntry {
+            actor: &claims.sub,
+            action: "admin_logout",
+            entity_type: "admin_user",
+            entity_id: Some(admin_id),
+            metadata: None,
+            ip_address: None,
+        },
+    )
+    .await;
+
+    Ok((StatusCode::NO_CONTENT, jar).into_response())
 }
 
 #[derive(sqlx::FromRow)]

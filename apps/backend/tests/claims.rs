@@ -96,11 +96,13 @@ async fn admin_patch_claim(
     new_status: &str,
 ) -> (StatusCode, Value) {
     let token = common::admin_token(app, insuretrack_backend::auth::jwt::Role::Admin, true).await;
+    let csrf = "test-csrf-token";
     let req = Request::builder()
         .method(Method::PATCH)
         .uri(format!("/api/admin/claims/{claim_id}"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::COOKIE, common::cookie_with_csrf(app, &token, csrf))
+        .header("X-CSRF-Token", csrf)
         .body(Body::from(
             json!({
                 "status": new_status,
@@ -202,7 +204,7 @@ async fn claim_admin_requires_auth() {
     let app = common::spawn_app().await;
     let (_cust, _pol, claim_id, _) = seed_submitted_claim(&app.pool, "LIFE").await;
 
-    // Tanpa token → 401.
+    // Tanpa token/cookie → 403 (CSRF guard fire duluan, sebelum auth check).
     let req = Request::builder()
         .method(Method::PATCH)
         .uri(format!("/api/admin/claims/{claim_id}"))
@@ -210,15 +212,17 @@ async fn claim_admin_requires_auth() {
         .body(Body::from(json!({ "status": "UNDER_REVIEW" }).to_string()))
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
-    // Dengan customer token (wrong role) → 403.
+    // Dengan customer cookie (wrong role) → 403.
     let cust_token = common::customer_token(&app, _cust);
+    let csrf = "test-csrf-token";
     let req = Request::builder()
         .method(Method::PATCH)
         .uri(format!("/api/admin/claims/{claim_id}"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {cust_token}"))
+        .header(header::COOKIE, common::cookie_with_csrf(&app, &cust_token, csrf))
+        .header("X-CSRF-Token", csrf)
         .body(Body::from(json!({ "status": "UNDER_REVIEW" }).to_string()))
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();

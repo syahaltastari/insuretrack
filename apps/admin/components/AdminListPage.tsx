@@ -24,7 +24,7 @@ import {
   type FilterChip,
   FilterSelect,
 } from "@insuretrack/ui";
-import { API_BASE, getAdminToken } from "@insuretrack/api-client";
+import { API_BASE, apiFetch } from "@insuretrack/api-client";
 import { useAdminTable } from "@/lib/useAdminTable";
 import { ColumnVisibilityMenu } from "@/components/ColumnVisibilityMenu";
 import { AdminDownloadButton } from "@/components/AdminDownloadButton";
@@ -270,8 +270,6 @@ export function AdminListPage<T extends { id: string }>({
 
   // ----- Data fetch -----
   const load = useCallback(async () => {
-    const token = getAdminToken();
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
@@ -292,11 +290,10 @@ export function AdminListPage<T extends { id: string }>({
       if (sortBy) params.set("sort_by", sortBy);
       if (sortBy) params.set("sort_dir", sortDir);
 
-      const r = await fetch(`${API_BASE}${endpoint}?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const json = await r.json();
+      // Cookie auth: apiFetch attach session otomatis via browser.
+      const json = await apiFetch<{ data: T[]; total: number }>(
+        `${endpoint}?${params.toString()}`,
+      );
       setData(json.data);
       setTotal(json.total);
     } catch (e) {

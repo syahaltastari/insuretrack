@@ -22,8 +22,7 @@ import { Confirm } from "@insuretrack/ui";
 import { SafeImage } from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { optionalString } from "@insuretrack/forms";
-import { API_BASE, ApiError } from "@insuretrack/api-client";
-import { getAdminToken } from "@insuretrack/api-client";
+import { API_BASE, apiFetch } from "@insuretrack/api-client";
 
 type Testimonial = {
   id: string;
@@ -193,8 +192,6 @@ export default function AdminTestimonialsPage() {
   };
 
   const onSubmit = async (values: TestimonialFormValues) => {
-    const token = getAdminToken();
-    if (!token) return;
     const photoFile = (values.photo instanceof FileList ? values.photo[0] : values.photo) as
       | File
       | undefined;
@@ -225,23 +222,11 @@ export default function AdminTestimonialsPage() {
       };
       fd.append("data", JSON.stringify(data));
       if (photoFile) fd.append("photo", photoFile);
-      const url = editing
-        ? `${API_BASE}/admin/testimonials/${editing.id}`
-        : `${API_BASE}/admin/testimonials`;
+      const path = editing
+        ? `/admin/testimonials/${editing.id}`
+        : "/admin/testimonials";
       const method = editing ? "PATCH" : "POST";
-      const r = await fetch(url, {
-        method,
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new ApiError(
-          r.status,
-          j?.error?.code ?? "ERR",
-          j?.error?.message ?? `HTTP ${r.status}`,
-        );
-      }
+      await apiFetch(path, { method, body: fd });
       toast.success(editing ? "Testimoni diperbarui" : "Testimoni ditambahkan");
       closeForm();
       setRefreshKey((k) => k + 1);
@@ -253,17 +238,8 @@ export default function AdminTestimonialsPage() {
   };
 
   const deleteTestimonial = async (t: Testimonial) => {
-    const token = getAdminToken();
-    if (!token) return;
     try {
-      const r = await fetch(`${API_BASE}/admin/testimonials/${t.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok && r.status !== 204) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
+      await apiFetch(`/admin/testimonials/${t.id}`, { method: "DELETE" });
       toast.success(`Testimoni dari "${t.customer_name}" dihapus`);
       setRefreshKey((k) => k + 1);
     } catch (e) {

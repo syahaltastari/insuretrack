@@ -6,8 +6,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { StatusBadge } from "@insuretrack/ui";
-import { API_BASE } from "@insuretrack/api-client";
-import { getCustomerToken } from "@insuretrack/api-client";
+import { API_BASE, apiFetch } from "@insuretrack/api-client";
 
 type Participant = {
   id: string;
@@ -36,23 +35,17 @@ export default function PortalPoliciesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) return;
     setLoading(true);
-    fetch(`${API_BASE}/customer/policies?page=1&page_size=50`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
+    apiFetch<{ data?: Policy[] }>("/customer/policies?page=1&page_size=50")
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
   const downloadPdf = async (id: string) => {
-    const token = getCustomerToken();
-    if (!token) return;
+    // Cookie auth + credentials:include — browser attach session otomatis.
     const r = await fetch(`${API_BASE}/customer/policies/${id}/pdf`, {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
     });
     if (!r.ok) return toast.error("Gagal download PDF");
     const blob = await r.blob();

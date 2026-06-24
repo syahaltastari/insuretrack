@@ -26,8 +26,12 @@ path = "src/bin/seed.rs"
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["multipart", "macros"] }
+axum-extra = { version = "0.9", features = ["cookie"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "limit"] }
+# Untuk Cookie::max_age — cookie crate re-export `time` gated behind feature,
+# lebih mudah pakai time langsung.
+time = { version = "0.3", features = ["parsing", "formatting"] }
 
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }

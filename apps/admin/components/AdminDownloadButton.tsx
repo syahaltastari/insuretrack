@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { API_BASE, getAdminToken } from "@insuretrack/api-client";
+import { API_BASE } from "@insuretrack/api-client";
 
 /**
  * Tombol download PDF generik untuk actions column / detail page.
  *
  * Behavior:
- * - Fetch dengan Bearer token admin.
+ * - Fetch dengan cookie auth (browser auto-attach session; CSRF tidak
+ *   diperlukan karena GET request).
  * - Ambil filename dari `Content-Disposition` header backend (kalau ada);
  *   fallback ke nama generik supaya file tetap bisa di-save.
  * - Trigger download via blob URL + `<a download>` click programmatic.
@@ -38,12 +39,12 @@ export function AdminDownloadButton({
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (loading) return;
-    const token = getAdminToken();
     setLoading(true);
     try {
-      const r = await fetch(`${API_BASE}${path}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Pakai fetch langsung (bukan apiFetch) karena kita perlu raw
+      // Response untuk Content-Disposition + blob. Cookie session
+      // di-attach otomatis oleh browser via `credentials: "include"`.
+      const r = await fetch(`${API_BASE}${path}`, { credentials: "include" });
       if (!r.ok) {
         toast.error(
           "Gagal download: " +

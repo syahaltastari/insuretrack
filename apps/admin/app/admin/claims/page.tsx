@@ -19,9 +19,8 @@ import {
   FilterSelect,
 } from "@insuretrack/ui";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE } from "@insuretrack/api-client";
+import { API_BASE, apiFetch } from "@insuretrack/api-client";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { getAdminToken } from "@insuretrack/api-client";
 
 type Claim = {
   id: string;
@@ -105,21 +104,14 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
   // kalau file dipilih. Throw kalau gagal agar caller abort.
   const uploadProof = async (): Promise<boolean> => {
     if (!proofFile) return true; // no-op kalau tidak ada file
-    const token = getAdminToken();
-    if (!token) return false;
     setUploadingProof(true);
     try {
       const fd = new FormData();
       fd.append("proof", proofFile);
-      const r = await fetch(`${API_BASE}/admin/claims/${claim.id}/payment-proof`, {
+      await apiFetch(`/admin/claims/${claim.id}/payment-proof`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: fd,
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
       return true;
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Gagal upload bukti");
@@ -130,8 +122,6 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
   };
 
   const update = async (values: DecisionNoteValues, status: string) => {
-    const token = getAdminToken();
-    if (!token) return;
     setSubmitting(status);
     setFormError(null);
 
@@ -152,18 +142,13 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
         }
       }
       // 2. PATCH status (seperti sebelumnya).
-      const r = await fetch(`${API_BASE}/admin/claims/${claim.id}`, {
+      await apiFetch(`/admin/claims/${claim.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           status,
           decision_note: values.decision_note?.trim() || null,
         }),
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
       methods.reset({ decision_note: "" });
       clearProofSelection();
       onUpdated();
@@ -282,7 +267,7 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
               </p>
             </div>
             <a
-              href={`${API_BASE}/public/uploads/${claim.payment_proof_path}`}
+              href={`${API_BASE}/public/uploads/${claim.payment_proof_path ?? ""}`}
               target="_blank"
               rel="noopener noreferrer"
               className="clay-button ghost size-small"
@@ -568,8 +553,6 @@ export default function AdminClaimsPage() {
   }, [qFromUrl, statusFromUrl, dateFieldFromUrl, dateFromUrl, dateToUrl, productFromUrl, claimTypeFromUrl, sortByFromUrl, sortDirFromUrl]);
 
   const load = useCallback(async () => {
-    const token = getAdminToken();
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
@@ -584,11 +567,9 @@ export default function AdminClaimsPage() {
       if (sortBy) params.set("sort_by", sortBy);
       if (sortBy) params.set("sort_dir", sortDir);
 
-      const r = await fetch(`${API_BASE}/admin/claims?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
+      const j = await apiFetch<{ data: Claim[] }>(
+        `/admin/claims?${params.toString()}`,
+      );
       setData(j.data ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal load");

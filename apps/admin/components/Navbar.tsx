@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCustomerToken, clearCustomerToken } from "@insuretrack/api-client";
+import { hasSessionCookie, logoutCustomer } from "@insuretrack/api-client";
 
 const navItems = [
   { href: "/#products", label: "Produk" },
@@ -20,7 +20,11 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    setAuthed(!!getCustomerToken());
+    // Marketing navbar di admin app detect customer-auth (lihat memory
+    // [[hybrid-local-dev]] untuk konteks). `hasSessionCookie` cek nama
+    // cookie global — admin yang punya akun customer akan trigger TRUE,
+    // sesuai behavior lama.
+    setAuthed(hasSessionCookie());
   }, [pathname]);
 
   useEffect(() => {
@@ -37,15 +41,19 @@ export function Navbar() {
 
   const buyPolis = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (getCustomerToken()) {
+    if (hasSessionCookie()) {
       router.push("/portal/dashboard");
     } else {
       router.push("/portal/login?next=/register");
     }
   };
 
-  const logout = () => {
-    clearCustomerToken();
+  const logout = async () => {
+    try {
+      await logoutCustomer();
+    } catch {
+      // best-effort — tetap redirect.
+    }
     setAuthed(false);
     router.push("/");
   };

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@insuretrack/ui";
 import { AdminUserMenu, fetchAdminProfile, type AdminProfile } from "@/components/AdminUserMenu";
-import { clearAdminToken, getAdminToken } from "@insuretrack/api-client";
+import { hasSessionCookie } from "@insuretrack/api-client";
 
 const navItems: Array<{ href: string; label: string; icon: IconName; superAdminOnly?: boolean }> = [
   { href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
@@ -53,15 +53,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    // Halaman publik (login) tidak butuh token. setReady(true) langsung
+    // Halaman publik (login) tidak butuh auth. setReady(true) langsung
     // supaya shell render — kalau tidak, admin yang belum login stuck
     // di loading state selamanya.
     if (pathname && PUBLIC_ADMIN_PATHS.has(pathname)) {
       setReady(true);
       return;
     }
-    const token = getAdminToken();
-    if (!token) {
+    // Setelah migrasi cookie, token TIDAK visible dari JS. Cookie HttpOnly
+    // di-bawa otomatis oleh browser. `hasSessionCookie()` cuma cek nama
+    // cookie ada (hint); authorize sebenarnya tetap di backend.
+    if (!hasSessionCookie()) {
       router.replace("/admin/login");
       return;
     }
@@ -95,11 +97,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     setSidebarOpen(false);
   }, [pathname]);
 
-  // If token is cleared (e.g. another tab logged out), kick back to login.
+  // Cross-tab logout: cookie `insuretrack_session` di-drop di tab lain
+  // → storage event fire → kita redirect ke login. (Cookie sync cross-tab
+  // otomatis, tapi redirect butuh explicit handling.)
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "insuretrack_admin_token" && !e.newValue) {
-        clearAdminToken();
+      if (e.key === "insuretrack_session" && !e.newValue) {
         router.replace("/admin/login");
       }
     };

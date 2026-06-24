@@ -20,7 +20,7 @@ import {
   Icon,
 } from "@insuretrack/ui";
 import { Form, FormField, FormError, passwordSchema } from "@insuretrack/forms";
-import { API_BASE, ApiError, getAdminToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 import type {
   AdminUser,
   CreateAdminUserRequest,
@@ -169,8 +169,6 @@ export default function AdminUsersPage() {
   // ============================================================
 
   const onCreate = async (values: CreateFormValues) => {
-    const token = getAdminToken();
-    if (!token) return;
     setSubmitting(true);
     try {
       const body: CreateAdminUserRequest = {
@@ -180,22 +178,10 @@ export default function AdminUsersPage() {
         is_super_admin: values.is_super_admin,
         ...(values.email.trim() ? { email: values.email.trim() } : {}),
       };
-      const r = await fetch(`${API_BASE}/admin/users`, {
+      await apiFetch("/admin/users", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(body),
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new ApiError(
-          r.status,
-          j?.error?.code ?? "ERR",
-          j?.error?.message ?? `HTTP ${r.status}`,
-        );
-      }
       toast.success(`Admin "${body.username}" berhasil dibuat`);
       closeForm();
       setRefreshKey((k) => k + 1);
@@ -208,8 +194,6 @@ export default function AdminUsersPage() {
 
   const onEdit = async (values: EditFormValues) => {
     if (!editing) return;
-    const token = getAdminToken();
-    if (!token) return;
 
     // Build PATCH body: hanya kirim field yang berubah (atau semua yang
     // ada nilainya) — backend pakai COALESCE jadi unspecified field
@@ -224,22 +208,10 @@ export default function AdminUsersPage() {
     };
     setSubmitting(true);
     try {
-      const r = await fetch(`${API_BASE}/admin/users/${editing.id}`, {
+      await apiFetch(`/admin/users/${editing.id}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(body),
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new ApiError(
-          r.status,
-          j?.error?.code ?? "ERR",
-          j?.error?.message ?? `HTTP ${r.status}`,
-        );
-      }
       toast.success("Data admin diperbarui");
       closeForm();
       setRefreshKey((k) => k + 1);
@@ -260,19 +232,10 @@ export default function AdminUsersPage() {
   // ============================================================
 
   const toggleActive = async (u: AdminUser) => {
-    const token = getAdminToken();
-    if (!token) return;
     const newActive = !u.is_active;
     const path = newActive ? "activate" : "deactivate";
     try {
-      const r = await fetch(`${API_BASE}/admin/users/${u.id}/${path}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok && r.status !== 204) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
+      await apiFetch(`/admin/users/${u.id}/${path}`, { method: "POST" });
       toast.success(
         newActive
           ? `Admin "${u.username}" diaktifkan`
@@ -286,19 +249,12 @@ export default function AdminUsersPage() {
 
   const performResetPassword = async () => {
     if (!resetTarget) return;
-    const token = getAdminToken();
-    if (!token) return;
     setResetting(true);
     try {
-      const r = await fetch(
-        `${API_BASE}/admin/users/${resetTarget.id}/reset-password`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+      const data = await apiFetch<ResetPasswordResponse>(
+        `/admin/users/${resetTarget.id}/reset-password`,
+        { method: "POST" },
       );
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
-      const data = (await r.json()) as ResetPasswordResponse;
       setGeneratedPassword(data.new_password);
       toast.success("Password baru di-generate. Salin sekarang.");
     } catch (e) {

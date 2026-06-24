@@ -10,8 +10,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE } from "@insuretrack/api-client";
-import { setAdminToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 
 const loginSchema = z.object({
   username: z.string().trim().min(3, "Username minimal 3 karakter").max(64),
@@ -34,14 +33,14 @@ export default function AdminLoginPage() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const r = await fetch(`${API_BASE}/admin/login`, {
+      // Login endpoint ada di CSRF skip-list backend — tidak perlu
+      // X-CSRF-Token header. Backend set 2 cookie di response (session
+      // HttpOnly + csrf non-HttpOnly) yang akan di-attach otomatis oleh
+      // browser ke request berikutnya.
+      await apiFetch("/admin/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: values.username.trim(), password: values.password }),
       });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json?.error?.message ?? "Login gagal");
-      setAdminToken(json.token);
       router.replace("/admin/dashboard");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Login gagal");

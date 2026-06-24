@@ -20,10 +20,8 @@ import {
   StatusBadge,
 } from "@insuretrack/ui";
 import {
-  API_BASE,
-  ApiError,
+  apiFetch,
   formatIdr,
-  getAdminToken,
   type AdminCustomerDetail,
   type AdminCustomerResetPasswordResponse,
   type ResendActivationResponse,
@@ -180,42 +178,30 @@ export default function CustomerDetailPage() {
   // ---- Fetch detail ----
   useEffect(() => {
     if (!id) return;
-    const token = getAdminToken();
-    if (!token) {
-      setError({ kind: "other", message: "Sesi admin tidak ditemukan." });
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
     setLoading(true);
     setError(null);
     (async () => {
       try {
-        const r = await fetch(`${API_BASE}/admin/customers/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (r.status === 404) {
-          if (!cancelled) {
-            setError({ kind: "notfound", message: "Customer tidak ditemukan." });
-            setLoading(false);
-          }
-          return;
-        }
-        if (!r.ok) {
-          const txt = await r.text().catch(() => "");
-          throw new ApiError(r.status, "ERR", txt || `HTTP ${r.status}`);
-        }
-        const json = (await r.json()) as AdminCustomerDetail;
+        const json = await apiFetch<AdminCustomerDetail>(
+          `/admin/customers/${id}`,
+        );
         if (!cancelled) {
           setData(json);
           setLoading(false);
         }
       } catch (e) {
+        // apiFetch throw ApiError(404) untuk not-found — petakan ke UI.
+        const err = e as { status?: number; message?: string };
         if (!cancelled) {
-          setError({
-            kind: "other",
-            message: e instanceof Error ? e.message : "Gagal load detail customer",
-          });
+          if (err.status === 404) {
+            setError({ kind: "notfound", message: "Customer tidak ditemukan." });
+          } else {
+            setError({
+              kind: "other",
+              message: err.message ?? "Gagal load detail customer",
+            });
+          }
           setLoading(false);
         }
       }
@@ -226,31 +212,17 @@ export default function CustomerDetailPage() {
   }, [id, refreshKey]);
 
   // ---- Action handlers ----
+  // Local thin wrapper around apiFetch — 204 response maps ke `undefined`
+  // (cocok dengan T = void / Response yang void). Body FormData di-skip
+  // Content-Type (browser set dengan boundary — lihat apiFetch).
 
-  const adminFetchJson = useCallback(async <T,>(url: string, init?: RequestInit): Promise<T> => {
-    const token = getAdminToken();
-    if (!token) throw new Error("token hilang");
-    const r = await fetch(`${API_BASE}${url}`, {
-      ...init,
-      headers: {
-        ...(init?.headers ?? {}),
-        ...(init?.body && !(init.body instanceof FormData)
-          ? { "Content-Type": "application/json" }
-          : {}),
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!r.ok && r.status !== 204) {
-      const j = await r.json().catch(() => ({}));
-      throw new ApiError(
-        r.status,
-        j?.error?.code ?? "ERR",
-        j?.error?.message ?? `HTTP ${r.status}`,
-      );
-    }
-    if (r.status === 204) return undefined as T;
-    return (await r.json()) as T;
-  }, []);
+  const adminFetchJson = useCallback(
+    async <T,>(path: string, init?: RequestInit): Promise<T> => {
+      const result = await apiFetch<T>(path, init);
+      return result;
+    },
+    [],
+  );
 
   const toggleActive = async () => {
     if (!data) return;

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { StatusBadge } from "@insuretrack/ui";
-import { API_BASE, formatProductPlan, getCustomerToken } from "@insuretrack/api-client";
+import { API_BASE, formatProductPlan, apiFetch } from "@insuretrack/api-client";
 
 type Invoice = {
   id: string;
@@ -46,13 +46,8 @@ export default function PortalInvoicesPage() {
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) return;
     setLoading(true);
-    fetch(`${API_BASE}/customer/invoices?page=1&page_size=50`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
+    apiFetch<{ data?: Invoice[] }>("/customer/invoices?page=1&page_size=50")
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -90,11 +85,12 @@ export default function PortalInvoicesPage() {
     setLoading: (id: string | null) => void,
     id: string,
   ) => {
-    const token = getCustomerToken();
-    if (!token) return;
     setLoading(id);
     try {
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      // Pakai fetch langsung (bukan apiFetch) karena kita perlu raw
+      // Response untuk blob. Cookie session di-attach otomatis via
+      // `credentials: "include"`. URL sudah FULL (termasuk API_BASE).
+      const r = await fetch(url, { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const blob = await r.blob();
       const href = URL.createObjectURL(blob);

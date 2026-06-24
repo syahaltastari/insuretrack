@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCustomerToken, clearCustomerToken } from "@insuretrack/api-client";
+import { hasSessionCookie, logoutCustomer } from "@insuretrack/api-client";
 
 const navItems = [
   { href: "/#products", label: "Produk" },
@@ -20,7 +20,11 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    setAuthed(!!getCustomerToken());
+    // Setelah migrasi ke cookie auth: `hasSessionCookie()` cek nama cookie
+    // (HttpOnly, value tidak visible). TRUE = "seseorang sedang login".
+    // Untuk role-specific (admin vs customer), middleware/shell sudah
+    // redirect — Navbar ini cuma CTA marketing.
+    setAuthed(hasSessionCookie());
   }, [pathname]);
 
   useEffect(() => {
@@ -37,15 +41,19 @@ export function Navbar() {
 
   const buyPolis = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (getCustomerToken()) {
+    if (hasSessionCookie()) {
       router.push("/portal/dashboard");
     } else {
       router.push("/portal/login?next=/portal/dashboard");
     }
   };
 
-  const logout = () => {
-    clearCustomerToken();
+  const logout = async () => {
+    try {
+      await logoutCustomer();
+    } catch {
+      // best-effort — tetap redirect.
+    }
     setAuthed(false);
     router.push("/");
   };

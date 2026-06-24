@@ -10,8 +10,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema } from "@insuretrack/forms";
-import { API_BASE } from "@insuretrack/api-client";
-import { getCustomerToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 
 // Validasi ringan di client. Server (PATCH /api/customer/me) melakukan
 // validasi lebih ketat (unique email, length check, dll.) sebagai
@@ -86,14 +85,8 @@ export default function PortalProfilePage() {
   });
 
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) return;
-    fetch(`${API_BASE}/customer/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const json = (await r.json()) as MeResponse;
+    apiFetch<MeResponse>("/customer/me")
+      .then((json) => {
         setProfile(json);
         profileMethods.reset({
           full_name: json.full_name,
@@ -109,30 +102,22 @@ export default function PortalProfilePage() {
   }, []);
 
   const onProfileSubmit = async (values: ProfileValues) => {
-    const token = getCustomerToken();
-    if (!token) return;
     setProfileSubmitting(true);
     setProfileError(null);
     try {
-      const r = await fetch(`${API_BASE}/customer/me`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+      const updated = await apiFetch<{ full_name: string; email: string; mobile_number: string }>(
+        "/customer/me",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            full_name: values.full_name.trim(),
+            email: values.email.trim().toLowerCase(),
+            mobile_number: values.mobile_number.trim(),
+          }),
         },
-        body: JSON.stringify({
-          full_name: values.full_name.trim(),
-          email: values.email.trim().toLowerCase(),
-          mobile_number: values.mobile_number.trim(),
-        }),
-      });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        throw new Error(json?.error?.message ?? `HTTP ${r.status}`);
-      }
+      );
       // Sync form dengan response server (server bisa normalisasi nilai,
       // mis. lowercased email atau cleaned mobile_number).
-      const updated = json as { full_name: string; email: string; mobile_number: string };
       profileMethods.reset({
         full_name: updated.full_name,
         email: updated.email,
@@ -151,26 +136,18 @@ export default function PortalProfilePage() {
   };
 
   const onPasswordSubmit = async (values: PasswordValues) => {
-    const token = getCustomerToken();
-    if (!token) return;
     setPasswordSubmitting(true);
     setPasswordError(null);
     try {
-      const r = await fetch(`${API_BASE}/customer/password/change`, {
+      // Endpoint ini return 204 No Content kalau sukses. apiFetch handle
+      // itu dengan return null; abaikan return value.
+      await apiFetch("/customer/password/change", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           current_password: values.current_password,
           new_password: values.new_password,
         }),
       });
-      if (!r.ok && r.status !== 204) {
-        const json = await r.json().catch(() => ({}));
-        throw new Error(json?.error?.message ?? `HTTP ${r.status}`);
-      }
       passwordMethods.reset({ current_password: "", new_password: "", confirm_password: "" });
       setShowCurrentPw(false);
       setShowNewPw(false);

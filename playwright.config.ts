@@ -34,12 +34,12 @@ export default defineConfig({
     {
       name: "portal",
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:3000" },
-      testMatch: /portal\.spec\.ts$/,
+      testMatch: /(portal|auth-cookie)\.spec\.ts$/,
     },
     {
       name: "admin",
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:3001" },
-      testMatch: /admin\.spec\.ts$/,
+      testMatch: /(admin|auth-cookie)\.spec\.ts$/,
     },
   ],
   // webServer otomatis start portal + admin jika belum jalan. Untuk

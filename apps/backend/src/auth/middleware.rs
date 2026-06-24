@@ -6,26 +6,24 @@
 //!   OptionalAuth       : decode token jika ada, return None kalau tidak
 //!
 //! `Authenticated` adalah helper yang expose `Claims` ke handler.
+//!
+//! Token dibaca dari cookie `Config::session_cookie_name` (HttpOnly JWT
+//! di-set saat login via `Set-Cookie`). `Authorization: Bearer` tidak
+//! lagi dibaca — cookie-only untuk menutup XSS token-theft.
 
 use axum::{
     async_trait,
-    extract::FromRequestParts,
-    http::{header, request::Parts, HeaderMap},
+    extract::{FromRequestParts, Request},
+    http::request::Parts,
+    RequestPartsExt,
 };
+use axum_extra::extract::cookie::CookieJar;
 
 use crate::{
     auth::{Claims, Role},
     error::AppError,
     state::AppState,
 };
-
-fn extract_bearer(headers: &HeaderMap) -> Result<&str, AppError> {
-    let raw = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .ok_or(AppError::Unauthorized)?;
-    raw.strip_prefix("Bearer ").ok_or(AppError::Unauthorized)
-}
 
 pub struct Authenticated(pub Claims);
 
@@ -37,8 +35,11 @@ impl FromRequestParts<AppState> for Authenticated {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let token = extract_bearer(&parts.headers)?;
-        let claims = state.tokens.verify(token)?;
+        let jar = parts.extract::<CookieJar>().await.map_err(|_| AppError::Unauthorized)?;
+        let cookie = jar
+            .get(&state.config.session_cookie_name)
+            .ok_or(AppError::Unauthorized)?;
+        let claims = state.tokens.verify(cookie.value())?;
         Ok(Self(claims))
     }
 }
@@ -53,11 +54,14 @@ impl FromRequestParts<AppState> for OptionalAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let result = match extract_bearer(&parts.headers) {
-            Ok(token) => state.tokens.verify(token).ok(),
-            Err(_) => None,
+        let jar = match parts.extract::<CookieJar>().await {
+            Ok(j) => j,
+            Err(_) => return Ok(Self(None)),
         };
-        Ok(Self(result))
+        let claims = jar
+            .get(&state.config.session_cookie_name)
+            .and_then(|c| state.tokens.verify(c.value()).ok());
+        Ok(Self(claims))
     }
 }
 
@@ -103,7 +107,8 @@ impl FromRequestParts<AppState> for RequireCustomer {
 ///
 /// Stale sampai token expire (default 8h) setelah promote/demote karena
 /// flag di-issue sekali saat login. Acceptable untuk admin internal —
-/// trade-off explicit di JWT claim doc.
+/// trade-off explicit di JWT claim doc. Logout (drop cookie) + login
+/// ulang menjadi cara user untuk refresh status setelah promote/demote.
 pub struct RequireSuperAdmin(pub Claims);
 
 #[async_trait]
@@ -121,3 +126,8 @@ impl FromRequestParts<AppState> for RequireSuperAdmin {
         Ok(Self(claims))
     }
 }
+
+// Suppress unused-import warning untuk `Request` (di-impor oleh future
+// use cases; biarkan accessible di crate ini).
+#[allow(dead_code)]
+fn _request_phantom(_: Request) {}

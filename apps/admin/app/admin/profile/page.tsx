@@ -9,8 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema, passwordSchema } from "@insuretrack/forms";
-import { API_BASE, ApiError } from "@insuretrack/api-client";
-import { getAdminToken } from "@insuretrack/api-client";
+import { apiFetch } from "@insuretrack/api-client";
 
 type AdminMe = {
   id: string;
@@ -80,16 +79,10 @@ export default function AdminProfilePage() {
   const [passwordSavedAt, setPasswordSavedAt] = useState<string | null>(null);
 
   const load = async () => {
-    const token = getAdminToken();
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${API_BASE}/admin/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) throw new ApiError(r.status, "ERR", "Gagal load profil");
-      const j: AdminMe = await r.json();
+      const j: AdminMe = await apiFetch<AdminMe>("/admin/me");
       setMe(j);
       profileMethods.reset({
         full_name: j.full_name ?? "",
@@ -108,23 +101,15 @@ export default function AdminProfilePage() {
   }, []);
 
   const onProfileSubmit = async (values: ProfileFormValues) => {
-    const token = getAdminToken();
-    if (!token) return;
     setProfileSaving(true);
     try {
-      const r = await fetch(`${API_BASE}/admin/me`, {
+      const j: AdminMe = await apiFetch<AdminMe>("/admin/me", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           full_name: values.full_name.trim(),
           email: values.email?.trim() || "",
         }),
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new ApiError(r.status, j?.error?.code ?? "ERR", j?.error?.message ?? "Gagal simpan");
-      }
-      const j: AdminMe = await r.json();
       setMe(j);
       setProfileSavedAt(new Date().toLocaleTimeString("id-ID"));
     } catch (e) {
@@ -137,22 +122,15 @@ export default function AdminProfilePage() {
   };
 
   const onPasswordSubmit = async (values: PasswordFormValues) => {
-    const token = getAdminToken();
-    if (!token) return;
     setPasswordSaving(true);
     try {
-      const r = await fetch(`${API_BASE}/admin/me/password`, {
+      await apiFetch("/admin/me/password", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           current_password: values.current_password,
           new_password: values.new_password,
         }),
       });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new ApiError(r.status, j?.error?.code ?? "ERR", j?.error?.message ?? "Gagal ubah password");
-      }
       passwordMethods.reset({ current_password: "", new_password: "", confirm_new_password: "" });
       setPasswordSavedAt(new Date().toLocaleTimeString("id-ID"));
       // Refresh `me` to show updated password_changed_at

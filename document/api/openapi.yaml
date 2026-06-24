@@ -26,9 +26,24 @@ info:
 
     - All responses are JSON. Successful responses return the data
       directly. Errors use `{ "error": { "code": "VALIDATION", "message": "..." } }`.
-    - **Customer auth:** `Authorization: Bearer <jwt>` from `POST /customer/login`.
-    - **Admin auth:** `Authorization: Bearer <jwt>` from `POST /admin/login`.
-    - **Webhook auth:** `X-Webhook-Secret: <shared secret>` header.
+    - **Customer auth:** `POST /customer/login` (or `/activate`,
+      `/password/reset/consume`) sets a `Set-Cookie: insuretrack_session=<jwt>`.
+      The cookie is `HttpOnly; Secure; SameSite=Lax` and is sent
+      automatically by the browser on subsequent requests. Cookie name
+      is configurable via `SESSION_COOKIE_NAME` (default
+      `insuretrack_session`). There is no manual `Authorization` header
+      — the JWT is delivered solely via the cookie.
+    - **Admin auth:** same as customer (`insuretrack_session` cookie),
+      but the JWT claim `role: "admin"` is required for `/api/admin/*`
+      routes. The backend enforces role via the `RequireAdmin` extractor.
+    - **CSRF defense:** every non-GET request MUST send header
+      `X-CSRF-Token: <token>` matching the value of the companion
+      `insuretrack_csrf` cookie (also set on login). The CSRF guard
+      layer in `auth::csrf` enforces this for all mutating endpoints
+      except those in the skip list (login, activate, password reset,
+      webhook). Failure → 403 `CSRF_TOKEN_MISMATCH`.
+    - **Webhook auth:** `X-Webhook-Secret: <shared secret>` header
+      (no cookie, no CSRF).
     - All timestamps are RFC 3339 / ISO 8601 in UTC.
     - All money amounts are JSON numbers (precision-safe up to 9×10^15;
       for IDR plans up to Rp 1T this is lossless). The Rust backend uses
@@ -84,10 +99,12 @@ tags:
   - name: Webhook
     description: Server-to-server webhook callbacks (no Bearer auth).
 
-# Default security: Bearer JWT. Endpoints that need different auth
-# (or no auth) override this with `security: []` or with their own scheme.
+# Default security: cookie auth (admin & customer endpoints). Endpoints
+# that need different auth (or no auth) override this with `security: []`
+# or with their own scheme.
 security:
-  - bearerAuth: []
+  - cookieAuth: []
+  - csrfToken: []
 
 paths:
   # ============================================================
@@ -1888,13 +1905,30 @@ paths:
 # ============================================================
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: insuretrack_session
       description: |
-        JWT obtained from `POST /customer/login` (customer role) or
-        `POST /admin/login` (admin role). 8-hour TTL.
+        HttpOnly session cookie set by `POST /admin/login`,
+        `POST /customer/login`, `POST /customer/activate`, or
+        `POST /customer/password/reset/consume`. Contains the JWT
+        (8-hour TTL). The browser sends the cookie automatically; FE
+        code does NOT read or set the value — it only checks the
+        cookie's presence via `document.cookie` (name is enumerable,
+        value is HttpOnly).
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: |
+        CSRF defense via double-submit cookie pattern. Every mutating
+        request (POST/PUT/PATCH/DELETE) MUST include this header with
+        the value matching the `insuretrack_csrf` companion cookie
+        (also set on login, also 8-hour TTL, NOT HttpOnly). The
+        backend's `auth::csrf::csrf_guard` middleware validates this
+        and returns 403 on mismatch. Endpoints in the CSRF skip list
+        (login, activate, password reset, webhook) are exempt.
     webhookSecret:
       type: apiKey
       in: header

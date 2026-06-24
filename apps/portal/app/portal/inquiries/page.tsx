@@ -10,7 +10,7 @@ import { z } from "zod";
 import { Confirm, StatusBadge } from "@insuretrack/ui";
 import { toast } from "sonner";
 import { Form, FormField, FormError } from "@insuretrack/forms";
-import { API_BASE, getCustomerToken } from "@insuretrack/api-client";
+import { API_BASE, apiFetch } from "@insuretrack/api-client";
 
 // ---- Types ---------------------------------------------------------------
 
@@ -168,26 +168,13 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
   const [closeOpen, setCloseOpen] = useState(false);
 
   const sendReply = async (values: ReplyValues) => {
-    const token = getCustomerToken();
-    if (!token) return;
     setReplySubmitting(true);
     setReplyError(null);
     try {
-      const r = await fetch(
-        `${API_BASE}/customer/inquiries/${detail.id}/messages`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ message: values.message.trim() }),
-        },
-      );
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
+      await apiFetch(`/customer/inquiries/${detail.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ message: values.message.trim() }),
+      });
       replyMethods.reset({ message: "" });
       onUpdated();
     } catch (e) {
@@ -198,27 +185,14 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
   };
 
   const handleClose = async () => {
-    const token = getCustomerToken();
-    if (!token) return;
     setCloseSubmitting(true);
     setCloseError(null);
     try {
       const note = replyMethods.getValues("message").trim();
-      const r = await fetch(
-        `${API_BASE}/customer/inquiries/${detail.id}/close`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(note ? { note } : {}),
-        },
-      );
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-      }
+      await apiFetch(`/customer/inquiries/${detail.id}/close`, {
+        method: "POST",
+        body: JSON.stringify(note ? { note } : {}),
+      });
       replyMethods.reset({ message: "" });
       setCloseOpen(false);
       toast.success("Tiket berhasil ditutup");
@@ -366,17 +340,9 @@ export default function PortalInquiriesPage() {
 
   // Load list
   useEffect(() => {
-    const token = getCustomerToken();
-    if (!token) return;
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/customer/inquiries?page=1&page_size=50`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+    apiFetch<{ data?: Inquiry[] }>("/customer/inquiries?page=1&page_size=50")
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setLoading(false));
@@ -389,46 +355,28 @@ export default function PortalInquiriesPage() {
       setDetailError(null);
       return;
     }
-    const token = getCustomerToken();
-    if (!token) return;
     setDetailLoading(true);
     setDetailError(null);
-    fetch(`${API_BASE}/customer/inquiries/${selectedId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (r) => {
-        if (!r.ok) {
-          const j = await r.json().catch(() => ({}));
-          throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
-        }
-        return r.json();
-      })
-      .then((j: InquiryDetail) => setDetail(j))
+    apiFetch<InquiryDetail>(`/customer/inquiries/${selectedId}`)
+      .then((j) => setDetail(j))
       .catch((e) => setDetailError(e instanceof Error ? e.message : "Gagal load"))
       .finally(() => setDetailLoading(false));
   }, [selectedId, refreshKey]);
 
   // Create handler — refresh list + auto-select inquiry baru
   const onCreate = async (values: CreateValues) => {
-    const token = getCustomerToken();
-    if (!token) return;
     setSubmitting(true);
     try {
-      const r = await fetch(`${API_BASE}/customer/inquiries`, {
+      const created = await apiFetch<{ id: string }>("/customer/inquiries", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           subject: values.subject.trim(),
           message: values.message.trim(),
         }),
       });
-      const json = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(json?.error?.message ?? "Gagal kirim inquiry");
       createMethods.reset({ subject: "", message: "" });
-      // Refresh list, lalu auto-select inquiry baru kalau response punya id.
       setRefreshKey((k) => k + 1);
-      const newId = (json?.id ?? null) as string | null;
-      if (newId) setSelectedId(newId);
+      if (created.id) setSelectedId(created.id);
     } catch (err) {
       createMethods.setError("root", {
         message: err instanceof Error ? err.message : "Gagal",
