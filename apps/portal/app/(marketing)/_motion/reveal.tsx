@@ -3,31 +3,25 @@
 /**
  * Reveal — scroll-reveal wrapper berbasis Framer Motion.
  *
- * Replaces `apps/portal/components/Reveal.tsx` lama (CSS-only + manual
- * IntersectionObserver).
+ * ## Hydration safety (FINAL fix)
  *
- * ## Hydration safety
+ * framer-motion v11 punya fitur "optimized appear": ketika element
+ * rendered dengan `initial` non-default DAN element ada di viewport
+ * pada saat mount, framer-motion **skip initial state** dan langsung
+ * apply animate target. Tujuannya: hindari flash pre-animation state.
  *
- * Pakai **custom `useState` + `IntersectionObserver`** (bukan framer-motion's
- * `useInView`) dan **plain `{opacity, y}` animate values** (bukan variants).
- * Alasan:
+ * Konsekuensi untuk SSR:
+ *   - Server: render `<motion.div>` dengan `style="opacity:0; transform:..."` (initial state)
+ *   - Client mount: optimized appear kick in → render `<motion.div>` TANPA style (animate target)
+ *   - React hydration mismatch!
  *
- *   1. framer-motion v11 `useInView` + `variants` punya behavior yang tidak
- *      deterministik antara SSR dan client first render di React 19 —
- *      motion.div di server render dengan `style="opacity:0; transform:..."`
- *      tapi di client first render bisa render tanpa style (visible state)
- *      karena "optimized appear" + variants propagation. Hasil: hydration
- *      mismatch.
+ * Fix: set `initial={false}` untuk DISABLE optimized appear. Dengan
+ * `initial={false}`, framer-motion pakai `animate` sebagai current
+ * state. Pada first render, `animate={hidden}` → element render
+ * dengan hidden style (matches server). Setelah IO fires, `animate`
+ * berubah ke `visible` → framer-motion animate dari hidden ke visible.
  *
- *   2. Dengan pattern di bawah:
- *      - `initial` dan `animate` (saat `shouldAnimate=false`) **IDENTIK**
- *        → server HTML match client first render
- *      - Hanya setelah `useEffect` + IO fires, `setShouldAnimate(true)`
- *        → animate target berubah → framer-motion transition normal
- *
- *   3. `useReducedMotion()` early-return plain `<div>` — no animation overhead.
- *
- * API publik identik dengan Reveal lama: `delay`, `from`, `className`.
+ * API publik identik: `delay`, `from`, `className`.
  */
 
 import { motion, useReducedMotion } from "framer-motion";
@@ -83,7 +77,7 @@ export function Reveal({
     return () => obs.disconnect();
   }, [reduced]);
 
-  // Reduced motion: render plain div, no animation.
+  // Reduced motion: plain div, no overhead.
   if (reduced) {
     return <div className={className}>{children}</div>;
   }
@@ -94,9 +88,12 @@ export function Reveal({
   return (
     <motion.div
       ref={ref}
-      initial={hidden}
-      // Saat `shouldAnimate=false`: animate = hidden (SAMA dengan initial) → no mismatch.
-      // Setelah IO fires: animate = visible → framer-motion transition normal.
+      // `initial={false}` DISABLES optimized appear. framer-motion pakai
+      // `animate` sebagai current state. Saat shouldAnimate=false (first
+      // render server + client), animate=hidden → element rendered dengan
+      // hidden style (matches server). Setelah IO fires, animate=visible →
+      // transition normal.
+      initial={false}
       animate={shouldAnimate ? visible : hidden}
       transition={{ ...SPRING, delay }}
       className={className}

@@ -3,19 +3,16 @@
 /**
  * StaggerGroup — wraps children dengan framer-motion stagger reveal.
  *
- * Setiap direct child diberi wrapper `<motion.div>` dengan plain animate
- * values `{opacity, y}`. Parent orchestrate timing via per-child `delay`
- * (index × step) — BUKAN via `staggerChildren` variant, supaya lebih
- * predictable dan SSR-safe.
- *
  * ## Hydration safety
  *
- * Sama dengan `reveal.tsx`: custom `useState` + `IntersectionObserver`
- * (bukan framer-motion's `useInView`), plain animate values (bukan
- * variants). `initial` === `animate` saat `shouldAnimate=false` →
- * identical tree server vs client first render.
+ * Sama dengan `reveal.tsx`: `initial={false}` untuk disable optimized
+ * appear. Tiap child motion.div pakai `animate=HIDDEN` di first render
+ * (server + client match), lalu animate=VISIBLE setelah IO fires.
  *
- * A11y: respect `useReducedMotion()` → render plain wrapper, no stagger.
+ * Parent wrapper adalah plain `<div>` (bukan motion.div) supaya
+ * className `clay-grid cols-3` tidak kena SSR framer-motion quirks.
+ *
+ * A11y: respect `useReducedMotion()` → render plain wrapper.
  */
 
 import { motion, useReducedMotion } from "framer-motion";
@@ -35,7 +32,7 @@ export function StaggerGroup({
   className?: string;
   /** Detik antar child. Default 0.12s (120ms). */
   step?: number;
-  /** Detik delay sebelum child pertama. Default 0s (handled by Hero sequencing). */
+  /** Detik delay sebelum child pertama. Default 0s. */
   baseDelay?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -59,7 +56,7 @@ export function StaggerGroup({
     return () => obs.disconnect();
   }, [reduced]);
 
-  // Reduced motion: render plain wrapper, no stagger.
+  // Reduced motion: plain wrapper, no stagger overhead.
   if (reduced) {
     return <div className={className}>{children}</div>;
   }
@@ -69,7 +66,11 @@ export function StaggerGroup({
       {Children.map(children, (child, i) => (
         <motion.div
           key={i}
-          initial={HIDDEN}
+          // `initial={false}` disables optimized appear. Tiap child
+          // render dengan animate=HIDDEN di first render (server +
+          // client match). Setelah IO fires di parent, animate
+          // berubah ke VISIBLE dengan per-child delay = i*step.
+          initial={false}
           animate={shouldAnimate ? VISIBLE : HIDDEN}
           transition={{ ...SPRING, delay: baseDelay + i * step }}
         >
