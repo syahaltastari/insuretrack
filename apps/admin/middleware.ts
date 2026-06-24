@@ -1,38 +1,38 @@
-// Edge middleware: SSR-side auth guard untuk /admin/*.
+// Edge middleware: SSR-side auth handling untuk /admin/*.
 //
-// Setelah migrasi ke httpOnly cookie, token JWT ada di cookie
-// `insuretrack_session`. Cookie HttpOnly → tidak bisa di-baca dari JS
-// (tidak di document.cookie). Middleware ini cek NAMA cookie ada
-// (presence) sebelum pass ke page. Page-level admin shell akan
-// verify role via backend call.
+// Sama dengan apps/portal/middleware.ts — kalau user sudah login dan
+// navigate ke /admin/login, redirect ke /admin/dashboard. Lebih reliable
+// dari useEffect client-side karena:
+//   1. Tidak ada flash form
+//   2. Tidak bergantung pada FE bundle fresh
+//   3. Konsisten untuk semua navigasi (link click, address bar, dsb.)
 //
-// Path publik (`/admin/login`) di-skip. Kalau cookie absent di path
-// yang butuh auth → redirect ke login. Backend authorize di setiap
-// request mutating via CSRF guard + auth extractor.
-//
-// Edge runtime — TIDAK ada Node.js APIs. Pakai `cookies()` dari
-// `next/headers` (edge-compatible).
+// Edge runtime — TIDAK ada Node.js APIs.
 
 import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE_NAME =
   process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "insuretrack_session";
 
-const PUBLIC_ADMIN_PATHS = new Set<string>(["/admin/login"]);
+const PUBLIC_ADMIN_PATHS = new Set<string>([
+  "/admin/login",
+]);
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Path publik → bypass.
+  const hasSession = req.cookies.has(SESSION_COOKIE_NAME);
+
   if (PUBLIC_ADMIN_PATHS.has(pathname)) {
+    if (hasSession) {
+      const dashboard = req.nextUrl.clone();
+      dashboard.pathname = "/admin/dashboard";
+      dashboard.search = "";
+      return NextResponse.redirect(dashboard);
+    }
     return NextResponse.next();
   }
 
-  // Cek cookie name (HttpOnly → value tidak visible di sini, presence
-  // saja cukup untuk early redirect). Backend tetap gate auth di
-  // setiap request — middleware ini cuma UX optimization supaya
-  // unauth user tidak flash halaman protected.
-  const hasSession = req.cookies.has(SESSION_COOKIE_NAME);
   if (!hasSession) {
     const loginUrl = req.nextUrl.clone();
     loginUrl.pathname = "/admin/login";
@@ -44,6 +44,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Jalankan untuk semua /admin/* kecuali asset Next.js internal.
   matcher: ["/admin/:path*"],
 };

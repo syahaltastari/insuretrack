@@ -194,6 +194,42 @@ test.describe("customer portal cookie auth", () => {
     expect(page.url()).toMatch(/\/portal\/login/);
   });
 
+  test("authed access to /portal/login redirects to dashboard (middleware)", async ({
+    page,
+    context,
+    request,
+  }) => {
+    // User sudah login (cookie present) → /portal/login harus redirect
+    // ke /portal/dashboard, BUKAN render form. Verifikasi middleware
+    // auth-aware public paths.
+    const healthOk = await request.get(`${BACKEND}/health`).then((r) => r.ok()).catch(() => false);
+    test.skip(!healthOk, "Backend not running on :8080");
+
+    // Login dulu untuk dapat session cookie.
+    await context.clearCookies();
+    const login = await request.post(`${BACKEND}/api/customer/login`, {
+      data: { username: "andi.susanto57@example.com", password: "Demo1234!" },
+    });
+    test.skip(!login.ok(), "Login gagal (cek kredensial di dev DB)");
+
+    // Copy cookies dari response ke browser context.
+    const cookies = login.headers()["set-cookie"];
+    if (cookies) {
+      // Parse "name=value; Path=/; ..." dari each Set-Cookie header.
+      const parsed = cookies.map((c) => {
+        const [pair] = c.split(";");
+        const [name, ...rest] = pair.split("=");
+        return { name, value: rest.join("=") };
+      });
+      await context.addCookies(parsed);
+    }
+
+    // Navigate ke /portal/login — harus redirect ke /portal/dashboard.
+    await page.goto(`${PORTAL_BASE}/portal/login`);
+    expect(page.url(), "authed user harusnya di-redirect ke dashboard")
+      .toMatch(/\/portal\/dashboard/);
+  });
+
   test("admin cookie does NOT grant portal access (role separation)", async ({
     page,
     context,
