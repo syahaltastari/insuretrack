@@ -3,18 +3,14 @@
 /**
  * MotionCard — wrapper card dengan hover lift (y: -4px).
  *
- * ## CSS-based (sebelumnya framer-motion)
- *
- * Hover-only animation tidak punya hydration issue (tidak ada
- * entrance animation, tidak ada initial/animate prop). Tapi untuk
- * konsistensi dengan Reveal/StaggerGroup dan zero JS overhead,
- * pakai CSS class `.hover-lift` saja.
- *
- * Entrance animation di-handle parent (StaggerGroup atau Reveal)
- * — komponen ini fokus pada HOVER state.
+ * Pakai motion.div dengan `whileHover` dan `whileTap` untuk interaksi
+ * premium. Entrance animation di-handle parent (Reveal/StaggerGroup).
  */
 
+import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode } from "react";
+
+const SPRING = { type: "spring" as const, stiffness: 120, damping: 28, mass: 0.8 };
 
 export function MotionCard({
   children,
@@ -23,5 +19,20 @@ export function MotionCard({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={`hover-lift ${className ?? ""}`}>{children}</div>;
+  const reduced = useReducedMotion();
+
+  if (reduced) {
+    return <div className={className}>{children}</div>;
+  }
+
+  return (
+    <motion.div
+      className={className}
+      whileHover={{ y: -4 }}
+      whileTap={{ y: -2 }}
+      transition={SPRING}
+    >
+      {children}
+    </motion.div>
+  );
 }

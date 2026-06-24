@@ -1,71 +1,65 @@
 "use client";
 
 /**
- * Reveal — scroll-reveal wrapper berbasis CSS transitions.
+ * Reveal — scroll-reveal wrapper berbasis motion (motion.dev).
  *
- * ## Mengapa CSS, bukan framer-motion?
+ * Pakai `motion.div` dengan `whileInView` — motion v12 punya internal
+ * hydration handling yang TIDAK trigger mismatch seperti framer-motion
+ * v11. Package `motion` adalah rewrite dari Matt Perry (author
+ * framer-motion) yang fix fundamental SSR issue di v11.
  *
- * framer-motion v11 + React 19 SSR punya fundamental incompatibility
- * untuk entrance animations: `motion.div` dengan `initial`/`animate`
- * trigger hydration mismatch di Next.js 15 + React 19 — server render
- * dengan style hidden, client mount skip ke visible (atau sebaliknya)
- * karena "optimized appear" + variants propagation quirks. Patch
- * apapun (variants, plain values, `initial={false}`) tidak eliminasi
- * mismatch ini secara konsisten.
- *
- * CSS transitions tidak punya masalah ini: class string sama persis
- * antara server dan client first render. Yang berbeda hanya toggle
- * `reveal-in` class post-mount — itu tidak trigger hydration check.
- *
- * Visual effect IDENTIK dengan framer-motion spring: durasi 700ms,
- * ease-out-expo curve, fade + slide-up 28px → 0.
+ * API publik: `delay` (detik), `from` (direction), `className`.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
+import { type ReactNode } from "react";
+
+type Direction = "up" | "down" | "left" | "right" | "fade";
+
+const SPRING = { type: "spring" as const, stiffness: 120, damping: 28, mass: 0.8 };
+
+function hiddenFor(from: Direction) {
+  if (from === "fade") return { opacity: 0 };
+  if (from === "down") return { opacity: 0, y: -28 };
+  if (from === "left") return { opacity: 0, x: -28 };
+  if (from === "right") return { opacity: 0, x: 28 };
+  return { opacity: 0, y: 28 }; // "up" default
+}
+
+function visibleFor(from: Direction) {
+  if (from === "fade") return { opacity: 1 };
+  if (from === "down" || from === "up") return { opacity: 1, y: 0 };
+  return { opacity: 1, x: 0 }; // "left" | "right"
+}
 
 export function Reveal({
   children,
   delay = 0,
+  from = "up",
   className,
 }: {
   children: ReactNode;
   /** Delay dalam detik. Default 0. Pakai 0.08, 0.18, 0.28 untuk sequence. */
   delay?: number;
+  from?: Direction;
   className?: string;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
+  const reduced = useReducedMotion();
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    // Respect reduced motion — langsung visible tanpa animation.
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
-      return;
-    }
-
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.2, rootMargin: "0px 0px -8% 0px" },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+  // Reduced motion: render plain div, no animation overhead.
+  if (reduced) {
+    return <div className={className}>{children}</div>;
+  }
 
   return (
-    <div
-      ref={ref}
-      className={`reveal ${visible ? "reveal-in" : ""} ${className ?? ""}`}
-      style={{ transitionDelay: `${delay}s` }}
+    <motion.div
+      initial={hiddenFor(from)}
+      whileInView={visibleFor(from)}
+      viewport={{ once: true, amount: 0.2, margin: "0px 0px -8% 0px" }}
+      transition={{ ...SPRING, delay }}
+      className={className}
     >
       {children}
-    </div>
+    </motion.div>
   );
 }

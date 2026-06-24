@@ -1,18 +1,24 @@
 "use client";
 
 /**
- * StaggerGroup — wraps children dengan CSS-based stagger reveal.
+ * StaggerGroup — wraps children dengan motion stagger reveal.
  *
- * Sama rationale dengan `reveal.tsx`: pakai CSS transitions, bukan
- * framer-motion. Parent observe viewport; setelah in-view, toggle
- * `reveal-in` di setiap child wrapper dengan `transitionDelay` per
- * index untuk efek stagger.
+ * Pakai variants `container` + `item` untuk orchestrate stagger via
+ * `staggerChildren` + `delayChildren`. motion v12 handle SSR untuk
+ * variants propagation tanpa hydration mismatch.
  *
- * Parent wrapper adalah plain `<div>` dengan `className` dari caller
- * (mis. `clay-grid cols-3`) — tidak dibungkus motion.div.
+ * API publik: `step` (detik antar child), `baseDelay`, `className`.
  */
 
-import { Children, useEffect, useRef, useState, type ReactNode } from "react";
+import { motion, useReducedMotion, type Variants } from "motion/react";
+import { Children, type ReactNode } from "react";
+
+const SPRING = { type: "spring" as const, stiffness: 120, damping: 28, mass: 0.8 };
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 28 },
+  visible: { opacity: 1, y: 0, transition: SPRING },
+};
 
 export function StaggerGroup({
   children,
@@ -27,41 +33,36 @@ export function StaggerGroup({
   /** Detik delay sebelum child pertama. Default 0s. */
   baseDelay?: number;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
+  const reduced = useReducedMotion();
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+  // Reduced motion: plain wrapper, no stagger overhead.
+  if (reduced) {
+    return <div className={className}>{children}</div>;
+  }
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
-      return;
-    }
-
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          obs.disconnect();
-        }
+  const containerVariants: Variants = {
+    hidden: {},
+    visible: {
+      transition: {
+        staggerChildren: step,
+        delayChildren: baseDelay,
       },
-      { threshold: 0.2, rootMargin: "0px 0px -8% 0px" },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+    },
+  };
 
   return (
-    <div ref={ref} className={className}>
+    <motion.div
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, amount: 0.2, margin: "0px 0px -8% 0px" }}
+      variants={containerVariants}
+      className={className}
+    >
       {Children.map(children, (child, i) => (
-        <div
-          className={`reveal ${visible ? "reveal-in" : ""}`}
-          style={{ transitionDelay: `${baseDelay + i * step}s` }}
-        >
+        <motion.div key={i} variants={itemVariants}>
           {child}
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }
