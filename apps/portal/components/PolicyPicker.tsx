@@ -1,26 +1,37 @@
 "use client";
 
-// PolicyPicker — kartu polis untuk klaim baru. Mirip PlanPicker tapi
-// vertical-stack (bukan grid), dan menampilkan polis existing user
-// (no, produk, UP, coverage period, status) bukan plan tiers.
+// PolicyPicker — list polis compact untuk klaim baru.
+//
+// Design rationale: per-row 2-line layout (≈64-72px) menggantikan kartu
+// multi-baris lama (≈150-180px). Untuk akun Instansi yang punya 20+ polis
+// kolektif, layout lama membuat scroll-list melelahkan. Compact list + search
+// memungkinkan user scan banyak opsi dengan cepat.
 //
 // Pattern: clay-radio-card (lihat packages/ui/src/styles/globals.css).
-// Hidden <input type="radio"> di dalam <label> untuk a11y native
-// (klik/tab/arrow keys handled browser, tanpa JS).
+// Hidden <input type="radio"> di dalam <label> untuk a11y native.
+// Search input di atas memfilter list client-side by policy_no / product
+// label. Empty state: "Tidak ada polis yang cocok dengan pencarian".
 //
-// Search input di atas memfilter list client-side (instan, tanpa fetch
-// ulang) by policy_no / product label. Empty state: "Tidak ada polis
-// yang cocok dengan pencarian".
+// Warna dot produk: LIFE → matcha, HEALTH → slushie, PA → ube. Mapping
+// disinkronkan dengan swatch palette produk di lib/product-details.ts.
 
 import { useMemo, useState } from "react";
 import { formatIdr } from "@insuretrack/api-client";
 import { StatusBadge } from "@insuretrack/ui";
-import { Search } from "lucide-react";
+import { Check, Search } from "lucide-react";
 
 const PRODUCT_LABEL: Record<string, string> = {
   LIFE: "Asuransi Jiwa",
   HEALTH: "Asuransi Kesehatan",
   PERSONAL_ACCIDENT: "Asuransi Kecelakaan Diri",
+};
+
+// Warna dot indikator produk. Pakai token CSS (bukan literal hex) supaya
+// tetap konsisten kalau palette berubah.
+const PRODUCT_DOT_COLOR: Record<string, string> = {
+  LIFE: "var(--matcha-600)",
+  HEALTH: "var(--slushie-500)",
+  PERSONAL_ACCIDENT: "var(--ube-300)",
 };
 
 export type PolicyPickerItem = {
@@ -84,12 +95,12 @@ export function PolicyPicker({
 
   return (
     <div>
-      {/* Search input — sticky di atas list supaya user tidak perlu scroll
-          ke atas untuk mencari polis. Tampil hanya kalau list > 3. */}
+      {/* Search input — tampil hanya kalau list > 3 supaya tidak memenuhi
+          form untuk user dengan sedikit polis. */}
       {policies.length > 3 && (
         <label
           className="clay-form-field"
-          style={{ marginBottom: 12, position: "relative" }}
+          style={{ marginBottom: 8, position: "relative" }}
         >
           <span className="clay-label" style={{ position: "absolute", left: -9999 }}>
             Cari polis
@@ -125,8 +136,10 @@ export function PolicyPicker({
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: 12,
-          maxHeight: 320,
+          gap: 8,
+          // maxHeight 360 → ~5-6 item compact terlihat per viewport,
+          // supaya user bisa scan banyak opsi tanpa scroll berlebihan.
+          maxHeight: 360,
           overflowY: "auto",
           paddingRight: 4,
         }}
@@ -144,13 +157,14 @@ export function PolicyPicker({
           filtered.map((p) => {
             const isSelected = p.id === selectedPolicyId;
             const productName = PRODUCT_LABEL[p.product] ?? p.product;
+            const dotColor = PRODUCT_DOT_COLOR[p.product] ?? "var(--warm-silver)";
             return (
               <label
                 key={p.id}
                 className={`clay-card feature clay-radio-card${isSelected ? " selected" : ""}`}
                 style={{
                   display: "block",
-                  padding: 20,
+                  padding: "12px 16px",
                   cursor: disabled ? "not-allowed" : "pointer",
                   opacity: disabled ? 0.6 : 1,
                 }}
@@ -179,46 +193,96 @@ export function PolicyPicker({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "space-between",
                     gap: 12,
-                    marginBottom: 8,
-                    flexWrap: "wrap",
                   }}
                 >
+                  {/* Product color dot — sinyal visual cepat untuk scan
+                      banyak polis (terutama akun Instansi dgn 20+ polis). */}
                   <span
-                    className="body-large"
-                    style={{ margin: 0, fontWeight: 600, color: "var(--clay-black)" }}
-                  >
-                    {productName}
-                  </span>
-                  <StatusBadge status={p.status} />
-                </div>
-                <div
-                  className="mono"
-                  style={{ fontSize: "0.95rem", color: "var(--warm-charcoal)", marginBottom: 8 }}
-                >
-                  {p.policy_no}
-                </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "4px 16px",
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  <span style={{ color: "var(--warm-silver)" }}>Uang Pertanggungan</span>
-                  <span style={{ color: "var(--clay-black)", fontWeight: 600, textAlign: "right" }}>
-                    {formatIdr(Number(p.sum_assured))}
-                  </span>
-                  <span style={{ color: "var(--warm-silver)" }}>Mulai</span>
-                  <span style={{ color: "var(--warm-charcoal)", textAlign: "right" }}>
-                    {formatDateShort(p.effective_date)}
-                  </span>
-                  <span style={{ color: "var(--warm-silver)" }}>Berakhir</span>
-                  <span style={{ color: "var(--warm-charcoal)", textAlign: "right" }}>
-                    {formatDateShort(p.expiry_date)}
-                  </span>
+                    aria-hidden="true"
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 999,
+                      background: dotColor,
+                      flexShrink: 0,
+                      boxShadow: "0 0 0 2px var(--warm-cream)",
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* Baris 1: nama produk (kiri) + status badge (kanan). */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <span
+                        className="body"
+                        style={{
+                          margin: 0,
+                          fontWeight: 600,
+                          color: "var(--clay-black)",
+                          // Truncate kalau nama panjang — line-clamp 1.
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {productName}
+                      </span>
+                      <StatusBadge status={p.status} />
+                    </div>
+                    {/* Baris 2: meta — policy no (mono) · UP · date range. */}
+                    <div
+                      className="caption"
+                      style={{
+                        marginTop: 2,
+                        color: "var(--warm-charcoal)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span
+                        className="mono"
+                        style={{ color: "var(--clay-black)" }}
+                      >
+                        {p.policy_no}
+                      </span>
+                      <span aria-hidden="true" style={{ color: "var(--oat-border)" }}>·</span>
+                      <span style={{ color: "var(--warm-charcoal)" }}>
+                        {formatIdr(Number(p.sum_assured))}
+                      </span>
+                      <span aria-hidden="true" style={{ color: "var(--oat-border)" }}>·</span>
+                      <span style={{ color: "var(--warm-silver)" }}>
+                        {formatDateShort(p.effective_date)} → {formatDateShort(p.expiry_date)}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Check icon — tampil hanya saat selected. Memberi
+                      feedback visual yang lebih jelas dari outline saja. */}
+                  {isSelected && (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        flexShrink: 0,
+                        width: 24,
+                        height: 24,
+                        borderRadius: 999,
+                        background: "var(--matcha-600)",
+                        color: "var(--pure-white)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Check size={14} strokeWidth={3} />
+                    </span>
+                  )}
                 </div>
               </label>
             );
