@@ -236,3 +236,102 @@ async fn logout_endpoints_skip_csrf_check() {
         "admin logout harus skip CSRF guard"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn logout_response_clears_cookies_via_set_cookie_header() {
+    // Regression test: kalau response 204 tapi tanpa Set-Cookie header,
+    // browser tidak tahu harus hapus cookie — user tetap logged in setelah
+    // klik logout. axum_extra::CookieJar implements IntoResponseParts
+    // (bukan IntoResponse), jadi HARUS return 3-tuple
+    // (StatusCode, CookieJar, body) untuk trigger IntoResponseParts.
+    // Lihat routes/{admin,customer}.rs::logout.
+    let app = common::spawn_app().await;
+
+    // Seed customer supaya login bisa authenticate.
+    let customer_id =
+        common::seed_customer(&app.pool, "logout-smoke@test.local", "ACTIVE").await;
+    use insuretrack_backend::auth::password;
+    let hashed = password::hash_password("Test1234!").unwrap();
+    sqlx::query("UPDATE customers SET password_hash = $1 WHERE id = $2")
+        .bind(&hashed)
+        .bind(customer_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    // Login untuk dapat session + csrf cookies valid.
+    let login = app
+        .router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/customer/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "username": "logout-smoke@test.local",
+                        "password": "Test1234!",
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::OK);
+
+    // Ambil session cookie value (JWT) dari response, forward ke logout.
+    // Cookie value di-parse dari "name=value; attr=..." — extract hanya
+    // bagian "value" sebelum ';'.
+    let session_cookie = login
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .find_map(|v| {
+            let s = v.to_str().ok()?;
+            let full = s.strip_prefix(&format!("{}=", app.config.session_cookie_name))?;
+            // Split di ';' pertama (cookie attributes separator)
+            let value = full.split(';').next()?.trim();
+            if value.is_empty() { None } else { Some(value.to_string()) }
+        })
+        .expect("login harus return session cookie dengan value non-empty");
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/customer/logout")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(
+            header::COOKIE,
+            format!("{}={}", app.config.session_cookie_name, session_cookie),
+        )
+        .body(Body::from("{}"))
+        .unwrap();
+    let resp = app.router.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    // **Critical assertion**: response harus punya 2 Set-Cookie header
+    // (session + csrf) dengan Max-Age=0. Kalau tidak ada → bug regresi
+    // dari 2-tuple yang lupa trigger IntoResponseParts.
+    let cookies: Vec<String> = resp
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .map(|v| v.to_str().unwrap().to_string())
+        .collect();
+    let has_session_clear = cookies.iter().any(|c| {
+        c.starts_with(&app.config.session_cookie_name) && c.contains("Max-Age=0")
+    });
+    let has_csrf_clear = cookies.iter().any(|c| {
+        c.starts_with(&app.config.csrf_cookie_name) && c.contains("Max-Age=0")
+    });
+    assert!(
+        has_session_clear,
+        "session cookie harus di-clear (Max-Age=0): {cookies:?}"
+    );
+    assert!(
+        has_csrf_clear,
+        "CSRF cookie harus di-clear (Max-Age=0): {cookies:?}"
+    );
+}

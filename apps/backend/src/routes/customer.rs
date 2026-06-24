@@ -23,6 +23,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_extra::extract::cookie::{self, Cookie, CookieJar, SameSite};
+use time::Duration;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -246,7 +248,33 @@ async fn logout(
     )
     .await;
 
-    Ok((StatusCode::NO_CONTENT, jar).into_response())
+    // Build 204 response dengan Set-Cookie headers manual untuk clear
+    // session + csrf cookies. axum_extra::CookieJar impl-nya tidak
+    // ergonomis untuk pattern ini (tuple impl tidak auto-apply
+    // IntoResponseParts, dan `into_response_parts` butuh ResponseParts
+    // builder), jadi construct headers langsung.
+    //
+    // Regression: kalau lupa append headers, browser tidak hapus
+    // session → user tetap authed setelah klik logout.
+    let mut resp = (StatusCode::NO_CONTENT, ()).into_response();
+    let clear_session = Cookie::build((state.config.session_cookie_name.clone(), String::new()))
+        .path("/")
+        .max_age(Duration::ZERO)
+        .same_site(SameSite::Lax)
+        .http_only(true)
+        .build();
+    let clear_csrf = Cookie::build((state.config.csrf_cookie_name.clone(), String::new()))
+        .path("/")
+        .max_age(Duration::ZERO)
+        .same_site(SameSite::Lax)
+        .http_only(false)
+        .build();
+    for cookie in [clear_session, clear_csrf] {
+        if let Ok(value) = cookie.encoded().to_string().parse() {
+            resp.headers_mut().append(header::SET_COOKIE, value);
+        }
+    }
+    Ok(resp)
 }
 
 // ---- POST /password/reset ----
