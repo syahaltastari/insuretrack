@@ -1,17 +1,21 @@
 "use client";
 
 /**
- * StaggerGroup — wraps children dengan CSS-based stagger reveal.
+ * StaggerGroup — wraps children dengan inline-style stagger reveal.
  *
- * Sama dengan Reveal: gunakan direct DOM manipulation +
- * requestAnimationFrame untuk ensure CSS transition fire dengan benar.
- *
- * Parent wrapper adalah plain `<div>` dengan className dari caller
- * (mis. `clay-grid cols-3`). Tiap child dibungkus plain `<div>` dengan
- * `transitionDelay` per index untuk stagger effect.
+ * Sama dengan Reveal: inline styles untuk bypass CSS pipeline issues.
+ * Parent observe viewport; setelah in-view, toggle visible state di
+ * setiap child wrapper dengan `transitionDelay` per index.
  */
 
-import { Children, useEffect, useRef, type ReactNode } from "react";
+import {
+  Children,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
 export function StaggerGroup({
   children,
@@ -27,6 +31,7 @@ export function StaggerGroup({
   baseDelay?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const parent = ref.current;
@@ -34,8 +39,7 @@ export function StaggerGroup({
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
-      // Tambah reveal-in ke semua child wrappers langsung
-      parent.querySelectorAll(".reveal").forEach((el) => el.classList.add("reveal-in"));
+      setVisible(true);
       return;
     }
 
@@ -43,18 +47,14 @@ export function StaggerGroup({
     const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
 
     if (inViewport) {
-      requestAnimationFrame(() => {
-        parent.querySelectorAll(".reveal").forEach((el) => el.classList.add("reveal-in"));
-      });
+      requestAnimationFrame(() => setVisible(true));
       return;
     }
 
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          requestAnimationFrame(() => {
-            parent.querySelectorAll(".reveal").forEach((el) => el.classList.add("reveal-in"));
-          });
+          requestAnimationFrame(() => setVisible(true));
           obs.disconnect();
         }
       },
@@ -66,14 +66,20 @@ export function StaggerGroup({
 
   return (
     <div ref={ref} className={className}>
-      {Children.map(children, (child, i) => (
-        <div
-          className="reveal"
-          style={{ transitionDelay: `${baseDelay + i * step}s` }}
-        >
-          {child}
-        </div>
-      ))}
+      {Children.map(children, (child, i) => {
+        const delay = baseDelay + i * step;
+        const style: CSSProperties = {
+          opacity: visible ? 1 : 0,
+          transform: visible ? "translateY(0)" : "translateY(28px)",
+          transition: `opacity 700ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}s, transform 700ms cubic-bezier(0.22, 1, 0.36, 1) ${delay}s`,
+          willChange: "opacity, transform",
+        };
+        return (
+          <div style={style}>
+            {child}
+          </div>
+        );
+      })}
     </div>
   );
 }
