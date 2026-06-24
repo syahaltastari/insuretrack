@@ -3,65 +3,79 @@
 /**
  * StaggerGroup — wraps children dengan framer-motion stagger reveal.
  *
- * Setiap direct child diberi wrapper `<motion.div>` dengan variant
- * `FADE_UP`, lalu parent orchestrate stagger via `staggerChildren`.
- * Default: 120ms antar child, 100ms delay sebelum child pertama muncul.
+ * Setiap direct child diberi wrapper `<motion.div>` dengan plain animate
+ * values `{opacity, y}`. Parent orchestrate timing via per-child `delay`
+ * (index × step) — BUKAN via `staggerChildren` variant, supaya lebih
+ * predictable dan SSR-safe.
  *
  * ## Hydration safety
  *
- * Sama dengan Reveal: pakai `useInView` + `animate`, BUKAN
- * `whileInView`. State `hidden` konsisten antara SSR dan client first
- * render; animasi trigger post-mount via `useInView` hook. Lihat
- * comment di `reveal.tsx` untuk penjelasan detail.
+ * Sama dengan `reveal.tsx`: custom `useState` + `IntersectionObserver`
+ * (bukan framer-motion's `useInView`), plain animate values (bukan
+ * variants). `initial` === `animate` saat `shouldAnimate=false` →
+ * identical tree server vs client first render.
  *
- * A11y: respect `useReducedMotion()` → render semua child instan.
+ * A11y: respect `useReducedMotion()` → render plain wrapper, no stagger.
  */
 
-import { motion, useInView, useReducedMotion, type Variants } from "framer-motion";
-import { Children, useRef, type ReactNode } from "react";
-import { FADE_UP, STAGGER_PARENT } from "../_lib/animations";
+import { motion, useReducedMotion } from "framer-motion";
+import { Children, useEffect, useRef, useState, type ReactNode } from "react";
+
+const SPRING = { type: "spring" as const, stiffness: 120, damping: 28, mass: 0.8 };
+const HIDDEN = { opacity: 0, y: 28 };
+const VISIBLE = { opacity: 1, y: 0 };
 
 export function StaggerGroup({
   children,
   className,
   step = 0.12,
-  baseDelay = 0.1,
+  baseDelay = 0,
 }: {
   children: ReactNode;
   className?: string;
   /** Detik antar child. Default 0.12s (120ms). */
   step?: number;
-  /** Detik delay sebelum child pertama. Default 0.1s. */
+  /** Detik delay sebelum child pertama. Default 0s (handled by Hero sequencing). */
   baseDelay?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const inView = useInView(ref, { once: true, amount: 0.2, margin: "0px 0px -8% 0px" });
+  const [shouldAnimate, setShouldAnimate] = useState(false);
   const reduced = useReducedMotion();
-  const parentVariants: Variants = {
-    ...STAGGER_PARENT,
-    visible: {
-      transition: { staggerChildren: step, delayChildren: baseDelay },
-    },
-  };
 
-  // Reduced motion: render plain wrapper, no variants, no stagger.
+  useEffect(() => {
+    if (reduced) return;
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldAnimate(true);
+          obs.disconnect();
+        }
+      },
+      { threshold: 0.2, rootMargin: "0px 0px -8% 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [reduced]);
+
+  // Reduced motion: render plain wrapper, no stagger.
   if (reduced) {
     return <div className={className}>{children}</div>;
   }
 
   return (
-    <motion.div
-      ref={ref}
-      initial="hidden"
-      animate={inView ? "visible" : "hidden"}
-      variants={parentVariants}
-      className={className}
-    >
+    <div ref={ref} className={className}>
       {Children.map(children, (child, i) => (
-        <motion.div key={i} variants={FADE_UP}>
+        <motion.div
+          key={i}
+          initial={HIDDEN}
+          animate={shouldAnimate ? VISIBLE : HIDDEN}
+          transition={{ ...SPRING, delay: baseDelay + i * step }}
+        >
           {child}
         </motion.div>
       ))}
-    </motion.div>
+    </div>
   );
 }
