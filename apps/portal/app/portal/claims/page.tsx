@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { StatusBadge } from "@insuretrack/ui";
 import { API_BASE, apiFetch } from "@insuretrack/api-client";
+import { Reveal } from "@/components/Reveal";
 
 type Claim = {
   id: string;
@@ -53,58 +54,62 @@ export default function PortalClaimsPage() {
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <p className="uppercase-label" style={{ color: "var(--lemon-700)", marginBottom: 8 }}>
-            ✦ Klaim Saya
-          </p>
-          <h1 className="page-title">Klaim & Status</h1>
-          <p className="page-subtitle">Lacak klaim Anda hingga keputusan final.</p>
+      <Reveal>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+          <div>
+            <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 8 }}>
+              ✦ Klaim Saya
+            </p>
+            <h1 className="page-title">Klaim & Status</h1>
+            <p className="page-subtitle">Lacak klaim Anda hingga keputusan final.</p>
+          </div>
+          {noActivePolicy ? (
+            <button
+              type="button"
+              className="clay-button ghost mb-2"
+              disabled
+              title="Anda belum memiliki polis aktif"
+              style={{ opacity: 0.5, cursor: "not-allowed" }}
+            >
+              + Ajukan Klaim
+            </button>
+          ) : (
+            <Link href="/portal/claims/new" className="clay-button solid-honey mb-2">
+              + Ajukan Klaim
+            </Link>
+          )}
         </div>
-        {noActivePolicy ? (
-          <button
-            type="button"
-            className="clay-button ghost mb-2"
-            disabled
-            title="Anda belum memiliki polis aktif"
-            style={{ opacity: 0.5, cursor: "not-allowed" }}
-          >
-            + Ajukan Klaim
-          </button>
-        ) : (
-          <Link href="/portal/claims/new" className="clay-button solid-ube mb-2">
-            + Ajukan Klaim
-          </Link>
-        )}
-      </div>
+      </Reveal>
 
       {noActivePolicy && activePolicyCount !== null && (
-        <div
-          className="clay-card"
-          style={{
-            // Tone informasi (bukan bahaya) — kuning lemon soft + border
-            // oat. User butuh reminder, bukan alarm merah.
-            borderColor: "var(--lemon-700)",
-            background: "var(--lemon-400)",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-          }}
-        >
-          <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>💡</span>
-          <div>
-            <p className="body" style={{ margin: 0, fontWeight: 600, color: "var(--clay-black)" }}>
-              Anda belum memiliki polis aktif untuk diklaim.
-            </p>
-            <p className="caption" style={{ color: "var(--warm-charcoal)", marginTop: 4, marginBottom: 0 }}>
-              Selesaikan pendaftaran asuransi dan lakukan pembayaran terlebih dahulu di{" "}
-              <Link href="/portal/insurance/new" style={{ color: "var(--clay-black)", textDecoration: "underline", fontWeight: 600 }}>
-                halaman pendaftaran
-              </Link>
-              . Setelah polis Anda aktif, menu ini dapat digunakan untuk mengajukan klaim.
-            </p>
+        <Reveal delay={150}>
+          <div
+            className="clay-card"
+            style={{
+              // Tone informasi (bukan bahaya) — honey-tint soft + border
+              // honey-400. User butuh reminder, bukan alarm merah.
+              borderColor: "var(--honey-400)",
+              background: "var(--honey-tint)",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+            }}
+          >
+            <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>💡</span>
+            <div>
+              <p className="body" style={{ margin: 0, fontWeight: 600, color: "var(--ink)" }}>
+                Anda belum memiliki polis aktif untuk diklaim.
+              </p>
+              <p className="caption" style={{ color: "var(--charcoal)", marginTop: 4, marginBottom: 0 }}>
+                Selesaikan pendaftaran asuransi dan lakukan pembayaran terlebih dahulu di{" "}
+                <Link href="/portal/insurance/new" style={{ color: "var(--ink)", textDecoration: "underline", fontWeight: 600 }}>
+                  halaman pendaftaran
+                </Link>
+                . Setelah polis Anda aktif, menu ini dapat digunakan untuk mengajukan klaim.
+              </p>
+            </div>
           </div>
-        </div>
+        </Reveal>
       )}
 
       {error && (
@@ -114,63 +119,67 @@ export default function PortalClaimsPage() {
       )}
       {loading && <p>Memuat...</p>}
       {!loading && data.length === 0 && !noActivePolicy && (
-        <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
-          <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Belum ada klaim.
-          </p>
-        </div>
+        <Reveal delay={150}>
+          <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 48 }}>
+            <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+              Belum ada klaim.
+            </p>
+          </div>
+        </Reveal>
       )}
       {!loading && data.length > 0 && (
-        <div className="clay-table-wrap" style={{ borderRadius: "var(--radius-card)" }}>
-          <table className="clay-table">
-            <thead>
-              <tr>
-                <th>No. Klaim</th>
-                <th>Polis</th>
-                <th>Tipe</th>
-                <th>Tgl Insiden</th>
-                <th>Jumlah</th>
-                <th>Status</th>
-                <th>Catatan Admin</th>
-                <th className="hide-mobile">Bukti Pembayaran</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((c) => (
-                <tr key={c.id}>
-                  <td className="mono">{c.claim_no}</td>
-                  <td className="mono">{c.policy_no}</td>
-                  <td>{c.claim_type}</td>
-                  <td>{c.incident_date}</td>
-                  <td>{new Intl.NumberFormat("id-ID").format(Number(c.claimed_amount))}</td>
-                  <td><StatusBadge status={c.status} /></td>
-                  <td style={{ color: c.decision_note ? "var(--clay-black)" : "var(--warm-silver)" }}>
-                    {c.decision_note ?? "—"}
-                  </td>
-                  <td className="hide-mobile">
-                    {c.status === "PAID" && c.payment_proof_path ? (
-                      <a
-                        href={`${API_BASE}/public/uploads/${c.payment_proof_path}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          color: "var(--matcha-800)",
-                          fontWeight: 600,
-                          textDecoration: "underline",
-                          textUnderlineOffset: 3,
-                        }}
-                      >
-                        Lihat bukti →
-                      </a>
-                    ) : (
-                      <span style={{ color: "var(--warm-silver)" }}>—</span>
-                    )}
-                  </td>
+        <Reveal delay={150}>
+          <div className="clay-table-wrap">
+            <table className="clay-table">
+              <thead>
+                <tr>
+                  <th>No. Klaim</th>
+                  <th>Polis</th>
+                  <th>Tipe</th>
+                  <th>Tgl Insiden</th>
+                  <th>Jumlah</th>
+                  <th>Status</th>
+                  <th>Catatan Admin</th>
+                  <th className="hide-mobile">Bukti Pembayaran</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {data.map((c) => (
+                  <tr key={c.id}>
+                    <td className="mono">{c.claim_no}</td>
+                    <td className="mono">{c.policy_no}</td>
+                    <td>{c.claim_type}</td>
+                    <td>{c.incident_date}</td>
+                    <td>{new Intl.NumberFormat("id-ID").format(Number(c.claimed_amount))}</td>
+                    <td><StatusBadge status={c.status} /></td>
+                    <td style={{ color: c.decision_note ? "var(--clay-black)" : "var(--warm-silver)" }}>
+                      {c.decision_note ?? "—"}
+                    </td>
+                    <td className="hide-mobile">
+                      {c.status === "PAID" && c.payment_proof_path ? (
+                        <a
+                          href={`${API_BASE}/public/uploads/${c.payment_proof_path}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "var(--matcha-800)",
+                            fontWeight: 600,
+                            textDecoration: "underline",
+                            textUnderlineOffset: 3,
+                          }}
+                        >
+                          Lihat bukti →
+                        </a>
+                      ) : (
+                        <span style={{ color: "var(--warm-silver)" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Reveal>
       )}
     </>
   );

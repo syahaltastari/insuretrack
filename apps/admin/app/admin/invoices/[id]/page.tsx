@@ -1,0 +1,213 @@
+"use client";
+
+// Skip static prerender — Next.js 15 + React 19 RC incompatibility.
+export const dynamic = "force-dynamic";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { ArrowLeft, FileDown, FileText } from "lucide-react";
+import { API_BASE, apiFetch, formatIdr, formatProductPlan } from "@insuretrack/api-client";
+import { Reveal } from "@/components/Reveal";
+import { SkeletonCard, StatusBadge } from "@insuretrack/ui";
+
+type InvoiceDetail = {
+  id: string;
+  invoice_no: string;
+  registration_no: string;
+  customer_name: string;
+  customer_email: string | null;
+  customer_mobile: string | null;
+  premium_amount: string;
+  due_date: string;
+  status: string;
+  paid_at: string | null;
+  pdf_path: string | null;
+  created_at: string;
+  applicant_type: string;
+  participant_count: number;
+  product: string;
+  plan_code: string | null;
+};
+
+const formatDate = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const d = dateOnlyMatch ? new Date(iso + "T00:00:00") : new Date(iso);
+  return d.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+};
+
+const formatDateTime = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+function Field({ label, children, mono }: { label: string; children: React.ReactNode; mono?: boolean }) {
+  return (
+    <div>
+      <p
+        className="caption"
+        style={{
+          color: "var(--warm-silver)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          margin: 0,
+          marginBottom: 4,
+          fontSize: "0.7rem",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        style={{
+          margin: 0,
+          fontWeight: 500,
+          fontFamily: mono ? "var(--font-space-mono), monospace" : undefined,
+          wordBreak: "break-word",
+        }}
+      >
+        {children}
+      </p>
+    </div>
+  );
+}
+
+export default function AdminInvoiceDetailPage() {
+  const params = useParams();
+  const id = params.id as string;
+
+  const [data, setData] = useState<InvoiceDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch<InvoiceDetail>(`/admin/invoices/${id}`);
+        setData(res);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Gagal memuat detail invoice");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id]);
+
+  return (
+    <>
+      <Reveal>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+          <Link href="/admin/invoices" className="clay-button ghost size-small">
+            <ArrowLeft size={14} /> Kembali ke daftar
+          </Link>
+          {data?.pdf_path && (
+            <a
+              href={`${API_BASE}/admin/invoices/${id}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="clay-button solid-honey size-small"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <FileText size={14} /> Invoice PDF
+            </a>
+          )}
+          {data?.status === "PAID" && (
+            <a
+              href={`${API_BASE}/admin/invoices/${id}/receipt`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="clay-button outline-honey size-small"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <FileDown size={14} /> Bukti Bayar
+            </a>
+          )}
+        </div>
+      </Reveal>
+
+      {error && (
+        <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {loading && <SkeletonCard rows={6} style={{ minHeight: 320 }} />}
+
+      {data && (
+        <>
+          <Reveal delay={80}>
+            <div className="clay-card feature" style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <p className="caption" style={{ color: "var(--warm-silver)", margin: 0 }}>
+                    Nomor Invoice
+                  </p>
+                  <h1 className="card-heading" style={{ marginTop: 4, fontFamily: "var(--font-space-mono), monospace" }}>
+                    {data.invoice_no}
+                  </h1>
+                </div>
+                <StatusBadge status={data.status} />
+              </div>
+              <p className="body" style={{ marginTop: 12, marginBottom: 0 }}>
+                <strong style={{ fontSize: "1.5rem", color: "var(--ink)" }}>
+                  {formatIdr(Number(data.premium_amount))}
+                </strong>{" "}
+                <span style={{ color: "var(--warm-charcoal)" }}>· Premi</span>
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal delay={160}>
+            <div className="clay-card feature" style={{ marginBottom: 16 }}>
+              <h2 className="section-heading" style={{ fontSize: "1.15rem", marginBottom: 16 }}>
+                Detail Tagihan
+              </h2>
+              <div className="clay-grid cols-2" style={{ gap: 20 }}>
+                <Field label="Produk">{formatProductPlan(data.product, data.plan_code)}</Field>
+                <Field label="Tipe Pendaftaran">
+                  {data.applicant_type === "INSTANSI"
+                    ? `Instansi (${data.participant_count} peserta)`
+                    : "Individu"}
+                </Field>
+                <Field label="Jatuh Tempo">{formatDate(data.due_date)}</Field>
+                <Field label="Tanggal Dibayar">{formatDateTime(data.paid_at)}</Field>
+                <Field label="No. Registrasi" mono>
+                  <Link
+                    href={`/admin/registrations/${data.registration_no}`}
+                    style={{ color: "var(--ink)", textDecoration: "underline" }}
+                  >
+                    {data.registration_no}
+                  </Link>
+                </Field>
+                <Field label="Tanggal Terbit">{formatDate(data.created_at)}</Field>
+              </div>
+            </div>
+          </Reveal>
+
+          <Reveal delay={240}>
+            <div className="clay-card feature">
+              <h2 className="section-heading" style={{ fontSize: "1.15rem", marginBottom: 16 }}>
+                Customer
+              </h2>
+              <div className="clay-grid cols-2" style={{ gap: 20 }}>
+                <Field label="Nama">{data.customer_name}</Field>
+                <Field label="Email">{data.customer_email ?? "—"}</Field>
+                <Field label="No. HP">{data.customer_mobile ?? "—"}</Field>
+              </div>
+            </div>
+          </Reveal>
+        </>
+      )}
+    </>
+  );
+}

@@ -29,6 +29,7 @@ export default function Page() {
     <AdminListPage<Row>
       title="Polis"
       endpoint="/admin/policies"
+      detailBasePath="/admin/policies"
       statusOptions={["ACTIVE", "LAPSED", "EXPIRED"]}
       statusFilterLabel="Status polis"
       pdfDownloadPath={(r) => (r.pdf_path ? `/admin/policies/${r.id}/pdf` : null)}

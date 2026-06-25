@@ -48,10 +48,16 @@ export function CustomerUserMenu({ profile }: { profile: CustomerProfile | null 
   const onLogout = async () => {
     try {
       // Backend POST /api/customer/logout → Set-Cookie Max-Age=0 untuk
-      // session + csrf cookie. Browser auto-hapus.
+      // session + csrf cookie. Browser auto-hapus. Backend logout sudah
+      // idempotent (pakai OptionalAuth extractor) — call selalu return
+      // 204 + clear cookies.
       await logoutCustomer();
     } catch {
-      // Logout endpoint failure shouldn't block UX — tetap redirect.
+      // Best-effort — pakai hard navigation (window.location) supaya
+      // portal middleware re-evaluate session state dari awal. router.replace
+      // bisa stuck kalau Next.js client cache masih anggap user authed.
+      window.location.href = "/portal/login";
+      return;
     }
     router.replace("/portal/login");
   };

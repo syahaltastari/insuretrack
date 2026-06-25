@@ -11,6 +11,7 @@ const navItems: Array<{ href: string; label: string; icon: IconName; superAdminO
   { href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
   { href: "/admin/customers", label: "Customer", icon: "UserCircle" },
   { href: "/admin/registrations", label: "Registrasi", icon: "ClipboardList" },
+  { href: "/admin/underwriting", label: "Underwriting", icon: "ShieldCheck" },
   { href: "/admin/invoices", label: "Invoice", icon: "Receipt" },
   { href: "/admin/policies", label: "Polis", icon: "FileText" },
   { href: "/admin/claims", label: "Klaim", icon: "Siren" },
@@ -184,7 +185,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <AdminUserMenu profile={profile} />
           </div>
         </header>
-        <main className="shell-main">{children}</main>
+        <main className="shell-main" style={{ background: "var(--canvas)" }}>{children}</main>
       </div>
     </div>
   );

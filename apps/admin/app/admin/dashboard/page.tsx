@@ -33,6 +33,7 @@ import {
   type FilterChip,
 } from "@insuretrack/ui";
 import { apiFetch, formatIdr } from "@insuretrack/api-client";
+import { Reveal, StaggerGroup } from "@/components/Reveal";
 
 type Stats = {
   total_registrations: number;
@@ -364,11 +365,13 @@ export default function AdminDashboard() {
 
   return (
     <>
-      <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
-        ✦ Ringkasan Operasional
-      </p>
-      <h1 className="page-title">Dashboard</h1>
-      <p className="page-subtitle">Metrik agregat & tren berdasarkan rentang waktu.</p>
+      <Reveal>
+        <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 8 }}>
+          ✦ Ringkasan Operasional
+        </p>
+        <h1 className="page-title">Dashboard</h1>
+        <p className="page-subtitle">Metrik agregat & tren berdasarkan rentang waktu.</p>
+      </Reveal>
 
       {error && (
         <div
@@ -380,112 +383,114 @@ export default function AdminDashboard() {
       )}
 
       {/* Filter bar */}
-      <div
-        className="clay-card"
-        style={{
-          padding: 16,
-          marginBottom: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
+      <Reveal delay={120}>
         <div
+          className="clay-card"
           style={{
+            padding: 16,
+            marginBottom: 16,
             display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            alignItems: "flex-end",
+            flexDirection: "column",
+            gap: 12,
           }}
         >
-          <DateRangePicker
-            value={dateRange}
-            onChange={onDateRangeChange}
-            ariaLabel="Pilih rentang tanggal"
-          />
-
-          <FilterSelect
-            label="Produk"
-            value={productFromUrl}
-            onChange={onProductChange}
-            options={[
-              { value: "", label: "Semua" },
-              { value: "LIFE", label: "Asuransi Jiwa" },
-              { value: "PERSONAL_ACCIDENT", label: "Kecelakaan Diri" },
-              { value: "HEALTH", label: "Kesehatan" },
-            ]}
-            ariaLabel="Filter produk"
-            width={170}
-          />
-
-          <FilterSelect
-            label="Tipe Pendaftaran"
-            value={applicantTypeFromUrl}
-            onChange={onApplicantTypeChange}
-            options={[
-              { value: "", label: "Semua" },
-              { value: "INDIVIDU", label: "Individu" },
-              { value: "INSTANSI", label: "Instansi" },
-            ]}
-            ariaLabel="Filter tipe pendaftaran"
-            width={170}
-          />
-
-          <FilterSelect
-            label="Granularity"
-            value={granularityFromUrl}
-            onChange={onGranularityChange}
-            options={[
-              { value: "", label: "Otomatis" },
-              { value: "day", label: "Harian" },
-              { value: "week", label: "Mingguan" },
-              { value: "month", label: "Bulanan" },
-            ]}
-            ariaLabel="Granularity chart"
-            width={150}
-          />
-
-          <label
+          <div
             style={{
-              display: "inline-flex",
-              alignItems: "center",
+              display: "flex",
               gap: 8,
-              padding: "8px 12px",
-              borderRadius: "var(--radius-card)",
-              background: compareFromUrl ? "var(--matcha-300)" : "var(--warm-cream)",
-              border: `1px solid ${compareFromUrl ? "var(--matcha-600)" : "var(--oat-border)"}`,
-              cursor: "pointer",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: "var(--clay-black)",
-              userSelect: "none",
+              flexWrap: "wrap",
+              alignItems: "flex-end",
             }}
-            title="Tampilkan delta % vs periode sebelumnya"
           >
-            <input
-              type="checkbox"
-              checked={compareFromUrl}
-              onChange={onCompareToggle}
-              style={{ margin: 0 }}
+            <DateRangePicker
+              value={dateRange}
+              onChange={onDateRangeChange}
+              ariaLabel="Pilih rentang tanggal"
             />
-            Bandingkan periode sebelumnya
-          </label>
 
-          {chips.length > 0 && (
-            <button
-              type="button"
-              onClick={resetAll}
-              className="clay-button ghost size-small"
-              title="Hapus semua filter"
-              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+            <FilterSelect
+              label="Produk"
+              value={productFromUrl}
+              onChange={onProductChange}
+              options={[
+                { value: "", label: "Semua" },
+                { value: "LIFE", label: "Asuransi Jiwa" },
+                { value: "PERSONAL_ACCIDENT", label: "Kecelakaan Diri" },
+                { value: "HEALTH", label: "Kesehatan" },
+              ]}
+              ariaLabel="Filter produk"
+              width={170}
+            />
+
+            <FilterSelect
+              label="Tipe Pendaftaran"
+              value={applicantTypeFromUrl}
+              onChange={onApplicantTypeChange}
+              options={[
+                { value: "", label: "Semua" },
+                { value: "INDIVIDU", label: "Individu" },
+                { value: "INSTANSI", label: "Instansi" },
+              ]}
+              ariaLabel="Filter tipe pendaftaran"
+              width={170}
+            />
+
+            <FilterSelect
+              label="Granularity"
+              value={granularityFromUrl}
+              onChange={onGranularityChange}
+              options={[
+                { value: "", label: "Otomatis" },
+                { value: "day", label: "Harian" },
+                { value: "week", label: "Mingguan" },
+                { value: "month", label: "Bulanan" },
+              ]}
+              ariaLabel="Granularity chart"
+              width={150}
+            />
+
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 12px",
+                borderRadius: "var(--radius-card)",
+                background: compareFromUrl ? "var(--honey-tint)" : "var(--warm-cream)",
+                border: `1px solid ${compareFromUrl ? "var(--honey-400)" : "var(--oat-border)"}`,
+                cursor: "pointer",
+                fontSize: "0.85rem",
+                fontWeight: 500,
+                color: "var(--ink)",
+                userSelect: "none",
+              }}
+              title="Tampilkan delta % vs periode sebelumnya"
             >
-              <X size={14} /> Reset
-            </button>
-          )}
-        </div>
+              <input
+                type="checkbox"
+                checked={compareFromUrl}
+                onChange={onCompareToggle}
+                style={{ margin: 0 }}
+              />
+              Bandingkan periode sebelumnya
+            </label>
 
-        <FilterChipBar chips={chips} onResetAll={resetAll} />
-      </div>
+            {chips.length > 0 && (
+              <button
+                type="button"
+                onClick={resetAll}
+                className="clay-button ghost size-small"
+                title="Hapus semua filter"
+                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <X size={14} /> Reset
+              </button>
+            )}
+          </div>
+
+          <FilterChipBar chips={chips} onResetAll={resetAll} />
+        </div>
+      </Reveal>
 
       {!stats && !error && (
         <>
@@ -516,7 +521,11 @@ export default function AdminDashboard() {
 
       {stats && (
         <>
-          <div className="clay-grid cols-3" style={{ marginBottom: 32 }}>
+          <StaggerGroup
+            step={60}
+            baseDelay={180}
+            className="clay-grid cols-3"
+          >
             {SWATCHES.map(({ key, color, isCurrency }) => {
               const raw = (stats as Record<string, unknown>)[key];
               const current = isCurrency
@@ -531,7 +540,7 @@ export default function AdminDashboard() {
               return (
                 <div
                   key={key}
-                  className="clay-card feature"
+                  className="clay-card feature clay-card-hoverable"
                   style={{ borderLeft: `6px solid ${color}`, padding: 24 }}
                 >
                   <p
@@ -540,7 +549,7 @@ export default function AdminDashboard() {
                   >
                     {METRIC_LABEL[key]}
                   </p>
-                  <p style={{ margin: 0, fontSize: "2rem", fontWeight: 600, color }}>
+                  <p style={{ margin: 0, fontSize: "2rem", fontWeight: 600, color: "var(--ink)" }}>
                     {value}
                   </p>
                   {compareFromUrl && previous !== undefined && (
@@ -549,15 +558,13 @@ export default function AdminDashboard() {
                 </div>
               );
             })}
-          </div>
+          </StaggerGroup>
 
           {charts && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-                gap: 20,
-              }}
+            <StaggerGroup
+              step={70}
+              baseDelay={580}
+              className="chart-grid"
             >
               <ChartCard
                 title="Registrasi per Periode"
@@ -801,7 +808,7 @@ export default function AdminDashboard() {
                   </PieChart>
                 </ResponsiveContainer>
               </ChartCard>
-            </div>
+            </StaggerGroup>
           )}
         </>
       )}

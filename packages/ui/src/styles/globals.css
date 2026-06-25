@@ -2535,3 +2535,43 @@ button.clay-input {
   opacity: 0.5;
 }
 
+/* ============================================================
+   Auto-fit summary grid (portal dashboard, invoices, dll.)
+   Pakai repeat(auto-fit, minmax(220px, 1fr)) — collapse ke 1 kolom
+   di mobile, expand ke 4 kolom di desktop wide. StaggerGroup children
+   (Reveal) animate masuk satu per satu saat first paint.
+   ============================================================ */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+  margin-bottom: 32px;
+}
+
+/* ----- Stat card number pulse (subtle, optional) -----
+   Untuk angka agregat di dashboard yang ingin menarik mata tanpa
+   flash keras. Pakai opacity oscillation bukan scale — tidak shift
+   layout, lebih aman untuk grid alignment. 3.5s duration cukup lambat
+   untuk "alive" feel, tidak mengganggu baca. */
+.stat-number-pulse {
+  animation: stat-pulse 3.5s ease-in-out infinite;
+}
+@keyframes stat-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stat-number-pulse { animation: none; }
+}
+
+/* ----- Auto-fit chart grid (admin dashboard) -----
+   Sama shape dengan summary-grid tapi minmax lebih besar (300px)
+   supaya chart Card dapat ruang yang cukup. StaggerGroup children
+   animate entrance satu per satu setelah stat cards. */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+

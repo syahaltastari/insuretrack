@@ -11,6 +11,7 @@ import { Confirm, StatusBadge } from "@insuretrack/ui";
 import { toast } from "sonner";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { API_BASE, apiFetch } from "@insuretrack/api-client";
+import { Reveal } from "@/components/Reveal";
 
 // ---- Types ---------------------------------------------------------------
 
@@ -111,19 +112,18 @@ function ThreadView({ messages }: { messages: Message[] }) {
               padding: "10px 14px",
               borderRadius: 12,
               background: isCustomer
-                ? "var(--warm-cream)"
-                : "var(--ube-300)",
+                ? "var(--honey-tint)"
+                : "var(--honey-100)",
               borderLeft: isCustomer
-                ? "3px solid var(--matcha-600)"
-                : "3px solid var(--ube-800)",
-              border: isCustomer ? undefined : "1px solid var(--ube-800)",
+                ? "3px solid var(--honey-400)"
+                : "3px solid var(--honey-700)",
             }}
           >
             <p
               className="caption"
               style={{
                 margin: 0,
-                color: isCustomer ? "var(--matcha-600)" : "var(--ube-900)",
+                color: "var(--ink)",
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.04em",
@@ -210,7 +210,7 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
   return (
     <div
       className="clay-card feature"
-      style={{ marginBottom: 12, borderColor: "var(--ube-800)" }}
+      style={{ marginBottom: 12, borderColor: "var(--honey-400)" }}
     >
       {/* Header inquiry */}
       <div
@@ -286,7 +286,7 @@ function InquiryDetailCard({ detail, onUpdated }: DetailCardProps) {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               type="submit"
-              className="clay-button solid-ube size-small"
+              className="clay-button solid-honey size-small"
               disabled={anySubmitting}
             >
               {replySubmitting ? "Mengirim..." : "Kirim Balasan"}
@@ -395,63 +395,69 @@ export default function PortalInquiriesPage() {
 
   return (
     <>
-      <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 8 }}>
-        ✦ Pertanyaan
-      </p>
-      <h1 className="page-title">Hubungi Admin</h1>
-      <p className="page-subtitle">
-        Buat tiket pertanyaan baru atau lanjutkan thread yang sudah ada. Admin akan
-        merespon via email, dan setiap balasan baru akan dikirim juga lewat email.
-      </p>
+      <Reveal>
+        <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 8 }}>
+          ✦ Pertanyaan
+        </p>
+        <h1 className="page-title">Hubungi Admin</h1>
+        <p className="page-subtitle">
+          Buat tiket pertanyaan baru atau lanjutkan thread yang sudah ada. Admin akan
+          merespon via email, dan setiap balasan baru akan dikirim juga lewat email.
+        </p>
+      </Reveal>
 
       {/* Form buat tiket baru */}
-      <Form
-        methods={createMethods}
-        onSubmit={onCreate}
-        className="clay-card feature"
-      >
-        <h2 className="feature-title" style={{ marginBottom: 16 }}>
-          Buat Pertanyaan Baru
-        </h2>
-        <FormError message={createRootErr ?? null} />
-
-        <FormField label="Subject" name="subject" required>
-          <input
-            id="subject"
-            className="clay-input"
-            autoComplete="off"
-            placeholder="cth: Cara klaim rawat inap"
-            {...createMethods.register("subject")}
-          />
-        </FormField>
-
-        <FormField label="Pesan" name="message" required>
-          <textarea
-            id="message"
-            className="clay-textarea"
-            rows={4}
-            placeholder="Jelaskan pertanyaanmu sedetail mungkin…"
-            {...createMethods.register("message")}
-          />
-        </FormField>
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="clay-button solid-ube"
-          style={{ marginTop: 8 }}
+      <Reveal delay={150}>
+        <Form
+          methods={createMethods}
+          onSubmit={onCreate}
+          className="clay-card feature"
         >
-          {submitting ? "Mengirim..." : "Kirim →"}
-        </button>
-      </Form>
+          <h2 className="feature-title" style={{ marginBottom: 16 }}>
+            Buat Pertanyaan Baru
+          </h2>
+          <FormError message={createRootErr ?? null} />
+
+          <FormField label="Subject" name="subject" required>
+            <input
+              id="subject"
+              className="clay-input"
+              autoComplete="off"
+              placeholder="cth: Cara klaim rawat inap"
+              {...createMethods.register("subject")}
+            />
+          </FormField>
+
+          <FormField label="Pesan" name="message" required>
+            <textarea
+              id="message"
+              className="clay-textarea"
+              rows={4}
+              placeholder="Jelaskan pertanyaanmu sedetail mungkin…"
+              {...createMethods.register("message")}
+            />
+          </FormField>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="clay-button solid-honey"
+            style={{ marginTop: 8 }}
+          >
+            {submitting ? "Mengirim..." : "Kirim →"}
+          </button>
+        </Form>
+      </Reveal>
 
       {/* Daftar tiket */}
-      <h2
-        className="section-heading"
-        style={{ fontSize: "1.5rem", marginBottom: 16, marginTop: 32 }}
-      >
-        Riwayat Tiket
-      </h2>
+      <Reveal delay={300}>
+        <h2
+          className="section-heading"
+          style={{ fontSize: "1.5rem", marginBottom: 16, marginTop: 32 }}
+        >
+          Riwayat Tiket
+        </h2>
+      </Reveal>
 
       {loading && <p>Memuat...</p>}
       {error && (
@@ -490,11 +496,13 @@ export default function PortalInquiriesPage() {
       )}
 
       {!loading && data.length === 0 && (
-        <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 32 }}>
-          <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
-            Belum ada tiket pertanyaan. Buat tiket baru di atas.
-          </p>
-        </div>
+        <Reveal delay={150}>
+          <div className="clay-card feature dashed" style={{ textAlign: "center", padding: 32 }}>
+            <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+              Belum ada tiket pertanyaan. Buat tiket baru di atas.
+            </p>
+          </div>
+        </Reveal>
       )}
 
       {!loading &&
@@ -516,8 +524,8 @@ export default function PortalInquiriesPage() {
                 display: "block",
                 width: "100%",
                 cursor: "pointer",
-                background: selectedId === inq.id ? "var(--warm-cream)" : undefined,
-                borderColor: selectedId === inq.id ? "var(--ube-800)" : undefined,
+                background: selectedId === inq.id ? "var(--honey-tint)" : undefined,
+                borderColor: selectedId === inq.id ? "var(--honey-400)" : undefined,
               }}
             >
               <div

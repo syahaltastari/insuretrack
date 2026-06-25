@@ -7,12 +7,12 @@
 // verify role via backend call.
 //
 // Path publik (`/portal/login`, `/portal/register`, `/portal/activate`,
-// `/portal/reset`) di-skip dari auth-required check. Kalau cookie absent
-// di path yang butuh auth → redirect ke login.
+// `/portal/forgot-password`) di-skip dari auth-required check. Kalau
+// cookie absent di path yang butuh auth → redirect ke login.
 //
 // Tambahan: kalau user punya session valid (cookie ada) dan navigate ke
-// salah satu halaman auth flow (login/activate/reset) → redirect ke
-// dashboard. Ini di-handle di middleware supaya:
+// salah satu halaman auth flow (login/activate/forgot-password) →
+// redirect ke dashboard. Ini di-handle di middleware supaya:
 //   1. Tidak ada flash form ke user yang sudah login
 //   2. Tidak bergantung pada client bundle fresh (middleware server-side)
 //   3. Konsisten untuk semua navigasi (link click, address bar, back/forward)
@@ -30,7 +30,7 @@ const PUBLIC_PORTAL_PATHS = new Set<string>([
   "/portal/login",
   "/portal/register",
   "/portal/activate",
-  "/portal/reset",
+  "/portal/forgot-password",
 ]);
 
 export function middleware(req: NextRequest) {

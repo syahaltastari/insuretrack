@@ -13,6 +13,7 @@ import { apiFetch, checkSession } from "@insuretrack/api-client";
 import { Navbar } from "@/components/Navbar";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { emailSchema } from "@insuretrack/forms";
+import { Reveal } from "@/components/Reveal";
 
 const loginSchema = z.object({
   email: emailSchema.refine((s) => s.length > 0, { message: "Email wajib diisi" }),
@@ -98,97 +99,101 @@ function LoginInner() {
           minHeight: "100vh",
           display: "grid",
           placeItems: "center",
-          background: "var(--warm-cream)",
+          background: "var(--canvas)",
           paddingTop: 48,
         }}
       >
         <div style={{ width: "100%", maxWidth: 420 }}>
-          <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <p className="uppercase-label" style={{ color: "var(--matcha-600)" }}>
-              InsureTrack
-            </p>
-            <h1 className="display-secondary" style={{ fontSize: "2.5rem", marginTop: 8 }}>
-              Customer Portal
-            </h1>
-          </div>
-
-          <Form methods={methods} onSubmit={onSubmit} className="clay-card feature">
-            <FormError message={formError} />
-
-            <FormField label="Email" name="email" required>
-              <input
-                id="email"
-                className="clay-input"
-                type="email"
-                autoComplete="email"
-                {...methods.register("email")}
-              />
-            </FormField>
-
-            <FormField label="Password" name="password" required>
-              <input
-                id="password"
-                className="clay-input"
-                type="password"
-                autoComplete="current-password"
-                {...methods.register("password")}
-              />
-            </FormField>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="clay-button solid-matcha"
-              style={{ width: "100%", marginTop: 12 }}
-            >
-              {submitting ? "Login..." : "Login →"}
-            </button>
-
-            <p
-              className="caption"
-              style={{ textAlign: "center", marginTop: 12, color: "var(--warm-charcoal)" }}
-            >
-              <Link
-                href="/portal/reset"
-                style={{ color: "var(--matcha-600)", textDecoration: "underline" }}
-              >
-                Lupa password?
-              </Link>
-            </p>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                margin: "20px 0",
-                color: "var(--warm-silver)",
-                fontSize: "0.8rem",
-              }}
-            >
-              <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
-              <span className="uppercase-label" style={{ color: "var(--warm-silver)" }}>
-                Belum Punya Akun?
-              </span>
-              <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
+          <Reveal>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
+              <p className="uppercase-label" style={{ color: "var(--honey-700)" }}>
+                InsureTrack
+              </p>
+              <h1 className="display-secondary" style={{ fontSize: "2.5rem", marginTop: 8 }}>
+                Customer Portal
+              </h1>
             </div>
+          </Reveal>
 
-            <Link
-              href="/portal/register"
-              className="clay-button ghost"
-              style={{ width: "100%", justifyContent: "center" }}
-            >
-              ✦ Daftar Akun Portal
-            </Link>
+          <Reveal delay={150}>
+            <Form methods={methods} onSubmit={onSubmit} className="clay-card feature">
+              <FormError message={formError} />
 
-            <p
-              className="caption"
-              style={{ textAlign: "center", marginTop: 16, color: "var(--warm-silver)" }}
-            >
-              Aktivasi akun via link di email. Setelah aktif, baru bisa apply
-              asuransi dari portal.
-            </p>
-          </Form>
+              <FormField label="Email" name="email" required>
+                <input
+                  id="email"
+                  className="clay-input"
+                  type="email"
+                  autoComplete="email"
+                  {...methods.register("email")}
+                />
+              </FormField>
+
+              <FormField label="Password" name="password" required>
+                <input
+                  id="password"
+                  className="clay-input"
+                  type="password"
+                  autoComplete="current-password"
+                  {...methods.register("password")}
+                />
+              </FormField>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="clay-button solid-honey"
+                style={{ width: "100%", marginTop: 12 }}
+              >
+                {submitting ? "Login..." : "Login →"}
+              </button>
+
+              <p
+                className="caption"
+                style={{ textAlign: "center", marginTop: 12, color: "var(--warm-charcoal)" }}
+              >
+                <Link
+                  href="/portal/forgot-password"
+                  style={{ color: "var(--honey-700)", textDecoration: "underline" }}
+                >
+                  Lupa password?
+                </Link>
+              </p>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  margin: "20px 0",
+                  color: "var(--warm-silver)",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
+                <span className="uppercase-label" style={{ color: "var(--warm-silver)" }}>
+                  Belum Punya Akun?
+                </span>
+                <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
+              </div>
+
+              <Link
+                href="/portal/register"
+                className="clay-button ghost"
+                style={{ width: "100%", justifyContent: "center" }}
+              >
+                ✦ Daftar Akun Portal
+              </Link>
+
+              <p
+                className="caption"
+                style={{ textAlign: "center", marginTop: 16, color: "var(--warm-silver)" }}
+              >
+                Aktivasi akun via link di email. Setelah aktif, baru bisa apply
+                asuransi dari portal.
+              </p>
+            </Form>
+          </Reveal>
 
         </div>
       </main>

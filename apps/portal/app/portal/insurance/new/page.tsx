@@ -414,6 +414,29 @@ function InsuranceNewPageInner() {
         registration_no: string;
         invoice_no: string;
       }>("/customer/registrations", { method: "POST", body: fd });
+
+      // Underwriting check: kalau product (derived dari plan_code prefix)
+      // punya underwriting enabled, redirect ke halaman kuesioner sebelum
+      // menampilkan invoice. Kalau tidak, langsung ke success normal.
+      // Derive product: "LIFE_BASIC" → "LIFE" (prefix sebelum underscore).
+      const productCode = values.plan_code.split("_")[0];
+      try {
+        await apiFetch<{ data: { enabled: boolean } }>(
+          `/public/underwriting/${productCode}/config`,
+        );
+        // 200 OK = underwriting enabled → redirect ke kuesioner
+        // underwriting. Route nested di bawah registration (sub-resource
+        // dari registrasi, bukan sub dari insurance) — lihat
+        // `apps/portal/app/portal/registrations/[regNo]/underwriting/`.
+        router.replace(
+          `/portal/registrations/${json.registration_no}/underwriting`,
+        );
+        return;
+      } catch {
+        // 404 atau error = underwriting disabled untuk product ini.
+        // Fall through ke success normal.
+      }
+
       setResult({ registration_no: json.registration_no, invoice_no: json.invoice_no });
     } catch (err) {
       setResultDialog(mapSubmitError(err));

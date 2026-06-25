@@ -4,6 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -309,6 +310,17 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <StatusBadge status={inquiry.status} />
+            {/* Dedicated detail page (read-only view) — handy kalau admin
+                mau share link tiket ke kolega via URL, atau lihat inquiry
+                di tab terpisah tanpa reply. */}
+            <Link
+              href={`/admin/inquiries/${inquiry.id}`}
+              className="clay-button ghost size-small"
+              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+              title="Buka di halaman dedicated"
+            >
+              Detail →
+            </Link>
             <span
               style={{
                 fontSize: "1.2rem",

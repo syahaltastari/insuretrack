@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { StatusBadge } from "@insuretrack/ui";
 import { API_BASE, formatProductPlan, apiFetch } from "@insuretrack/api-client";
+import { Reveal, StaggerGroup } from "@/components/Reveal";
 
 type Invoice = {
   id: string;
@@ -126,23 +127,21 @@ export default function PortalInvoicesPage() {
   return (
     <>
       {/* Page header */}
-      <p className="uppercase-label" style={{ color: "var(--matcha-600)", marginBottom: 8 }}>
-        ✦ Invoice Saya
-      </p>
-      <h1 className="page-title">Daftar Invoice</h1>
-      <p className="page-subtitle">
-        Lihat tagihan premi, jatuh tempo, dan download invoice PDF.
-      </p>
+      <Reveal>
+        <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 8 }}>
+          ✦ Invoice Saya
+        </p>
+        <h1 className="page-title">Daftar Invoice</h1>
+        <p className="page-subtitle">
+          Lihat tagihan premi, jatuh tempo, dan download invoice PDF.
+        </p>
+      </Reveal>
 
       {/* Summary cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 16,
-          marginTop: 32,
-          marginBottom: 32,
-        }}
+      <StaggerGroup
+        step={80}
+        baseDelay={120}
+        className="summary-grid"
       >
         <SummaryCard
           label="Total Tagihan (UNPAID)"
@@ -164,44 +163,46 @@ export default function PortalInvoicesPage() {
           value={`${summary.countPaid} invoice`}
           accent="var(--matcha-600)"
         />
-      </div>
+      </StaggerGroup>
 
       {/* Status filter chips */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        {(["ALL", "UNPAID", "PAID", "EXPIRED", "CANCELLED"] as StatusFilter[]).map((f) => {
-          const count = f === "ALL" ? data.length : data.filter((i) => i.status === f).length;
-          const active = filter === f;
-          return (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={active ? "clay-button solid-ube size-small" : "clay-button ghost size-small"}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              {f === "ALL" ? "Semua" : f}
-              <span
-                style={{
-                  padding: "1px 8px",
-                  borderRadius: 999,
-                  background: active ? "rgba(255,255,255,0.2)" : "var(--oat-light)",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                }}
+      <Reveal delay={520}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          {(["ALL", "UNPAID", "PAID", "EXPIRED", "CANCELLED"] as StatusFilter[]).map((f) => {
+            const count = f === "ALL" ? data.length : data.filter((i) => i.status === f).length;
+            const active = filter === f;
+            return (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={active ? "clay-button solid-honey size-small" : "clay-button ghost size-small"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
               >
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                {f === "ALL" ? "Semua" : f}
+                <span
+                  style={{
+                    padding: "1px 8px",
+                    borderRadius: 999,
+                    background: active ? "rgba(26,23,21,0.18)" : "var(--oat-light)",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Reveal>
 
       {error && (
         <div
@@ -224,137 +225,141 @@ export default function PortalInvoicesPage() {
       )}
 
       {!loading && data.length === 0 && (
-        <div
-          className="clay-card feature dashed"
-          style={{ textAlign: "center", padding: 48 }}
-        >
-          <p
-            className="body-large"
-            style={{ color: "var(--warm-charcoal)", margin: 0, marginBottom: 8 }}
+        <Reveal delay={150}>
+          <div
+            className="clay-card feature dashed"
+            style={{ textAlign: "center", padding: 48 }}
           >
-            Anda belum memiliki invoice.
-          </p>
-          <p
-            className="caption"
-            style={{ color: "var(--warm-silver)", margin: 0 }}
-          >
-            Invoice akan muncul di sini setelah Anda submit pendaftaran asuransi.
-          </p>
-        </div>
+            <p
+              className="body-large"
+              style={{ color: "var(--warm-charcoal)", margin: 0, marginBottom: 8 }}
+            >
+              Anda belum memiliki invoice.
+            </p>
+            <p
+              className="caption"
+              style={{ color: "var(--warm-silver)", margin: 0 }}
+            >
+              Invoice akan muncul di sini setelah Anda submit pendaftaran asuransi.
+            </p>
+          </div>
+        </Reveal>
       )}
 
       {!loading && visible.length === 0 && data.length > 0 && (
-        <div
-          className="clay-card feature dashed"
-          style={{ textAlign: "center", padding: 32 }}
-        >
-          <p
-            className="body"
-            style={{ color: "var(--warm-charcoal)", margin: 0 }}
+        <Reveal delay={150}>
+          <div
+            className="clay-card feature dashed"
+            style={{ textAlign: "center", padding: 32 }}
           >
-            Tidak ada invoice dengan status <strong>{filter}</strong>.
-          </p>
-        </div>
+            <p
+              className="body"
+              style={{ color: "var(--warm-charcoal)", margin: 0 }}
+            >
+              Tidak ada invoice dengan status <strong>{filter}</strong>.
+            </p>
+          </div>
+        </Reveal>
       )}
 
       {!loading && visible.length > 0 && (
-        <div
-          style={{ overflow: "auto", borderRadius: "var(--radius-card)" }}
-        >
-          <table className="clay-table">
-            <thead>
-              <tr>
-                <th>No. Invoice</th>
-                <th>No. Reg</th>
-                <th>Produk</th>
-                <th>Tipe</th>
-                <th style={{ textAlign: "right" }}>Peserta</th>
-                <th style={{ textAlign: "right" }}>Premi</th>
-                <th>Jatuh Tempo</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right", minWidth: 160 }}>Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((inv) => (
-                <tr
-                  key={inv.id}
-                  style={
-                    isOverdue(inv)
-                      ? { background: "rgba(244, 165, 130, 0.08)" }
-                      : undefined
-                  }
-                >
-                  <td className="mono">{inv.invoice_no}</td>
-                  <td className="mono" style={{ color: "var(--warm-silver)" }}>
-                    {inv.registration_no}
-                  </td>
-                  <td style={{ color: "var(--warm-charcoal)", fontSize: "0.85rem" }}>
-                    {formatProductPlan(inv.product, inv.plan_code)}
-                  </td>
-                  <td>
-                    <span
-                      className={`clay-badge ${
-                        inv.applicant_type === "INSTANSI" ? "blueberry" : "ube"
-                      }`}
-                    >
-                      {inv.applicant_type === "INSTANSI" ? "Instansi" : "Individu"}
-                    </span>
-                  </td>
-                  <td className="mono" style={{ textAlign: "right" }}>
-                    {inv.participant_count}
-                  </td>
-                  <td className="mono" style={{ textAlign: "right", fontWeight: 600 }}>
-                    {formatIDR(inv.premium_amount)}
-                  </td>
-                  <td>
-                    {inv.due_date}
-                    {isOverdue(inv) && (
-                      <span
-                        className="clay-badge pomegranate"
-                        style={{ marginLeft: 8, fontSize: "0.65rem" }}
-                      >
-                        Overdue
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <StatusBadge status={inv.status} />
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <div style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {inv.pdf_path ? (
-                        <button
-                          onClick={() => downloadPdf(inv)}
-                          disabled={downloadingId === inv.id}
-                          className="clay-button ghost size-small"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-                          title="Download invoice PDF"
-                        >
-                          {downloadingId === inv.id ? "Mengunduh..." : "📄 Invoice"}
-                        </button>
-                      ) : null}
-                      {inv.status === "PAID" ? (
-                        <button
-                          onClick={() => downloadReceipt(inv)}
-                          disabled={downloadingReceiptId === inv.id}
-                          className="clay-button ghost size-small"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-                          title="Download bukti pembayaran PDF"
-                        >
-                          {downloadingReceiptId === inv.id ? "Mengunduh..." : "🧾 Bukti Bayar"}
-                        </button>
-                      ) : null}
-                      {!inv.pdf_path && inv.status !== "PAID" && (
-                        <span className="caption" style={{ color: "var(--warm-silver)" }}>—</span>
-                      )}
-                    </div>
-                  </td>
+        <Reveal delay={600}>
+          <div className="clay-table-wrap">
+            <table className="clay-table">
+              <thead>
+                <tr>
+                  <th>No. Invoice</th>
+                  <th>No. Reg</th>
+                  <th>Produk</th>
+                  <th>Tipe</th>
+                  <th style={{ textAlign: "right" }}>Peserta</th>
+                  <th style={{ textAlign: "right" }}>Premi</th>
+                  <th>Jatuh Tempo</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right", minWidth: 160 }}>Aksi</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {visible.map((inv) => (
+                  <tr
+                    key={inv.id}
+                    style={
+                      isOverdue(inv)
+                        ? { background: "rgba(244, 165, 130, 0.08)" }
+                        : undefined
+                    }
+                  >
+                    <td className="mono">{inv.invoice_no}</td>
+                    <td className="mono" style={{ color: "var(--warm-silver)" }}>
+                      {inv.registration_no}
+                    </td>
+                    <td style={{ color: "var(--warm-charcoal)", fontSize: "0.85rem" }}>
+                      {formatProductPlan(inv.product, inv.plan_code)}
+                    </td>
+                    <td>
+                      <span
+                        className={`clay-badge ${
+                          inv.applicant_type === "INSTANSI" ? "blueberry" : "ube"
+                        }`}
+                      >
+                        {inv.applicant_type === "INSTANSI" ? "Instansi" : "Individu"}
+                      </span>
+                    </td>
+                    <td className="mono" style={{ textAlign: "right" }}>
+                      {inv.participant_count}
+                    </td>
+                    <td className="mono" style={{ textAlign: "right", fontWeight: 600 }}>
+                      {formatIDR(inv.premium_amount)}
+                    </td>
+                    <td>
+                      {inv.due_date}
+                      {isOverdue(inv) && (
+                        <span
+                          className="clay-badge pomegranate"
+                          style={{ marginLeft: 8, fontSize: "0.65rem" }}
+                        >
+                          Overdue
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <StatusBadge status={inv.status} />
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        {inv.pdf_path ? (
+                          <button
+                            onClick={() => downloadPdf(inv)}
+                            disabled={downloadingId === inv.id}
+                            className="clay-button ghost size-small"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                            title="Download invoice PDF"
+                          >
+                            {downloadingId === inv.id ? "Mengunduh..." : "📄 Invoice"}
+                          </button>
+                        ) : null}
+                        {inv.status === "PAID" ? (
+                          <button
+                            onClick={() => downloadReceipt(inv)}
+                            disabled={downloadingReceiptId === inv.id}
+                            className="clay-button ghost size-small"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                            title="Download bukti pembayaran PDF"
+                          >
+                            {downloadingReceiptId === inv.id ? "Mengunduh..." : "🧾 Bukti Bayar"}
+                          </button>
+                        ) : null}
+                        {!inv.pdf_path && inv.status !== "PAID" && (
+                          <span className="caption" style={{ color: "var(--warm-silver)" }}>—</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Reveal>
       )}
     </>
   );
@@ -371,7 +376,7 @@ function SummaryCard({
 }) {
   return (
     <div
-      className="clay-card"
+      className="clay-card clay-card-hoverable"
       style={{
         padding: 20,
         borderLeft: `4px solid ${accent}`,
@@ -393,7 +398,7 @@ function SummaryCard({
       <p
         className="display-secondary"
         style={{
-          color: "var(--clay-black)",
+          color: "var(--ink)",
           margin: 0,
           fontSize: "1.5rem",
         }}

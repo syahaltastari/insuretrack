@@ -16,8 +16,8 @@ use uuid::Uuid;
 
 use crate::{
     auth::{
-        build_auth_cookies, build_clear_cookies, generate_csrf_token, password::verify_password,
-        RequireAdmin, Role,
+        build_auth_cookies, generate_csrf_token, password::verify_password,
+        OptionalAuth, RequireAdmin, Role,
     },
     dto::{DashboardStats, LoginRequest, LoginResponse},
     error::{AppError, AppResult},
@@ -51,7 +51,7 @@ pub fn router() -> Router<AppState> {
         .route("/email-logs", get(list_email_logs))
         .route("/audit-logs", get(list_audit_logs))
         .route("/claims", get(list_claims_admin))
-        .route("/claims/:id", axum::routing::patch(patch_claim))
+        .route("/claims/:id", get(get_claim_admin).patch(patch_claim))
         .route(
             "/claims/:id/payment-proof",
             axum::routing::post(upload_payment_proof),
@@ -135,26 +135,39 @@ async fn login(
 
 /// POST /api/admin/logout — clear session + CSRF cookies, return 204.
 /// FE juga harus `router.replace("/admin/login")` setelah call berhasil.
-/// Idempotent: kalau cookie sudah absent, Max-Age=0 tetap no-op.
+///
+/// IDEMPOTENT: pakai `OptionalAuth` bukan `RequireAdmin` supaya logout
+/// SELALU succeed (204) + clear cookies, bahkan kalau session cookie
+/// absent / expired / role mismatch. Sebelumnya pakai `RequireAdmin` —
+/// kalau session invalid, extractor return 401/403, handler tidak pernah
+/// jalan, cookie tidak ter-clear, dan admin middleware redirect admin
+/// yang "logout" kembali ke dashboard (loop). Sekarang: kalau session
+/// valid → audit + clear. Kalau tidak → langsung clear (no audit).
 async fn logout(
     State(state): State<AppState>,
-    RequireAdmin(claims): RequireAdmin,
+    OptionalAuth(maybe_claims): OptionalAuth,
 ) -> AppResult<Response> {
-    let admin_id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
-    let jar = build_clear_cookies(&state.config);
-
-    let _ = audit_write(
-        &state.pool,
-        AuditEntry {
-            actor: &claims.sub,
-            action: "admin_logout",
-            entity_type: "admin_user",
-            entity_id: Some(admin_id),
-            metadata: None,
-            ip_address: None,
-        },
-    )
-    .await;
+    // Audit log hanya kalau ada session valid. Kalau tidak ada session
+    // (logout dipanggil saat session sudah invalid), tidak ada actor
+    // untuk di-log.
+    if let Some(claims) = maybe_claims {
+        if claims.role == Role::Admin {
+            if let Ok(admin_id) = Uuid::parse_str(&claims.sub) {
+                let _ = audit_write(
+                    &state.pool,
+                    AuditEntry {
+                        actor: &claims.sub,
+                        action: "admin_logout",
+                        entity_type: "admin_user",
+                        entity_id: Some(admin_id),
+                        metadata: None,
+                        ip_address: None,
+                    },
+                )
+                .await;
+            }
+        }
+    }
 
     // Build 204 response dengan Set-Cookie headers manual untuk clear
     // session + csrf cookies. axum_extra::CookieJar impl-nya tidak
@@ -1709,6 +1722,94 @@ struct PatchClaimBody {
     /// Kalau None, claim_type di-DB tidak diubah.
     #[serde(default)]
     claim_type: Option<String>,
+}
+
+// ---- GET /claims/:id (admin detail view) ----
+//
+// Admin boleh akses semua klaim (tidak di-scope ke customer_id seperti
+// endpoint customer-side). Response shape identik dengan `ClaimRow`
+// di customer.rs PLUS `description` + `customer_name` + nested
+// `documents` (lihat `claim_documents` table). Field `description`
+// adalah kronologi kejadian yang di-input customer waktu submit klaim —
+// tidak di-include di `AdminClaimRow` list view karena cuma perlu
+// di detail page.
+//
+// Konsistensi naming: endpoint ini `get_claim_admin` (bukan `get_claim`)
+// untuk menghindari name collision dengan customer-side handler. Saat
+// di-import di `mod.rs`, full path jadi
+// `crate::routes::admin::get_claim_admin`.
+#[derive(Serialize, sqlx::FromRow)]
+struct AdminClaimDetailRow {
+    id: Uuid,
+    claim_no: String,
+    policy_id: Uuid,
+    policy_no: String,
+    customer_id: Uuid,
+    customer_name: String,
+    customer_email: Option<String>,
+    claim_type: String,
+    incident_date: chrono::NaiveDate,
+    claimed_amount: Decimal,
+    description: String,
+    status: String,
+    decision_note: Option<String>,
+    payment_proof_path: Option<String>,
+    submitted_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+struct AdminClaimDocumentRow {
+    id: Uuid,
+    file_name: String,
+    file_path: String,
+    uploaded_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize)]
+struct AdminClaimDetailEnvelope {
+    #[serde(flatten)]
+    claim: AdminClaimDetailRow,
+    documents: Vec<AdminClaimDocumentRow>,
+}
+
+async fn get_claim_admin(
+    State(state): State<AppState>,
+    _: RequireAdmin,
+    Path(id): Path<Uuid>,
+) -> AppResult<Json<AdminClaimDetailEnvelope>> {
+    let claim: Option<AdminClaimDetailRow> = sqlx::query_as(
+        r#"
+        SELECT cl.id, cl.claim_no, cl.policy_id, p.policy_no,
+               cl.customer_id, c.full_name AS customer_name, c.email AS customer_email,
+               cl.claim_type, cl.incident_date, cl.claimed_amount, cl.description,
+               cl.status, cl.decision_note, cl.payment_proof_path,
+               cl.submitted_at, cl.updated_at
+          FROM claims cl
+          JOIN policies p  ON p.id = cl.policy_id
+          JOIN customers c ON c.id = cl.customer_id
+         WHERE cl.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let claim = claim.ok_or(AppError::NotFound("claim".into()))?;
+
+    let documents: Vec<AdminClaimDocumentRow> = sqlx::query_as(
+        r#"
+        SELECT id, file_name, file_path, uploaded_at
+          FROM claim_documents
+         WHERE claim_id = $1
+         ORDER BY uploaded_at ASC, id ASC
+        "#,
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(AdminClaimDetailEnvelope { claim, documents }))
 }
 
 async fn patch_claim(

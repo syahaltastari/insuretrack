@@ -387,7 +387,7 @@ export default function PortalProfilePage() {
               >
                 Lupa password lama?{" "}
                 <a
-                  href="/portal/reset"
+                  href="/portal/forgot-password"
                   style={{
                     color: "var(--matcha-600)",
                     textDecoration: "underline",

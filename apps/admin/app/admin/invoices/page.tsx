@@ -41,6 +41,7 @@ export default function Page() {
     <AdminListPage<Row>
       title="Invoice"
       endpoint="/admin/invoices"
+      detailBasePath="/admin/invoices"
       statusOptions={["UNPAID", "PAID", "EXPIRED", "CANCELLED"]}
       statusFilterLabel="Status invoice"
       pdfDownloadPath={(r) => (r.pdf_path ? `/admin/invoices/${r.id}/pdf` : null)}

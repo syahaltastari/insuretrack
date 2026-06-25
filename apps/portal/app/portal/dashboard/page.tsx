@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@insuretrack/api-client";
+import { Reveal, StaggerGroup } from "@/components/Reveal";
 
 type Me = {
   customer_id: string;
@@ -47,11 +48,13 @@ export default function PortalDashboard() {
 
   return (
     <>
-      <p className="uppercase-label" style={{ color: "var(--matcha-600)", marginBottom: 8 }}>
-        ✦ Selamat Datang
-      </p>
-      <h1 className="page-title">{me?.full_name ?? "..."}</h1>
-      <p className="page-subtitle">Ringkasan polis, klaim, dan pertanyaan Anda.</p>
+      <Reveal>
+        <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 8 }}>
+          ✦ Selamat Datang
+        </p>
+        <h1 className="page-title">{me?.full_name ?? "..."}</h1>
+        <p className="page-subtitle">Ringkasan polis, klaim, dan pertanyaan Anda.</p>
+      </Reveal>
 
       {error && (
         <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}>
@@ -64,125 +67,149 @@ export default function PortalDashboard() {
         <>
           {/* Banner aktivasi: tampil kalau portal_status masih PENDING.
               Arahkan user untuk klik link aktivasi di email sebelum
-              mengajukan form (gate di backend → AppError::EmailNotActivated). */}
+              mengajukan form (gate di backend → AppError::EmailNotActivated).
+              Pakai honey palette (--honey-tint + --ink borderLeft) supaya
+              konsisten dengan landing page hero CTA, bukan lemon kuning
+              kontras tinggi yang terasa "alert keras". */}
           {me.portal_status === "PENDING" && (
-            <div
-              className="clay-card feature"
-              style={{
-                marginTop: 24,
-                marginBottom: 32,
-                padding: 24,
-                background: "var(--lemon-400)",
-                borderLeft: "6px solid var(--lemon-700)",
-              }}
-              role="alert"
-            >
-              <p
-                className="uppercase-label"
-                style={{ color: "var(--lemon-800)", marginBottom: 8 }}
+            <Reveal delay={120}>
+              <div
+                className="clay-card feature"
+                style={{
+                  marginTop: 24,
+                  marginBottom: 32,
+                  padding: 24,
+                  background: "var(--honey-tint)",
+                  borderLeft: "6px solid var(--honey-400)",
+                }}
+                role="alert"
               >
-                ✦ Aktivasi Email Diperlukan
-              </p>
-              <p className="body" style={{ color: "var(--clay-black)", margin: 0 }}>
-                Akun Anda belum diaktivasi. Cek kotak masuk email{" "}
-                <span className="mono">{me.email}</span> dan klik link
-                aktivasi. Aktivasi diperlukan untuk mengajukan polis, klaim,
-                dan pertanyaan baru.
-              </p>
-            </div>
+                <p
+                  className="uppercase-label"
+                  style={{ color: "var(--honey-700)", marginBottom: 8 }}
+                >
+                  ✦ Aktivasi Email Diperlukan
+                </p>
+                <p className="body" style={{ color: "var(--ink)", margin: 0 }}>
+                  Akun Anda belum diaktivasi. Cek kotak masuk email{" "}
+                  <span className="mono">{me.email}</span> dan klik link
+                  aktivasi. Aktivasi diperlukan untuk mengajukan polis, klaim,
+                  dan pertanyaan baru.
+                </p>
+              </div>
+            </Reveal>
           )}
 
           {/* CTA: kalau user belum punya polis aktif, tampilkan banner
-              prominent untuk apply asuransi. */}
+              prominent untuk apply asuransi. Honey-400 background dengan
+              CTA ink outline-honey untuk kontras yang harmonis dengan
+              landing hero. */}
           {me.active_policy_count === 0 && (
-            <div
-              className="clay-card feature swatch-matcha"
-              style={{
-                marginTop: 24,
-                marginBottom: 32,
-                padding: 32,
-                display: "flex",
-                alignItems: "center",
-                gap: 24,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 240 }}>
-                <p
-                  className="uppercase-label"
-                  style={{ color: "var(--matcha-300)", marginBottom: 8 }}
-                >
-                  ✦ Mulai perlindungan Anda
-                </p>
-                <h2
-                  className="display-secondary"
-                  style={{ color: "var(--pure-white)", fontSize: "1.75rem", marginBottom: 8 }}
-                >
-                  Ajukan Asuransi Sekarang
-                </h2>
-                <p
-                  className="body"
-                  style={{ color: "var(--matcha-300)", margin: 0 }}
-                >
-                  Pilih produk (Jiwa / Kecelakaan Diri / Kesehatan), isi data,
-                  upload KTP, dan polis terbit dalam hitungan menit setelah
-                  pembayaran.
-                </p>
-              </div>
-              <Link
-                href="/portal/insurance/new"
-                className="clay-button solid-ube size-large"
-                style={{ flexShrink: 0 }}
+            <Reveal delay={120}>
+              <div
+                className="clay-card feature"
+                style={{
+                  marginTop: 24,
+                  marginBottom: 32,
+                  padding: 32,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 24,
+                  flexWrap: "wrap",
+                  background: "var(--honey-400)",
+                  border: "1px solid var(--oat-refined)",
+                }}
               >
-                Ajukan Sekarang →
-              </Link>
-            </div>
+                <div style={{ flex: 1, minWidth: 240 }}>
+                  <p
+                    className="uppercase-label"
+                    style={{ color: "var(--honey-700)", marginBottom: 8 }}
+                  >
+                    ✦ Mulai perlindungan Anda
+                  </p>
+                  <h2
+                    className="display-secondary"
+                    style={{ color: "var(--ink)", fontSize: "1.75rem", marginBottom: 8 }}
+                  >
+                    Ajukan Asuransi Sekarang
+                  </h2>
+                  <p
+                    className="body"
+                    style={{ color: "var(--charcoal)", margin: 0 }}
+                  >
+                    Pilih produk (Jiwa / Kecelakaan Diri / Kesehatan), isi data,
+                    upload KTP, dan polis terbit dalam hitungan menit setelah
+                    pembayaran.
+                  </p>
+                </div>
+                <Link
+                  href="/portal/insurance/new"
+                  className="clay-button size-large"
+                  style={{
+                    flexShrink: 0,
+                    background: "var(--ink)",
+                    color: "var(--honey-400)",
+                    border: "1px solid var(--ink)",
+                  }}
+                >
+                  Ajukan Sekarang →
+                </Link>
+              </div>
+            </Reveal>
           )}
 
-          <div className="clay-grid cols-2" style={{ marginTop: 24, marginBottom: 32 }}>
-            <Card label="Polis Aktif" value={me.active_policy_count} color="var(--matcha-600)" />
+          <StaggerGroup
+            step={80}
+            baseDelay={180}
+            className="clay-grid cols-2"
+          >
+            <Card label="Polis Aktif" value={me.active_policy_count} />
             <Card
               label="Total UP Aktif"
               value={formatIDR(me.total_sum_assured)}
-              color="var(--matcha-600)"
             />
-            <Card label="Klaim Terbuka" value={me.open_claim_count} color="var(--lemon-700)" />
-            <Card label="Pertanyaan Terbuka" value={me.open_inquiry_count} color="var(--ube-800)" />
-          </div>
+            <Card label="Klaim Terbuka" value={me.open_claim_count} />
+            <Card label="Pertanyaan Terbuka" value={me.open_inquiry_count} />
+          </StaggerGroup>
 
-          <h2 className="section-heading" style={{ fontSize: "1.5rem", marginBottom: 16 }}>
-            Aksi Cepat
-          </h2>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Link href="/portal/insurance/new" className="clay-button solid-ube">
-              + Ajukan Asuransi
-            </Link>
-            <Link href="/portal/policies" className="clay-button solid-ube">
-              Lihat Polis →
-            </Link>
-            <Link href="/portal/invoices" className="clay-button solid-ube">
-              Lihat Invoice →
-            </Link>
-            <Link href="/portal/claims/new" className="clay-button solid-slushie">
-              Ajukan Klaim →
-            </Link>
-            <Link href="/portal/inquiries" className="clay-button ghost">
-              Buat Pertanyaan
-            </Link>
-          </div>
+          <Reveal delay={520}>
+            <h2 className="section-heading" style={{ fontSize: "1.5rem", marginBottom: 16, marginTop: 8 }}>
+              Aksi Cepat
+            </h2>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Link href="/portal/insurance/new" className="clay-button solid-honey">
+                + Ajukan Asuransi
+              </Link>
+              <Link href="/portal/policies" className="clay-button outline-honey">
+                Lihat Polis →
+              </Link>
+              <Link href="/portal/invoices" className="clay-button outline-honey">
+                Lihat Invoice →
+              </Link>
+              <Link href="/portal/claims/new" className="clay-button solid-pomegranate">
+                Ajukan Klaim →
+              </Link>
+              <Link href="/portal/inquiries" className="clay-button ghost">
+                Buat Pertanyaan
+              </Link>
+            </div>
+          </Reveal>
         </>
       )}
     </>
   );
 }
 
-function Card({ label, value, color }: { label: string; value: string | number; color: string }) {
+function Card({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="clay-card feature" style={{ borderLeft: `6px solid ${color}`, padding: 24 }}>
+    <div
+      className="clay-card feature clay-card-hoverable"
+      style={{ borderLeft: "6px solid var(--honey-400)", padding: 24 }}
+    >
       <p className="caption" style={{ color: "var(--warm-charcoal)", marginBottom: 4 }}>
         {label}
       </p>
-      <p style={{ margin: 0, fontSize: "1.75rem", fontWeight: 600, color }}>
+      <p style={{ margin: 0, fontSize: "1.75rem", fontWeight: 600, color: "var(--ink)" }}>
         {value}
       </p>
     </div>

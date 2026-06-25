@@ -75,8 +75,9 @@ pub enum EmailType {
     PaymentSuccess,
     EPolicyDelivery,
     PortalActivation,
-    /// Customer request password reset via /portal/reset (lupa password).
-    /// Kirim link dengan JWT purpose="password_reset" (TTL 30 menit).
+    /// Customer request password reset via /portal/forgot-password
+    /// (lupa password). Kirim link dengan JWT purpose="password_reset"
+    /// (TTL 30 menit).
     PasswordReset,
     ClaimReceived,
     ClaimStatusUpdate,

@@ -11,6 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormField, FormError } from "@insuretrack/forms";
 import { apiFetch, checkSession } from "@insuretrack/api-client";
+import { Reveal } from "@/components/Reveal";
 
 const loginSchema = z.object({
   username: z.string().trim().min(3, "Username minimal 3 karakter").max(64),
@@ -94,84 +95,88 @@ export default function AdminLoginPage() {
         overflow: "hidden",
         display: "grid",
         placeItems: "center",
-        background: "var(--warm-cream)",
+        background: "var(--canvas)",
         padding: 24,
       }}
     >
       <div style={{ width: "100%", maxWidth: 420 }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <p className="uppercase-label" style={{ color: "var(--ube-800)" }}>
-            InsureTrack
-          </p>
-          <h1 className="display-secondary" style={{ fontSize: "2.5rem", marginTop: 8 }}>
-            Admin Portal
-          </h1>
-        </div>
-
-        <Form methods={methods} onSubmit={onSubmit} className="clay-card feature">
-          <FormError message={formError} />
-
-          <FormField label="Username" name="username" required>
-            <input
-              id="username"
-              className="clay-input"
-              autoComplete="username"
-              {...methods.register("username")}
-            />
-          </FormField>
-
-          <FormField label="Password" name="password" required>
-            <input
-              id="password"
-              className="clay-input"
-              type="password"
-              autoComplete="current-password"
-              {...methods.register("password")}
-            />
-          </FormField>
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="clay-button solid-ube"
-            style={{ width: "100%", marginTop: 12 }}
-          >
-            {submitting ? "Login..." : "Login →"}
-          </button>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              margin: "20px 0",
-              color: "var(--warm-silver)",
-              fontSize: "0.8rem",
-            }}
-          >
-            <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
-            <span className="uppercase-label" style={{ color: "var(--warm-silver)" }}>
-              Customer?
-            </span>
-            <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
+        <Reveal>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <p className="uppercase-label" style={{ color: "var(--honey-700)" }}>
+              InsureTrack
+            </p>
+            <h1 className="display-secondary" style={{ fontSize: "2.5rem", marginTop: 8 }}>
+              Admin Portal
+            </h1>
           </div>
+        </Reveal>
 
-          <Link
-            href="/portal/login"
-            className="clay-button ghost"
-            style={{ width: "100%", justifyContent: "center" }}
-          >
-            ✦ Ke Customer Portal
-          </Link>
+        <Reveal delay={150}>
+          <Form methods={methods} onSubmit={onSubmit} className="clay-card feature">
+            <FormError message={formError} />
 
-          <p
-            className="caption"
-            style={{ textAlign: "center", marginTop: 16, color: "var(--warm-silver)" }}
-          >
-            Default: <span className="mono">admin</span> / <span className="mono">admin123</span>{" "}
-            (dev only)
-          </p>
-        </Form>
+            <FormField label="Username" name="username" required>
+              <input
+                id="username"
+                className="clay-input"
+                autoComplete="username"
+                {...methods.register("username")}
+              />
+            </FormField>
+
+            <FormField label="Password" name="password" required>
+              <input
+                id="password"
+                className="clay-input"
+                type="password"
+                autoComplete="current-password"
+                {...methods.register("password")}
+              />
+            </FormField>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="clay-button solid-honey"
+              style={{ width: "100%", marginTop: 12 }}
+            >
+              {submitting ? "Login..." : "Login →"}
+            </button>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                margin: "20px 0",
+                color: "var(--warm-silver)",
+                fontSize: "0.8rem",
+              }}
+            >
+              <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
+              <span className="uppercase-label" style={{ color: "var(--warm-silver)" }}>
+                Customer?
+              </span>
+              <div style={{ flex: 1, height: 1, background: "var(--oat-border)" }} />
+            </div>
+
+            <Link
+              href="/portal/login"
+              className="clay-button ghost"
+              style={{ width: "100%", justifyContent: "center" }}
+            >
+              ✦ Ke Customer Portal
+            </Link>
+
+            <p
+              className="caption"
+              style={{ textAlign: "center", marginTop: 16, color: "var(--warm-silver)" }}
+            >
+              Default: <span className="mono">admin</span> / <span className="mono">admin123</span>{" "}
+              (dev only)
+            </p>
+          </Form>
+        </Reveal>
       </div>
     </main>
   );

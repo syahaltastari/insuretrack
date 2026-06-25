@@ -4,6 +4,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -201,7 +202,16 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
             Klaim {formatCurrency(claim.claimed_amount)}
           </p>
         </div>
-        <StatusBadge status={claim.status} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <StatusBadge status={claim.status} />
+          <Link
+            href={`/admin/claims/${claim.id}`}
+            className="clay-button outline-honey size-small"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            Lihat detail →
+          </Link>
+        </div>
       </div>
 
       <FormField

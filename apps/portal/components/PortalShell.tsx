@@ -17,7 +17,7 @@ const navItems: Array<{ href: string; label: string; icon: IconName }> = [
 
 const SIDEBAR_MINIMIZED_KEY = "portal_sidebar_minimized";
 
-// Path di /portal/* yang TIDAK butuh auth (login/register/activate/reset).
+// Path di /portal/* yang TIDAK butuh auth (login/register/activate/forgot-password).
 // Shell yang sama membungkus semuanya, jadi auth guard di bawah harus
 // skip cek token untuk path-path ini — kalau tidak, user yang belum login
 // terjebak di "Memuat..." karena `router.replace("/portal/login")` jadi
@@ -26,7 +26,7 @@ const PUBLIC_PORTAL_PATHS = new Set<string>([
   "/portal/login",
   "/portal/register",
   "/portal/activate",
-  "/portal/reset",
+  "/portal/forgot-password",
 ]);
 
 export function PortalShell({ children }: { children: React.ReactNode }) {
@@ -153,7 +153,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             <CustomerUserMenu profile={profile} />
           </div>
         </header>
-        <main className="shell-main">{children}</main>
+        <main className="shell-main" style={{ background: "var(--canvas)" }}>{children}</main>
       </div>
     </div>
   );

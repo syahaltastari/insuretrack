@@ -28,6 +28,7 @@ import { API_BASE, apiFetch } from "@insuretrack/api-client";
 import { useAdminTable } from "@/lib/useAdminTable";
 import { ColumnVisibilityMenu } from "@/components/ColumnVisibilityMenu";
 import { AdminDownloadButton } from "@/components/AdminDownloadButton";
+import { Reveal } from "@/components/Reveal";
 import type {
   AdminColumnMeta,
   Column,
@@ -477,186 +478,190 @@ export function AdminListPage<T extends { id: string }>({
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          gap: 12,
-          marginBottom: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h1 className="page-title" style={{ marginBottom: 8 }}>
-            {title}
-          </h1>
-        </div>
-        {headerActions}
-      </div>
-
-      {/* Filter bar */}
-      <div
-        className="clay-card"
-        style={{
-          padding: 16,
-          marginBottom: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
+      <Reveal>
         <div
           style={{
             display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
             alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 16,
+            flexWrap: "wrap",
           }}
         >
-          {/* Search input */}
-          <label className="inline-flex flex-col gap-1" style={{ flex: 1, minWidth: 200 }}>
-            <span className="text-xs uppercase tracking-wider text-warm-silver font-semibold">
-              Cari
-            </span>
-            <input
-              type="search"
-              value={qInput}
-              onChange={(e) => setQInput(e.target.value)}
-              placeholder={searchPlaceholder}
-              className="clay-input"
-              aria-label="Cari"
-            />
-          </label>
-
-          {/* Date range picker + date column dropdown */}
-          {dateField && dateField.length > 0 && (
-            <>
-              <DateRangePicker
-                value={dateRange}
-                onChange={onDateRangeChange}
-                ariaLabel="Pilih rentang tanggal filter"
-              />
-              <FilterSelect
-                label="Kolom tanggal"
-                value={activeDateField}
-                onChange={onDateFieldChange}
-                options={dateField.map((o) => ({ value: o.value, label: o.label }))}
-                ariaLabel="Kolom tanggal"
-                width={160}
-              />
-            </>
-          )}
-
-          {/* Status dropdown */}
-          {statusOptions && statusOptions.length > 0 && (
-            <FilterSelect
-              label={statusFilterLabel ?? "Status"}
-              value={status}
-              onChange={onStatusChange}
-              options={[
-                { value: "", label: statusOptionsLabel ?? "Semua" },
-                ...statusOptions.map((s) => ({ value: s, label: s })),
-              ]}
-              ariaLabel="Status"
-              width={180}
-            />
-          )}
-
-          {/* Product dropdown */}
-          {products && products.length > 0 && (
-            <FilterSelect
-              label="Produk"
-              value={product}
-              onChange={onProductChange}
-              options={[
-                { value: "", label: "Semua" },
-                ...products.map((p) => ({ value: p, label: p })),
-              ]}
-              ariaLabel="Produk"
-              width={170}
-            />
-          )}
-
-          {/* Claim type dropdown */}
-          {claimTypes && claimTypes.length > 0 && (
-            <FilterSelect
-              label="Tipe klaim"
-              value={claimType}
-              onChange={onClaimTypeChange}
-              options={[
-                { value: "", label: "Semua" },
-                ...claimTypes.map((c) => ({ value: c, label: c })),
-              ]}
-              ariaLabel="Tipe klaim"
-              width={170}
-            />
-          )}
-
-          {/* Boolean-style single-select filter (e.g. is_active) */}
-          {booleanFilter && (
-            <FilterSelect
-              label={booleanFilter.label}
-              value={activeBooleanFilter}
-              onChange={onBooleanFilterChange}
-              options={booleanFilter.options}
-              ariaLabel={booleanFilter.label}
-              width={180}
-            />
-          )}
-
-          {/* Reset (when any filter active) */}
-          {chips.length > 0 && (
-            <button
-              type="button"
-              onClick={resetAll}
-              className="clay-button ghost size-small"
-              title="Hapus semua filter"
-              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-            >
-              <X size={14} /> Reset
-            </button>
-          )}
-
-          {/* View controls — di kanan (page size, kolom visibility, export) */}
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <FilterSelect
-              label="Per halaman"
-              value={pageSize === 20 ? "" : String(pageSize)}
-              onChange={onPageSizeChange}
-              options={[
-                { value: "", label: "20" },
-                { value: "10", label: "10" },
-                { value: "50", label: "50" },
-                { value: "100", label: "100" },
-              ]}
-              ariaLabel="Jumlah baris per halaman"
-              width={130}
-            />
-            <ColumnVisibilityMenu table={table} />
-            {enableExport && (
-              <a
-                href={csvHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="clay-button ghost size-small"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-                title="Download semua baris (mengikuti filter saat ini) sebagai CSV"
-              >
-                <Download size={14} />
-                <span>Export CSV</span>
-              </a>
-            )}
+          <div>
+            <h1 className="page-title" style={{ marginBottom: 8 }}>
+              {title}
+            </h1>
           </div>
+          {headerActions}
         </div>
+      </Reveal>
 
-        {/* Active filter chips */}
-        <FilterChipBar chips={chips} onResetAll={resetAll} />
-      </div>
+      {/* Filter bar */}
+      <Reveal delay={100}>
+        <div
+          className="clay-card"
+          style={{
+            padding: 16,
+            marginBottom: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "flex-end",
+            }}
+          >
+            {/* Search input */}
+            <label className="inline-flex flex-col gap-1" style={{ flex: 1, minWidth: 200 }}>
+              <span className="text-xs uppercase tracking-wider text-warm-silver font-semibold">
+                Cari
+              </span>
+              <input
+                type="search"
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="clay-input"
+                aria-label="Cari"
+              />
+            </label>
+
+            {/* Date range picker + date column dropdown */}
+            {dateField && dateField.length > 0 && (
+              <>
+                <DateRangePicker
+                  value={dateRange}
+                  onChange={onDateRangeChange}
+                  ariaLabel="Pilih rentang tanggal filter"
+                />
+                <FilterSelect
+                  label="Kolom tanggal"
+                  value={activeDateField}
+                  onChange={onDateFieldChange}
+                  options={dateField.map((o) => ({ value: o.value, label: o.label }))}
+                  ariaLabel="Kolom tanggal"
+                  width={160}
+                />
+              </>
+            )}
+
+            {/* Status dropdown */}
+            {statusOptions && statusOptions.length > 0 && (
+              <FilterSelect
+                label={statusFilterLabel ?? "Status"}
+                value={status}
+                onChange={onStatusChange}
+                options={[
+                  { value: "", label: statusOptionsLabel ?? "Semua" },
+                  ...statusOptions.map((s) => ({ value: s, label: s })),
+                ]}
+                ariaLabel="Status"
+                width={180}
+              />
+            )}
+
+            {/* Product dropdown */}
+            {products && products.length > 0 && (
+              <FilterSelect
+                label="Produk"
+                value={product}
+                onChange={onProductChange}
+                options={[
+                  { value: "", label: "Semua" },
+                  ...products.map((p) => ({ value: p, label: p })),
+                ]}
+                ariaLabel="Produk"
+                width={170}
+              />
+            )}
+
+            {/* Claim type dropdown */}
+            {claimTypes && claimTypes.length > 0 && (
+              <FilterSelect
+                label="Tipe klaim"
+                value={claimType}
+                onChange={onClaimTypeChange}
+                options={[
+                  { value: "", label: "Semua" },
+                  ...claimTypes.map((c) => ({ value: c, label: c })),
+                ]}
+                ariaLabel="Tipe klaim"
+                width={170}
+              />
+            )}
+
+            {/* Boolean-style single-select filter (e.g. is_active) */}
+            {booleanFilter && (
+              <FilterSelect
+                label={booleanFilter.label}
+                value={activeBooleanFilter}
+                onChange={onBooleanFilterChange}
+                options={booleanFilter.options}
+                ariaLabel={booleanFilter.label}
+                width={180}
+              />
+            )}
+
+            {/* Reset (when any filter active) */}
+            {chips.length > 0 && (
+              <button
+                type="button"
+                onClick={resetAll}
+                className="clay-button ghost size-small"
+                title="Hapus semua filter"
+                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <X size={14} /> Reset
+              </button>
+            )}
+
+            {/* View controls — di kanan (page size, kolom visibility, export) */}
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <FilterSelect
+                label="Per halaman"
+                value={pageSize === 20 ? "" : String(pageSize)}
+                onChange={onPageSizeChange}
+                options={[
+                  { value: "", label: "20" },
+                  { value: "10", label: "10" },
+                  { value: "50", label: "50" },
+                  { value: "100", label: "100" },
+                ]}
+                ariaLabel="Jumlah baris per halaman"
+                width={130}
+              />
+              <ColumnVisibilityMenu table={table} />
+              {enableExport && (
+                <a
+                  href={csvHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="clay-button ghost size-small"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                  title="Download semua baris (mengikuti filter saat ini) sebagai CSV"
+                >
+                  <Download size={14} />
+                  <span>Export CSV</span>
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Active filter chips */}
+          <FilterChipBar chips={chips} onResetAll={resetAll} />
+        </div>
+      </Reveal>
 
       {formSlot}
 
@@ -671,195 +676,199 @@ export function AdminListPage<T extends { id: string }>({
       {loading && <SkeletonTable rows={5} columns={colCount} />}
 
       {!loading && data.length === 0 && (
-        <div
-          className="clay-card feature dashed"
-          style={{ textAlign: "center", padding: "48px 24px", marginTop: 8 }}
-        >
-          <Inbox
-            size={40}
-            style={{ color: "var(--warm-silver)", margin: "0 auto" }}
-          />
-          <p
-            className="body"
-            style={{ color: "var(--warm-charcoal)", margin: "12px 0 0 0" }}
+        <Reveal delay={150}>
+          <div
+            className="clay-card feature dashed"
+            style={{ textAlign: "center", padding: "48px 24px", marginTop: 8 }}
           >
-            {emptyMessage}
-          </p>
-        </div>
+            <Inbox
+              size={40}
+              style={{ color: "var(--warm-silver)", margin: "0 auto" }}
+            />
+            <p
+              className="body"
+              style={{ color: "var(--warm-charcoal)", margin: "12px 0 0 0" }}
+            >
+              {emptyMessage}
+            </p>
+          </div>
+        </Reveal>
       )}
 
       {!loading && data.length > 0 && (
-        <>
-          <div className="clay-table-wrap" ref={wrapRef}>
-            <table className="clay-table sticky-columns">
-              <thead>
-                {headerGroups.map((headerGroup) => (
-                  <tr key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => {
-                      const meta = header.column.columnDef.meta as
-                        | AdminColumnMeta
-                        | undefined;
-                      const isSortable = header.column.getCanSort();
-                      const colSort = header.column.getIsSorted(); // false | "asc" | "desc"
-                      return (
-                        <th
-                          key={header.id}
-                          className={meta?.hideOnMobile ? "hide-mobile" : undefined}
-                          style={{
-                            ...(meta?.width ? { width: meta.width } : {}),
-                            ...(isSortable
-                              ? { cursor: "pointer", userSelect: "none" }
-                              : {}),
-                          }}
-                          onClick={
-                            isSortable
-                              ? header.column.getToggleSortingHandler()
-                              : undefined
-                          }
-                          role={isSortable ? "button" : undefined}
-                          aria-sort={
-                            colSort === "asc"
-                              ? "ascending"
-                              : colSort === "desc"
-                                ? "descending"
-                                : isSortable
-                                  ? "none"
-                                  : undefined
-                          }
-                          title={
-                            isSortable
-                              ? `Klik untuk sort by ${meta?.sortValue ?? header.column.id}`
-                              : undefined
-                          }
-                        >
-                          <span
+        <Reveal delay={200}>
+          <>
+            <div className="clay-table-wrap" ref={wrapRef}>
+              <table className="clay-table sticky-columns">
+                <thead>
+                  {headerGroups.map((headerGroup) => (
+                    <tr key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        const meta = header.column.columnDef.meta as
+                          | AdminColumnMeta
+                          | undefined;
+                        const isSortable = header.column.getCanSort();
+                        const colSort = header.column.getIsSorted(); // false | "asc" | "desc"
+                        return (
+                          <th
+                            key={header.id}
+                            className={meta?.hideOnMobile ? "hide-mobile" : undefined}
                             style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
+                              ...(meta?.width ? { width: meta.width } : {}),
+                              ...(isSortable
+                                ? { cursor: "pointer", userSelect: "none" }
+                                : {}),
                             }}
+                            onClick={
+                              isSortable
+                                ? header.column.getToggleSortingHandler()
+                                : undefined
+                            }
+                            role={isSortable ? "button" : undefined}
+                            aria-sort={
+                              colSort === "asc"
+                                ? "ascending"
+                                : colSort === "desc"
+                                  ? "descending"
+                                  : isSortable
+                                    ? "none"
+                                    : undefined
+                            }
+                            title={
+                              isSortable
+                                ? `Klik untuk sort by ${meta?.sortValue ?? header.column.id}`
+                                : undefined
+                            }
                           >
-                            {flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                            {isSortable &&
-                              (colSort === "asc" ? (
-                                <ArrowUp size={12} />
-                              ) : colSort === "desc" ? (
-                                <ArrowDown size={12} />
-                              ) : (
-                                <ArrowUpDown
-                                  size={12}
-                                  style={{ opacity: 0.4 }}
-                                />
-                              ))}
-                          </span>
-                        </th>
-                      );
-                    })}
-                    {showActionsCol && <th style={{ width: 200, minWidth: 180 }}>Aksi</th>}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => {
-                      const meta = cell.column.columnDef.meta as
-                        | AdminColumnMeta
-                        | undefined;
-                      const value = flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      );
-                      // Tooltip native browser: muncul saat hover (~1s
-                      // delay). Pakai raw value (`cell.getValue()`) supaya
-                      // admin lihat full text tanpa click ke detail.
-                      // Skip kalau kosong (no point showing empty tooltip).
-                      //
-                      // PENTING: `title` dipasang di INNER content (`<a>`
-                      // dan value ReactNode) — bukan di `<td>`. Kalau
-                      // dipasang di `<td>`, hover di child element
-                      // (e.g. `<a>`) tidak trigger tooltip `<td>`.
-                      const titleText = String(cell.getValue() ?? "");
-                      const tdClass = meta?.hideOnMobile
-                        ? "hide-mobile"
-                        : undefined;
-                      return (
-                        <td key={cell.id} className={tdClass}>
-                          {detailBasePath ? (
-                            <a
-                              href={`${detailBasePath}/${row.original.id}`}
-                              title={titleText || undefined}
+                            <span
                               style={{
-                                color: "var(--clay-black)",
-                                fontWeight: 500,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
                               }}
                             >
-                              {value}
-                            </a>
-                          ) : isValidElement(value) ? (
-                            // Inner element (e.g. `<code>`, `<span>`)
-                            // — clone dengan title ditambahkan.
-                            cloneElement(
-                              value as ReactElement<{ title?: string }>,
-                              { title: titleText || undefined },
-                            )
-                          ) : (
-                            // Plain text/ReactNode tanpa wrapper.
-                            // title tidak bisa di-attach ke text node
-                            // langsung — wrap dalam `<span>` dengan title.
-                            <span title={titleText || undefined}>{value}</span>
-                          )}
-                          {/* Copy-to-clipboard button — muncul on cell hover */}
-                          {titleText && <CopyButton value={titleText} />}
+                              {flexRender(
+                                header.column.columnDef.header,
+                                header.getContext(),
+                              )}
+                              {isSortable &&
+                                (colSort === "asc" ? (
+                                  <ArrowUp size={12} />
+                                ) : colSort === "desc" ? (
+                                  <ArrowDown size={12} />
+                                ) : (
+                                  <ArrowUpDown
+                                    size={12}
+                                    style={{ opacity: 0.4 }}
+                                  />
+                                ))}
+                            </span>
+                          </th>
+                        );
+                      })}
+                      {showActionsCol && <th style={{ width: 200, minWidth: 180 }}>Aksi</th>}
+                    </tr>
+                  ))}
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id}>
+                      {row.getVisibleCells().map((cell) => {
+                        const meta = cell.column.columnDef.meta as
+                          | AdminColumnMeta
+                          | undefined;
+                        const value = flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        );
+                        // Tooltip native browser: muncul saat hover (~1s
+                        // delay). Pakai raw value (`cell.getValue()`) supaya
+                        // admin lihat full text tanpa click ke detail.
+                        // Skip kalau kosong (no point showing empty tooltip).
+                        //
+                        // PENTING: `title` dipasang di INNER content (`<a>`
+                        // dan value ReactNode) — bukan di `<td>`. Kalau
+                        // dipasang di `<td>`, hover di child element
+                        // (e.g. `<a>`) tidak trigger tooltip `<td>`.
+                        const titleText = String(cell.getValue() ?? "");
+                        const tdClass = meta?.hideOnMobile
+                          ? "hide-mobile"
+                          : undefined;
+                        return (
+                          <td key={cell.id} className={tdClass}>
+                            {detailBasePath ? (
+                              <a
+                                href={`${detailBasePath}/${row.original.id}`}
+                                title={titleText || undefined}
+                                style={{
+                                  color: "var(--clay-black)",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {value}
+                              </a>
+                            ) : isValidElement(value) ? (
+                              // Inner element (e.g. `<code>`, `<span>`)
+                              // — clone dengan title ditambahkan.
+                              cloneElement(
+                                value as ReactElement<{ title?: string }>,
+                                { title: titleText || undefined },
+                              )
+                            ) : (
+                              // Plain text/ReactNode tanpa wrapper.
+                              // title tidak bisa di-attach ke text node
+                              // langsung — wrap dalam `<span>` dengan title.
+                              <span title={titleText || undefined}>{value}</span>
+                            )}
+                            {/* Copy-to-clipboard button — muncul on cell hover */}
+                            {titleText && <CopyButton value={titleText} />}
+                          </td>
+                        );
+                      })}
+                      {showActionsCol && (
+                        <td>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {pdfDownloadPath && (() => {
+                              const path = pdfDownloadPath(row.original);
+                              if (!path) return null;
+                              return (
+                                <AdminDownloadButton
+                                  key="pdf"
+                                  path={path}
+                                  label="📄 Invoice"
+                                  title="Download invoice PDF"
+                                />
+                              );
+                            })()}
+                            {receiptDownloadPath && (() => {
+                              const path = receiptDownloadPath(row.original);
+                              if (!path) return null;
+                              return (
+                                <AdminDownloadButton
+                                  key="receipt"
+                                  path={path}
+                                  label="🧾 Bukti Bayar"
+                                  title="Download bukti pembayaran PDF"
+                                />
+                              );
+                            })()}
+                            {actions && actions(row.original)}
+                          </div>
                         </td>
-                      );
-                    })}
-                    {showActionsCol && (
-                      <td>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {pdfDownloadPath && (() => {
-                            const path = pdfDownloadPath(row.original);
-                            if (!path) return null;
-                            return (
-                              <AdminDownloadButton
-                                key="pdf"
-                                path={path}
-                                label="📄 Invoice"
-                                title="Download invoice PDF"
-                              />
-                            );
-                          })()}
-                          {receiptDownloadPath && (() => {
-                            const path = receiptDownloadPath(row.original);
-                            if (!path) return null;
-                            return (
-                              <AdminDownloadButton
-                                key="receipt"
-                                path={path}
-                                label="🧾 Bukti Bayar"
-                                title="Download bukti pembayaran PDF"
-                              />
-                            );
-                          })()}
-                          {actions && actions(row.original)}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Pagination
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onChange={setPage}
-          />
-        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onChange={setPage}
+            />
+          </>
+        </Reveal>
       )}
     </>
   );

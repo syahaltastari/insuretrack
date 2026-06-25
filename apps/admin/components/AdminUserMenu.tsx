@@ -53,12 +53,17 @@ export function AdminUserMenu({ profile }: { profile: AdminProfile | null }) {
   const onLogout = async () => {
     try {
       // Backend POST /api/admin/logout → Set-Cookie Max-Age=0 untuk
-      // session + csrf cookie. Browser auto-hapus.
+      // session + csrf cookie. Browser auto-hapus. Backend logout sudah
+      // idempotent (pakai OptionalAuth extractor) — call selalu return
+      // 204 + clear cookies.
       await logoutAdmin();
     } catch {
-      // Logout endpoint failure shouldn't block UX — tetap redirect ke
-      // login. Browser mungkin masih punya cookie tapi berikutnya akan
-      // 401 dari server.
+      // Best-effort — tetap navigasi ke login. Pakai hard navigation
+      // (window.location) bukan router.replace supaya admin middleware
+      // re-evaluate session state dari awal. router.replace() bisa
+      // stuck kalau Next.js client cache masih anggap user authed.
+      window.location.href = "/admin/login";
+      return;
     }
     router.replace("/admin/login");
   };

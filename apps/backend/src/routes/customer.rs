@@ -32,8 +32,8 @@ use uuid::Uuid;
 
 use crate::{
     auth::{
-        build_auth_cookies, build_clear_cookies, generate_csrf_token, password::hash_password,
-        password::verify_password, RequireCustomer, Role,
+        build_auth_cookies, generate_csrf_token, password::hash_password,
+        password::verify_password, OptionalAuth, RequireCustomer, Role,
     },
     domain::{
         claim::can_transition as claim_can_transition,
@@ -226,27 +226,39 @@ async fn login(
 }
 
 /// POST /api/customer/logout — clear session + CSRF cookies, return 204.
-/// Idempotent. FE call ini saat user klik "Logout" di menu, lalu
+/// FE call ini saat user klik "Logout" di menu, lalu
 /// `router.replace("/portal/login")`.
+///
+/// IDEMPOTENT: pakai `OptionalAuth` bukan `RequireCustomer` supaya
+/// logout SELALU succeed (204) + clear cookies, bahkan kalau session
+/// cookie absent / expired / role mismatch. Sebelumnya pakai
+/// `RequireCustomer` — kalau session invalid, extractor return 401/403,
+/// handler tidak pernah jalan, cookie tidak ter-clear, dan portal
+/// middleware redirect user kembali ke dashboard (loop). Sekarang:
+/// kalau session valid → audit + clear. Kalau tidak → langsung clear
+/// (no audit).
 async fn logout(
     State(state): State<AppState>,
-    RequireCustomer(claims): RequireCustomer,
+    OptionalAuth(maybe_claims): OptionalAuth,
 ) -> AppResult<Response> {
-    let customer_id = customer_id_from(&claims)?;
-    let jar = build_clear_cookies(&state.config);
-
-    let _ = audit_write(
-        &state.pool,
-        AuditEntry {
-            actor: &claims.sub,
-            action: "customer_logout",
-            entity_type: "customer",
-            entity_id: Some(customer_id),
-            metadata: None,
-            ip_address: None,
-        },
-    )
-    .await;
+    if let Some(claims) = maybe_claims {
+        if claims.role == Role::Customer {
+            if let Ok(customer_id) = customer_id_from(&claims) {
+                let _ = audit_write(
+                    &state.pool,
+                    AuditEntry {
+                        actor: &claims.sub,
+                        action: "customer_logout",
+                        entity_type: "customer",
+                        entity_id: Some(customer_id),
+                        metadata: None,
+                        ip_address: None,
+                    },
+                )
+                .await;
+            }
+        }
+    }
 
     // Build 204 response dengan Set-Cookie headers manual untuk clear
     // session + csrf cookies. axum_extra::CookieJar impl-nya tidak
@@ -307,8 +319,12 @@ async fn password_reset(
         false,
         60 * 30,
     )?;
+    // URL ini di-embed di email reset password. Frontend route adalah
+    // /portal/forgot-password?token=... (sebelumnya /portal/reset).
+    // PENTING: kalau rename ulang, update juga email template di
+    // services/email.rs yang render link ini.
     let reset_url = format!(
-        "{}/portal/reset?token={}",
+        "{}/portal/forgot-password?token={}",
         state.config.app_base_url.trim_end_matches('/'),
         reset_token
     );
