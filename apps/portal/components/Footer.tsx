@@ -111,7 +111,7 @@ function SocialIconLink({ social }: { social: SocialLink }) {
 export function Footer() {
   const year = new Date().getFullYear();
   return (
-    <footer className="app-footer relative">
+    <footer id="contact" className="app-footer relative">
       {/* Honey gradient divider — transisi visual dari section CTA
           (honey-400) di atas ke footer (ink dark). Tipis, tidak夺眼. */}
       <div

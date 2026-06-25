@@ -197,8 +197,11 @@ body {
 }
 
 /* Anchor offset — saat user click #products, section berhenti di
-   80px dari top (di bawah navbar sticky ~64px), tidak ketutup. */
+   80px dari top (di bawah navbar sticky ~64px), tidak ketutup.
+   `footer[id]` di-include supaya `#contact` (yang di-attach ke footer)
+   juga dapat breathing room yang sama. */
 section[id],
+footer[id],
 div[id] {
   scroll-margin-top: 80px;
 }
@@ -248,7 +251,7 @@ a:hover {
    Typography utilities
    ============================================================ */
 .display-hero {
-  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-size: clamp(2.5rem, 8vw, 4.53rem);
   font-weight: 600;
   line-height: 1.00;
   letter-spacing: -0.04em;
@@ -1307,6 +1310,8 @@ details > summary::marker { display: none; content: ""; }
   gap: 4px;
 }
 .navbar-link {
+  /* Position relative untuk anchor `::after` underline indicator. */
+  position: relative;
   padding: 8px 14px;
   font-size: 0.95rem;
   font-weight: 500;
@@ -1314,23 +1319,54 @@ details > summary::marker { display: none; content: ""; }
   color: var(--clay-black);
   text-decoration: none;
   border-radius: var(--radius-sharp);
-  transition:
-    background-color 200ms ease,
-    color 200ms ease;
+  transition: color 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.navbar-link:hover {
-  background: var(--honey-tint);
-  text-decoration: none;
+
+/* Underline indicator — slide-in dari kiri pada hover. Inset (left/right
+   14px match link padding) supaya underline selaras dengan text width,
+   bukan edge-to-edge. Brand color (ink, warm dark) untuk strong contrast
+   di atas warm-cream background.
+
+   Scale + transform-origin lebih performant dari width transition
+   (compositor-only, no layout thrash). easeOutExpo untuk feel "lempar
+   masuk" yang tegas tapi elegan. 350ms — cukup lambat untuk terlihat
+   deliberate, cukup cepat untuk tetap responsive.
+
+   Tidak ada @media prefers-reduced-motion override: 350ms scaleX 2px
+   adalah micro-interaction yang aman untuk vestibular disorder (no
+   parallax, no rotation, motion < 4px). Override hanya applied untuk
+   big entrance animations (Reveal/StaggerGroup) yang dipakai motion lib.
+   Hover micro-interactions selalu animate — developer yang develop
+   dengan reduced motion ON tetap bisa verify perubahan visual. */
+.navbar-link::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 4px;
+  height: 1.5px;
+  background: var(--honey-600);
+  border-radius: 1px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 350ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+.navbar-link:hover::after,
+.navbar-link.active::after {
+  transform: scaleX(1);
+}
+/* Active state: text color slightly warmer/darker untuk distinguish dari
+   hover. Tidak ada bg pill (honey-tint/honey-100 dihilangkan per request)
+   — visual cue hanya via underline + color shift. */
 .navbar-link.active {
   color: var(--ink);
-  background: var(--honey-100);
 }
-.navbar-link-cta {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-thickness: 1px;
-}
+/* `navbar-link-cta` dihapus — sebelumnya pakai `text-decoration: underline`
+   static yang konflik dengan animated `::after` underline dari
+   `.navbar-link` (hasilnya double underline bertumpuk). Sekarang Login
+   pakai class `.navbar-link` saja — animated underline jadi satu-satunya
+   visual cue. Untuk CTA distinction (kalau nanti dibutuhkan), bisa
+   pakai class baru atau modifier seperti `.navbar-link[data-cta]`. */
 .navbar-actions {
   display: flex;
   align-items: center;
@@ -2370,9 +2406,28 @@ button.clay-input {
 /* ----- Stats number typography -----
    Display besar untuk angka di Stats section. Fluid sizing via clamp,
    tighter letter-spacing untuk feel "monetary/numerical". Pakai
-   tabular-nums supaya angka tidak "jiggle" saat count-up. */
+   tabular-nums supaya angka tidak "jiggle" saat count-up.
+
+   Size rationale: max 52px (3.25rem) — cukup besar untuk impactful,
+   tapi tidak overflow kolom grid. Sebelumnya max 72px (4.5rem) terlalu
+   besar untuk max-w-4xl (896px / 3 kolom = ~277px per kolom) — "Rp 4.8 M"
+   di 72px = ~344px, overflow / wrap. Plus angka LEBIH BESAR dari section
+   heading (44px) = hierarchy terbalik. Sekarang 52px max tetap bigger
+   dari heading (44px) tapi proporsional, dan muat di kolom. */
 .stats-number {
-  font-size: clamp(2.75rem, 7vw, 4.5rem);
+  /* Display block: CountUp component render sebagai <span> (inline by
+     default), dan icon container di Stats section juga inline-flex.
+     Tanpa display:block, span + inline-flex icon seat on same line
+     (sebelah-sebelahan) — yang user lihat sebagai "icon dan angka
+     sebelah-sebelahan bukan bertumpuk". Block force new line, lalu
+     text-center pada parent center-kan content.
+
+     Margin top 12px: jarak visual dari icon container di atasnya. Icon
+     punya mb-5 (20px) di JSX, jadi total ~32px gap icon-to-number —
+     generous tapi tidak berlebihan. */
+  display: block;
+  margin-top: 12px;
+  font-size: clamp(2.25rem, 5.5vw, 3.25rem);
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.04em;

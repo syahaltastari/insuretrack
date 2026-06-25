@@ -64,6 +64,62 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
     setOpen(false);
   }, [pathname]);
 
+  // Handler untuk anchor link (#products, #how, dll) di navbar.
+  //
+  // Kenapa perlu JS handler meskipun CSS `html { scroll-behavior: smooth }`
+  // sudah di-set di globals.css:
+  //   - Same-page click: CSS scroll-behavior biasanya jalan di Chrome/Edge,
+  //     TAPI Safari & Firefox kadang ignore rule untuk anchor dengan
+  //     absolute path (`/#products` bukan `#products`). JS scrollIntoView
+  //     lebih reliable cross-browser.
+  //   - Reduced-motion user: respect OS preference via useShouldAnimate
+  //     (dev = always smooth, prod = respect OS). Browser default
+  //     `behavior: 'auto'` kalau user minta reduce.
+  //   - Cross-page navigation (mis. dari /faq → klik "Produk"): handled
+  //     oleh browser + CSS scroll-behavior di landing page. Untuk
+  //     Chrome/Edge/Firefox/Safari modern, post-load hash scroll sudah
+  //     smooth out-of-the-box.
+  //
+  // Alasan pakai scrollIntoView (bukan custom requestAnimationFrame loop):
+  //   - Native, browser-optimized (GPU-accelerated di modern browsers).
+  //   - Respect prefers-reduced-motion secara built-in via option `behavior`.
+  //   - scroll-margin-top CSS di section[id] otomatis apply — section
+  //     berhenti di 80px dari top (di bawah navbar), tidak ketutup.
+  const handleNavClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    href: string,
+  ) => {
+    // Extract hash. href format: "/path#hash" atau "/#hash" atau "#hash"
+    const hashIdx = href.indexOf("#");
+    if (hashIdx === -1) return; // no anchor — biarkan default link behavior
+
+    const targetPath = href.substring(0, hashIdx) || "/";
+    const hash = href.substring(hashIdx + 1);
+    if (!hash) return;
+
+    // Cross-page: biarkan browser navigate. CSS scroll-behavior di
+    // landing page handle post-load smooth scroll.
+    if (targetPath !== pathname) return;
+
+    // Same-page: prevent default & smooth-scroll manual.
+    e.preventDefault();
+    const target = document.getElementById(hash);
+    if (!target) return;
+
+    target.scrollIntoView({
+      behavior: shouldAnimate ? "smooth" : "auto",
+      block: "start",
+    });
+
+    // Update URL hash tanpa trigger scroll default. `replaceState` (bukan
+    // `pushState`) supaya back button tidak isi history dengan hash per
+    // click — back akan langsung ke previous page, bukan previous section.
+    window.history.replaceState(null, "", href);
+
+    // Close mobile menu kalau terbuka.
+    setOpen(false);
+  };
+
   const buyPolis = (e: React.MouseEvent) => {
     e.preventDefault();
     if (authed) {
@@ -103,6 +159,7 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
               key={item.href}
               href={item.href}
               className={`navbar-link ${isActive(item.href) ? "active" : ""}`}
+              onClick={(e) => handleNavClick(e, item.href)}
             >
               {item.label}
             </a>
@@ -121,7 +178,7 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
             </>
           ) : (
             <>
-              <Link href="/portal/login" className="navbar-link navbar-link-cta">
+              <Link href="/portal/login" className="navbar-link">
                 Login
               </Link>
               <button onClick={buyPolis} className="clay-button solid-honey size-small pill">
@@ -161,7 +218,12 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
             {navItems.map((item) => (
-              <a key={item.href} href={item.href} className="navbar-mobile-link">
+              <a
+                key={item.href}
+                href={item.href}
+                className="navbar-mobile-link"
+                onClick={(e) => handleNavClick(e, item.href)}
+              >
                 {item.label}
               </a>
             ))}

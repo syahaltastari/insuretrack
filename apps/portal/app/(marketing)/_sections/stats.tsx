@@ -47,7 +47,7 @@ export function Stats() {
           {COPY.stats.items.map((item) => (
             <div
               key={item.label}
-              className="text-center md:text-left"
+              className="text-center"
             >
               {/* Icon container — visual anchor, honey-100 bg + honey-700 */}
               <div
