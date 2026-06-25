@@ -1163,21 +1163,34 @@ details > summary::marker { display: none; content: ""; }
   overflow-y: auto;
   transition: width 200ms ease, padding 200ms ease;
 }
-/* Sidebar minimize (icon-only). Brand text + nav labels hidden,
-   width shrink ke 64px, padding diperkecil. Grid auto-adjust. */
+/* Sidebar minimize (icon-only). Brand text + nav labels fade/collapse
+   via width+opacity transition (bukan display:none) supaya animasinya
+   smooth. Width shrink ke 64px, padding diperkecil. Grid auto-adjust. */
 .shell-aside.minimized {
   width: 64px;
   padding: 24px 8px;
-}
-.shell-aside.minimized .brand span {
-  display: none;
 }
 .shell-aside.minimized nav a {
   justify-content: center;
   padding: 10px;
 }
-.shell-aside.minimized nav a span {
-  display: none;
+.shell-aside .brand span,
+.shell-aside nav a span,
+.shell-aside .nav-group-label {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  max-width: 200px;
+  transition: opacity 150ms ease, max-width 200ms ease, margin 200ms ease;
+}
+.shell-aside.minimized .brand span,
+.shell-aside.minimized nav a span,
+.shell-aside.minimized .nav-group-label {
+  opacity: 0;
+  max-width: 0;
+  margin: 0;
+  pointer-events: none;
 }
 .shell-grid:has(.shell-aside.minimized) {
   grid-template-columns: 64px 1fr;
@@ -1199,8 +1212,12 @@ details > summary::marker { display: none; content: ""; }
     padding: 24px 20px;
   }
   .shell-aside.minimized .brand span,
-  .shell-aside.minimized nav a span {
-    display: inline;
+  .shell-aside.minimized nav a span,
+  .shell-aside.minimized .nav-group-label {
+    opacity: 1;
+    max-width: 200px;
+    margin: revert;
+    pointer-events: auto;
   }
   .shell-grid:has(.shell-aside.minimized) {
     grid-template-columns: 1fr;
@@ -1211,6 +1228,21 @@ details > summary::marker { display: none; content: ""; }
   font-weight: 600;
   margin-bottom: 24px;
   letter-spacing: -0.02em;
+}
+.shell-aside .nav-group {
+  margin-bottom: 18px;
+}
+.shell-aside .nav-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--warm-silver);
+  padding: 0 14px;
+  margin-bottom: 6px;
+}
+.shell-aside.minimized .nav-group-label {
+  padding: 0;
 }
 .shell-aside nav {
   display: flex;
@@ -1224,10 +1256,17 @@ details > summary::marker { display: none; content: ""; }
   text-decoration: none;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: background 150ms ease, color 150ms ease;
+  transition: background 150ms ease, color 150ms ease, padding 200ms ease;
 }
 .shell-aside nav a:hover {
   background: var(--oat-light);
+}
+.shell-aside nav a:hover svg {
+  transform: scale(1.12);
+}
+.shell-aside nav a svg {
+  transition: transform 150ms ease;
+  flex-shrink: 0;
 }
 .shell-aside nav a.active {
   background: var(--clay-black);

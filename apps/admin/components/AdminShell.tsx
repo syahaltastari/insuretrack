@@ -7,20 +7,44 @@ import { Icon, type IconName } from "@insuretrack/ui";
 import { AdminUserMenu, fetchAdminProfile, type AdminProfile } from "@/components/AdminUserMenu";
 import { checkSession } from "@insuretrack/api-client";
 
-const navItems: Array<{ href: string; label: string; icon: IconName; superAdminOnly?: boolean }> = [
-  { href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" },
-  { href: "/admin/customers", label: "Customer", icon: "UserCircle" },
-  { href: "/admin/registrations", label: "Registrasi", icon: "ClipboardList" },
-  { href: "/admin/underwriting", label: "Underwriting", icon: "ShieldCheck" },
-  { href: "/admin/invoices", label: "Invoice", icon: "Receipt" },
-  { href: "/admin/policies", label: "Polis", icon: "FileText" },
-  { href: "/admin/claims", label: "Klaim", icon: "Siren" },
-  { href: "/admin/inquiries", label: "Inquiry", icon: "MessageCircle" },
-  { href: "/admin/clients", label: "Klien", icon: "Building2" },
-  { href: "/admin/testimonials", label: "Testimoni", icon: "Quote" },
-  { href: "/admin/email-logs", label: "Email Log", icon: "Mail" },
-  { href: "/admin/audit-logs", label: "Audit Trail", icon: "ScrollText" },
-  { href: "/admin/users", label: "Manajemen User", icon: "Users", superAdminOnly: true },
+type NavItem = { href: string; label: string; icon: IconName; superAdminOnly?: boolean };
+type NavGroup = { category: string; items: NavItem[] };
+
+// Dikategorikan supaya sidebar yang panjang (13 item) tetap scannable.
+// Urutan grup = urutan alur kerja admin: utama → operasional harian →
+// konten publik → sistem/audit.
+const navGroups: NavGroup[] = [
+  {
+    category: "Utama",
+    items: [{ href: "/admin/dashboard", label: "Dashboard", icon: "LayoutDashboard" }],
+  },
+  {
+    category: "Operasional",
+    items: [
+      { href: "/admin/customers", label: "Customer", icon: "UserCircle" },
+      { href: "/admin/registrations", label: "Registrasi", icon: "ClipboardList" },
+      { href: "/admin/underwriting", label: "Underwriting", icon: "ShieldCheck" },
+      { href: "/admin/invoices", label: "Invoice", icon: "Receipt" },
+      { href: "/admin/policies", label: "Polis", icon: "FileText" },
+      { href: "/admin/claims", label: "Klaim", icon: "Siren" },
+      { href: "/admin/inquiries", label: "Inquiry", icon: "MessageCircle" },
+    ],
+  },
+  {
+    category: "Konten",
+    items: [
+      { href: "/admin/clients", label: "Klien", icon: "Building2" },
+      { href: "/admin/testimonials", label: "Testimoni", icon: "Quote" },
+    ],
+  },
+  {
+    category: "Sistem",
+    items: [
+      { href: "/admin/email-logs", label: "Email Log", icon: "Mail" },
+      { href: "/admin/audit-logs", label: "Audit Trail", icon: "ScrollText" },
+      { href: "/admin/users", label: "Manajemen User", icon: "Users", superAdminOnly: true },
+    ],
+  },
 ];
 
 const SIDEBAR_MINIMIZED_KEY = "admin_sidebar_minimized";
@@ -48,8 +72,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // gate via `RequireSuperAdmin` extractor, jadi menu yang "hilang"
   // beneran inaccessible walaupun user ngetik URL-nya manual.
   const isSuperAdmin = profile?.is_super_admin ?? false;
-  const visibleNavItems = useMemo(
-    () => navItems.filter((item) => !item.superAdminOnly || isSuperAdmin),
+  const visibleNavGroups = useMemo(
+    () =>
+      navGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => !item.superAdminOnly || isSuperAdmin),
+        }))
+        .filter((group) => group.items.length > 0),
     [isSuperAdmin],
   );
 
@@ -137,27 +167,32 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: minimized ? "center" : "flex-start" }}
         >
           <Icon name="ShieldCheck" size="md" style={{ color: "var(--ube-800)" }} />
-          {!minimized && <span>InsureTrack Admin</span>}
+          <span>InsureTrack Admin</span>
         </div>
-        <nav>
-          {visibleNavItems.map((item) => {
-            const active =
-              pathname === item.href ||
-              (pathname?.startsWith(item.href + "/") ?? false);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={active ? "active" : ""}
-                title={minimized ? item.label : undefined}
-                style={{ display: "flex", alignItems: "center", gap: 10 }}
-              >
-                <Icon name={item.icon} size="sm" />
-                {!minimized && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
-        </nav>
+        {visibleNavGroups.map((group) => (
+          <div className="nav-group" key={group.category}>
+            <div className="nav-group-label">{group.category}</div>
+            <nav>
+              {group.items.map((item) => {
+                const active =
+                  pathname === item.href ||
+                  (pathname?.startsWith(item.href + "/") ?? false);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={active ? "active" : ""}
+                    title={minimized ? item.label : undefined}
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <Icon name={item.icon} size="sm" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+        ))}
       </aside>
       <div className="shell-content">
         <header className="admin-topbar">

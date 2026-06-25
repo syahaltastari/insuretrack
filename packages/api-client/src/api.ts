@@ -145,7 +145,18 @@ export async function apiFetch<T = unknown>(
 
   const r = await fetch(`${API_BASE}${path}`, { ...init, headers, credentials: "include" });
   const text = await r.text();
-  const json = text ? JSON.parse(text) : null;
+  // Backend (atau proxy di depannya) bisa balas plain-text di luar
+  // kontrol kita — panic handler Axum default, 502/504 dari Traefik,
+  // dll. JSON.parse pada body non-JSON harus jadi ApiError yang jelas,
+  // bukan SyntaxError mentah yang membingungkan di UI.
+  let json: unknown = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new ApiError(r.status, "INVALID_RESPONSE", text.slice(0, 200) || `HTTP ${r.status}`);
+    }
+  }
 
   if (!r.ok) {
     const err = (json as { error?: { code?: string; message?: string } } | null)?.error;
