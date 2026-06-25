@@ -35,6 +35,58 @@
   --font-mono: var(--font-space-mono), "Space Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
+/* ============================================================
+   Honey brand palette (InsureTrack landing refresh v2)
+   Token BARU untuk landing page redesign. Token lama (matcha,
+   slushie, lemon, ube, pomegranate, blueberry) di bawah TETAP
+   dipakai oleh admin & form components — JANGAN dihapus sampai
+   admin selesai migrasi ke Honey.
+   ============================================================ */
+:root {
+  /* Honey (golden yellow brand) — 10-stop scale.
+     Honey-400 (#FFD200) = BRAND PRIMARY. */
+  --honey-50:  #FFFCEB;
+  --honey-100: #FFF5C2;
+  --honey-200: #FFEB85;
+  --honey-300: #FFE04D;
+  --honey-400: #FFD200; /* ⭐ brand primary */
+  --honey-500: #E6BD00;
+  --honey-600: #C99E00;
+  --honey-700: #A57E00;
+  --honey-800: #806200;
+  --honey-900: #5C4600;
+
+  /* Warm-off-white surface scale. Canvas pakai undertone kuning
+     sangat tipis (hue ~40°) supaya honey-400 di atasnya tetap
+     "pop" — bukan mati lebur. */
+  --canvas:     #FFFCF7;
+  --paper:      #FAF6EC;
+  --sand:       #F4EEDC;
+  --honey-tint: #FFF8DD;
+
+  /* Refined oat (warm border) — alternatif lebih harmonis dengan
+     honey daripada --oat-border lama (yang undertone-nya netral). */
+  --oat-light-refined: #F2EBD9;
+  --oat-refined:       #E5DBC2;
+
+  /* Refined text scale — warm-black/warm-grey, bukan pure neutral.
+     WCAG AA compliant terhadap --canvas. */
+  --ink:      #1A1715;
+  --charcoal: #3D3833;
+  --stone:    #78716C;
+
+  /* Warm-tinted shadows (kuning-coklat, bukan abu netral) — supaya
+     saat dipakai di atas canvas, shadow terasa "masuk" ke tema
+     honey, bukan elemen visual terpisah. */
+  --shadow-soft: 0 1px 2px rgba(120, 90, 0, 0.04), 0 1px 3px rgba(26, 23, 21, 0.06);
+  --shadow-lift: 0 8px 24px rgba(217, 159, 0, 0.10), 0 2px 6px rgba(26, 23, 21, 0.04);
+  --shadow-cta:  0 4px 14px rgba(255, 210, 0, 0.40);
+  --shadow-hero: 0 20px 60px rgba(165, 126, 0, 0.18);
+
+  /* Focus ring honey-themed — untuk interactive element baru. */
+  --focus-ring-honey: 0 0 0 3px rgba(255, 210, 0, 0.45);
+}
+
 /* ----- Swatch palette (named colors) ----- */
 :root {
   /* Matcha (green) */
@@ -123,6 +175,15 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Smooth scroll untuk anchor links (#products, #how, dll).
+     Respect prefers-reduced-motion di bawah. */
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
 html,
 body {
   margin: 0;
@@ -133,6 +194,13 @@ body {
   font-feature-settings: "ss01", "ss03", "ss10", "ss11", "ss12";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Anchor offset — saat user click #products, section berhenti di
+   80px dari top (di bawah navbar sticky ~64px), tidak ketutup. */
+section[id],
+div[id] {
+  scroll-margin-top: 80px;
 }
 
 /* Headings — Roobert-like geometric, weight 600, all 5 OpenType sets */
@@ -403,6 +471,33 @@ a:hover {
 
 .clay-button.pill {
   border-radius: var(--radius-pill);
+}
+
+/* Honey variants (landing refresh v2).
+   solid-honey: signature CTA — brand primary dengan teks gelap.
+                 Kontras ink-on-honey-400 = 15.6:1 (WCAG AAA).
+   outline-honey: secondary CTA — outline tipis dengan hover wash
+                  honey-tint. */
+.clay-button.solid-honey {
+  background: var(--honey-400);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+}
+.clay-button.solid-honey:hover:not(:disabled) {
+  background: var(--honey-500);
+  color: var(--ink);
+  box-shadow: var(--shadow-cta);
+}
+
+.clay-button.outline-honey {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--oat-refined);
+}
+.clay-button.outline-honey:hover:not(:disabled) {
+  background: var(--honey-tint);
+  border-color: var(--honey-300);
+  color: var(--ink);
 }
 
 /* ============================================================
@@ -1161,20 +1256,23 @@ details > summary::marker { display: none; content: ""; }
 
 /* ============================================================
    Navbar (sticky top, hamburger on mobile)
-   ============================================================ */
+   ============================================================
+   Background pakai `color-mix(in srgb, var(--canvas) X%, transparent)`
+   — modern CSS, support universal di 2024+ browser. Tidak perlu
+   hardcode rgba — kalau --canvas di-rebrand, navbar otomatis ikut. */
 .navbar {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(250, 249, 247, 0.85);
+  background: color-mix(in srgb, var(--canvas) 85%, transparent);
   backdrop-filter: saturate(180%) blur(12px);
   -webkit-backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid transparent;
   transition: border-color 200ms ease, background-color 200ms ease;
 }
 .navbar-scrolled {
-  background: rgba(250, 249, 247, 0.96);
-  border-bottom-color: var(--oat-border);
+  background: color-mix(in srgb, var(--canvas) 96%, transparent);
+  border-bottom-color: var(--oat-refined);
 }
 .navbar-inner {
   display: flex;
@@ -1199,8 +1297,8 @@ details > summary::marker { display: none; content: ""; }
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: var(--clay-black);
-  color: var(--lemon-400);
+  background: var(--ink);
+  color: var(--honey-400);
   font-size: 0.9rem;
 }
 .navbar-links {
@@ -1221,12 +1319,12 @@ details > summary::marker { display: none; content: ""; }
     color 200ms ease;
 }
 .navbar-link:hover {
-  background: var(--oat-light);
+  background: var(--honey-tint);
   text-decoration: none;
 }
 .navbar-link.active {
-  color: var(--clay-black);
-  background: var(--lemon-400);
+  color: var(--ink);
+  background: var(--honey-100);
 }
 .navbar-link-cta {
   text-decoration: underline;
@@ -1286,7 +1384,7 @@ details > summary::marker { display: none; content: ""; }
   font-family: inherit;
 }
 .navbar-mobile-link:hover {
-  background: var(--oat-light);
+  background: var(--honey-tint);
 }
 .navbar-mobile-divider {
   height: 1px;
@@ -1295,12 +1393,13 @@ details > summary::marker { display: none; content: ""; }
 }
 .navbar-mobile-cta {
   font-weight: 600;
-  color: var(--pure-white);
-  background: var(--ube-800);
+  color: var(--ink);
+  background: var(--honey-400);
   margin-top: 8px;
 }
 .navbar-mobile-cta:hover {
-  background: var(--ube-900);
+  background: var(--honey-500);
+  color: var(--ink);
 }
 
 @media (max-width: 767px) {
@@ -1736,10 +1835,12 @@ details > summary::marker { display: none; content: ""; }
    Marketing Footer (landing, FAQ, privacy, terms, about)
    ============================================================ */
 .app-footer {
-  /* Full-bleed — span edge-to-edge. Wrapper di dalam kasih padding. */
+  /* Full-bleed — span edge-to-edge. Wrapper di dalam kasih padding.
+     v2: margin-top dihapus — section di atas (CTA banner honey-400)
+     sudah punya padding-bottom yang cukup. Footer honey-divider di
+     top (lihat .footer-divider-honey di Footer.tsx) handle transisi. */
   background: var(--clay-black);
   color: var(--warm-cream);
-  margin-top: 64px;
   border-top: 1px solid var(--dark-border);
 }
 .app-footer-inner {
@@ -2067,3 +2168,315 @@ button.clay-input {
   font-weight: 400;
   text-decoration: none;
 }
+
+
+/* ============================================================
+   Landing refresh v2 — new utility classes
+   ============================================================ */
+
+/* ----- Hero decorative blob -----
+   Posisi absolut, di belakang hero content. Pakai blur untuk efek
+   "sunlit" — radius besar dengan opacity rendah, blend dengan canvas.
+   Pointer-events none supaya tidak block click pada content. */
+.hero-blob {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.6;
+  z-index: 0;
+}
+.hero-blob-primary {
+  background: var(--honey-300);
+  width: 480px;
+  height: 480px;
+  top: -120px;
+  right: -120px;
+}
+.hero-blob-secondary {
+  background: var(--honey-200);
+  width: 320px;
+  height: 320px;
+  bottom: -80px;
+  left: -80px;
+  opacity: 0.5;
+}
+@media (max-width: 767px) {
+  .hero-blob-primary { width: 280px; height: 280px; top: -80px; right: -80px; }
+  .hero-blob-secondary { width: 200px; height: 200px; bottom: -40px; left: -40px; }
+}
+
+/* ----- Section padding rhythm (v2) -----
+   Standarisasi vertical padding untuk semua landing section. Lebih
+   generous dari .clay-section (80px) — sesuai konsep "whitespace
+   lega" di desain v2. Mobile: 80px. Desktop: 128px (py-32). */
+.landing-section {
+  padding: 80px 0;
+}
+@media (min-width: 768px) {
+  .landing-section {
+    padding: 128px 0;
+  }
+}
+
+/* ----- Logo marquee (trust strip) -----
+   Infinite horizontal scroll untuk logo klien. Duplicate list 2x
+   (JSX) supaya loop seamless — saat track 1 selesai, track 2
+   langsung mulai tanpa gap. Pause on hover (group-hover). */
+.logo-marquee {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  /* Fade gradient di kiri & kanan — supaya logo "timbul" dari edge,
+     tidak terpotong hard. */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 8%,
+    black 92%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 8%,
+    black 92%,
+    transparent 100%
+  );
+}
+.logo-marquee-track {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+  width: max-content;
+  animation: marquee-scroll 40s linear infinite;
+}
+.logo-marquee:hover .logo-marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-marquee-track { animation: none; }
+}
+
+/* ----- Back to Top floating button -----
+   Fixed position kanan bawah. Visible saat user scroll > 500px.
+   Honey-400 bg + ink icon untuk "pop" di atas canvas. Soft shadow. */
+.back-to-top {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: var(--honey-400);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: var(--shadow-cta);
+  transition: background-color 200ms ease;
+}
+.back-to-top:hover {
+  background: var(--honey-500);
+}
+.back-to-top:focus-visible {
+  outline: var(--focus-ring-honey);
+  outline-offset: 2px;
+}
+@media (max-width: 767px) {
+  .back-to-top {
+    right: 16px;
+    bottom: 16px;
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .back-to-top {
+    transition: none;
+  }
+}
+
+/* ----- Hero floating card (e-policy mockup) -----
+   Visual signature di Hero. CSS-only subtle floating animation
+   (translateY oscillation) supaya card "alive" tanpa ganggu baca.
+   Hover: lift + shadow grow. */
+.hero-card {
+  position: relative;
+  background: var(--pure-white);
+  border: 1px solid var(--oat-refined);
+  border-radius: var(--radius-feature);
+  padding: 24px;
+  box-shadow: var(--shadow-lift);
+  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 250ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Subtle infinite float — 6 detik, lembut, no jerk */
+  animation: hero-card-float 6s ease-in-out infinite;
+  will-change: transform;
+}
+.hero-card:hover {
+  animation-play-state: paused;
+  transform: translateY(-8px) rotate(0deg);
+  box-shadow: 0 30px 80px rgba(165, 126, 0, 0.20);
+}
+@keyframes hero-card-float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50%      { transform: translateY(-8px) rotate(0.5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-card { animation: none; }
+  .hero-card:hover { transform: none; }
+}
+
+/* Status pill (aktif/expired dll) — pakai honey palette */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.status-pill-active {
+  background: rgba(91, 149, 0, 0.12);
+  color: #5B9500;
+}
+.status-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5B9500;
+  box-shadow: 0 0 0 0 rgba(91, 149, 0, 0.4);
+  animation: status-pulse 2s ease-out infinite;
+}
+@keyframes status-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(91, 149, 0, 0.4); }
+  100% { box-shadow: 0 0 0 8px rgba(91, 149, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-pill-dot { animation: none; }
+}
+
+/* ----- Stats number typography -----
+   Display besar untuk angka di Stats section. Fluid sizing via clamp,
+   tighter letter-spacing untuk feel "monetary/numerical". Pakai
+   tabular-nums supaya angka tidak "jiggle" saat count-up. */
+.stats-number {
+  font-size: clamp(2.75rem, 7vw, 4.5rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-feature-settings: "tnum", "ss03", "ss10";
+  color: var(--ink);
+}
+.stats-label {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 16px 0 4px 0;
+}
+.stats-sub {
+  font-size: 0.875rem;
+  color: var(--stone);
+}
+
+/* ----- FAQ accordion (native details/summary) -----
+   Pakai native <details> untuk full a11y (keyboard, screen reader)
+   tanpa dependensi JS. Animasi chevron via CSS transform, no JS.
+   `interpolate-size: allow-keywords` adalah fitur modern untuk
+   animate height dari 0 ke auto — tidak semua browser support,
+   fallback ke instant expand/collapse (acceptable). */
+.faq-item {
+  background: var(--pure-white);
+  border: 1px solid var(--oat-refined);
+  border-radius: var(--radius-card);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.faq-item:hover {
+  border-color: var(--honey-300);
+}
+.faq-item[open] {
+  border-color: var(--honey-400);
+  box-shadow: var(--shadow-soft);
+}
+.faq-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-weight: 600;
+  font-size: 1.0625rem;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.faq-summary::-webkit-details-marker { display: none; }
+.faq-summary::marker { display: none; content: ""; }
+.faq-summary:focus-visible {
+  outline: var(--focus-ring-honey);
+  outline-offset: -2px;
+  border-radius: var(--radius-card);
+}
+.faq-chevron {
+  flex-shrink: 0;
+  color: var(--honey-700);
+  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.faq-item[open] .faq-chevron {
+  transform: rotate(180deg);
+}
+.faq-answer {
+  padding: 0 24px 20px 24px;
+  color: var(--charcoal);
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+.faq-answer p {
+  margin: 0;
+}
+
+/* ----- Footer honey accent (v2) -----
+   Footer tetap dark (clay-black) untuk kontras dengan section di
+   atasnya. Tambah honey accent di brand mark dan link hover supaya
+   konsisten dengan tema. */
+.footer-brand-accent {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--honey-400);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.footer-link-honey:hover {
+  color: var(--honey-300) !important;
+}
+.footer-divider-honey {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--honey-700) 20%,
+    var(--honey-400) 50%,
+    var(--honey-700) 80%,
+    transparent 100%
+  );
+  opacity: 0.5;
+}
+

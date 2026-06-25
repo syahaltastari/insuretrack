@@ -29,7 +29,7 @@ export default function Error({
       <button
         type="button"
         onClick={reset}
-        className="clay-button solid-ube pill size-large"
+        className="clay-button solid-honey pill size-large"
       >
         Coba lagi
       </button>

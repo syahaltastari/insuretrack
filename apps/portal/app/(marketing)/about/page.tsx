@@ -49,7 +49,7 @@ export default function AboutPage() {
       {/* Hero */}
       <section className="clay-section" style={{ paddingTop: 80, paddingBottom: 24 }}>
         <div className="clay-container" style={{ maxWidth: 880 }}>
-          <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 12 }}>
+          <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 12 }}>
             ✦ Tentang Kami
           </p>
           <h1 className="display-secondary" style={{ marginBottom: 20 }}>
@@ -57,7 +57,7 @@ export default function AboutPage() {
           </h1>
           <p
             className="body-large"
-            style={{ color: "var(--warm-charcoal)", maxWidth: 640, lineHeight: 1.6 }}
+            style={{ color: "var(--charcoal)", maxWidth: 640, lineHeight: 1.6 }}
           >
             InsureTrack lahir dari satu pengamatan: industri asuransi di Indonesia
             masih terjebak proses manual yang bikin calon customer frustasi.
@@ -79,23 +79,23 @@ export default function AboutPage() {
           >
             <article
               className="clay-card feature"
-              style={{ background: "var(--matcha-300)" }}
+              style={{ background: "var(--honey-100)" }}
             >
               <p
                 className="uppercase-label"
-                style={{ color: "var(--matcha-800)", marginBottom: 8 }}
+                style={{ color: "var(--honey-900)", marginBottom: 8 }}
               >
                 Misi
               </p>
               <h2
                 className="card-heading"
-                style={{ color: "var(--matcha-800)", marginBottom: 12 }}
+                style={{ color: "var(--ink)", marginBottom: 12 }}
               >
                 Demokratisasi asuransi.
               </h2>
               <p
                 className="body"
-                style={{ color: "var(--matcha-800)", margin: 0 }}
+                style={{ color: "var(--charcoal)", margin: 0 }}
               >
                 Membawa perlindungan asuransi ke sebanyak mungkin orang Indonesia
                 lewat proses yang sederhana, harga yang transparan, dan teknologi
@@ -104,23 +104,23 @@ export default function AboutPage() {
             </article>
             <article
               className="clay-card feature"
-              style={{ background: "var(--ube-900)" }}
+              style={{ background: "var(--honey-900)" }}
             >
               <p
                 className="uppercase-label"
-                style={{ color: "var(--ube-300)", marginBottom: 8 }}
+                style={{ color: "var(--honey-400)", marginBottom: 8 }}
               >
                 Visi
               </p>
               <h2
                 className="card-heading"
-                style={{ color: "var(--pure-white)", marginBottom: 12 }}
+                style={{ color: "var(--canvas)", marginBottom: 12 }}
               >
                 Polis = 5 menit.
               </h2>
               <p
                 className="body"
-                style={{ color: "var(--ube-300)", margin: 0 }}
+                style={{ color: "var(--honey-200)", margin: 0 }}
               >
                 Menjadi standar industri: setiap polis di Indonesia bisa dibeli,
                 dibayar, dan di-claim tanpa kertas, tanpa cabang, tanpa agen — dengan
@@ -149,7 +149,7 @@ export default function AboutPage() {
                 <p
                   className="display-secondary"
                   style={{
-                    color: "var(--ube-800)",
+                    color: "var(--honey-700)",
                     margin: 0,
                     fontSize: "2.5rem",
                   }}
@@ -159,7 +159,7 @@ export default function AboutPage() {
                 <p
                   className="caption"
                   style={{
-                    color: "var(--warm-charcoal)",
+                    color: "var(--charcoal)",
                     textTransform: "uppercase",
                     letterSpacing: "0.08em",
                     margin: "8px 0 0 0",
@@ -196,8 +196,8 @@ export default function AboutPage() {
                     width: 40,
                     height: 40,
                     borderRadius: 10,
-                    background: "var(--matcha-300)",
-                    color: "var(--matcha-600)",
+                    background: "var(--honey-100)",
+                    color: "var(--honey-700)",
                     marginBottom: 12,
                   }}
                 >
@@ -208,7 +208,7 @@ export default function AboutPage() {
                 </h3>
                 <p
                   className="caption"
-                  style={{ color: "var(--warm-charcoal)", margin: 0, lineHeight: 1.6 }}
+                  style={{ color: "var(--charcoal)", margin: 0, lineHeight: 1.6 }}
                 >
                   {v.desc}
                 </p>
@@ -226,7 +226,7 @@ export default function AboutPage() {
           </h2>
           <div
             className="body"
-            style={{ color: "var(--warm-charcoal)", lineHeight: 1.7 }}
+            style={{ color: "var(--charcoal)", lineHeight: 1.7 }}
           >
             <p>
               InsureTrack dibangun di Indonesia, untuk Indonesia. Tim kami terdiri
@@ -254,14 +254,14 @@ export default function AboutPage() {
         <div className="clay-container" style={{ maxWidth: 720 }}>
           <div
             className="clay-card section"
-            style={{ background: "var(--warm-cream)", textAlign: "center" }}
+            style={{ background: "var(--honey-tint)", textAlign: "center" }}
           >
-            <h2 className="section-heading" style={{ marginBottom: 12 }}>
+            <h2 className="section-heading" style={{ marginBottom: 12, color: "var(--ink)" }}>
               Mau coba sendiri?
             </h2>
             <p
               className="body-large"
-              style={{ color: "var(--warm-charcoal)", marginBottom: 24 }}
+              style={{ color: "var(--charcoal)", marginBottom: 24 }}
             >
               Daftarkan diri Anda — gratis, tanpa komitmen, dan bisa batalkan
               kapan saja dalam 14 hari pertama.
@@ -274,7 +274,7 @@ export default function AboutPage() {
                 flexWrap: "wrap",
               }}
             >
-              <Link href="/portal/register" className="clay-button solid-ube size-large">
+              <Link href="/portal/register" className="clay-button solid-honey size-large">
                 Daftar Sekarang
               </Link>
               <Link href="/#products" className="clay-button ghost size-large">

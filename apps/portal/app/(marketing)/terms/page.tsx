@@ -204,7 +204,7 @@ export default function TermsPage() {
     <>
       <section className="clay-section" style={{ paddingTop: 80, paddingBottom: 24 }}>
         <div className="clay-container" style={{ maxWidth: 880 }}>
-          <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 12 }}>
+          <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 12 }}>
             ✦ Legal
           </p>
           <h1 className="display-secondary" style={{ marginBottom: 12 }}>
@@ -220,7 +220,7 @@ export default function TermsPage() {
         <div className="clay-container" style={{ maxWidth: 880 }}>
           <p
             className="body-large"
-            style={{ color: "var(--warm-charcoal)", marginBottom: 32, lineHeight: 1.6 }}
+            style={{ color: "var(--charcoal)", marginBottom: 32, lineHeight: 1.6 }}
           >
             Harap baca Syarat &amp; Ketentuan ini dengan seksama sebelum menggunakan
             layanan InsureTrack. Dokumen ini merupakan perjanjian antara Anda
@@ -251,7 +251,7 @@ export default function TermsPage() {
                 <li key={s.id}>
                   <a
                     href={`#${s.id}`}
-                    style={{ color: "var(--ube-800)", textDecoration: "none" }}
+                    style={{ color: "var(--honey-700)", textDecoration: "none" }}
                   >
                     {s.title}
                   </a>
@@ -271,7 +271,7 @@ export default function TermsPage() {
                 </h2>
                 <div
                   className="body"
-                  style={{ color: "var(--warm-charcoal)", lineHeight: 1.7 }}
+                  style={{ color: "var(--charcoal)", lineHeight: 1.7 }}
                 >
                   {s.body}
                 </div>
@@ -287,18 +287,18 @@ export default function TermsPage() {
               textAlign: "center",
             }}
           >
-            <p className="body" style={{ margin: 0, color: "var(--warm-charcoal)" }}>
+            <p className="body" style={{ margin: 0, color: "var(--charcoal)" }}>
               Pertanyaan tentang syarat &amp; ketentuan?{" "}
               <Link
                 href="/faq"
-                style={{ color: "var(--ube-800)", textDecoration: "underline" }}
+                style={{ color: "var(--honey-700)", textDecoration: "underline" }}
               >
                 Lihat FAQ
               </Link>{" "}
               atau{" "}
               <a
                 href="mailto:cs@insuretrack.example"
-                style={{ color: "var(--ube-800)", textDecoration: "underline" }}
+                style={{ color: "var(--honey-700)", textDecoration: "underline" }}
               >
                 hubungi kami
               </a>

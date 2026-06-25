@@ -10,7 +10,13 @@ import { Icon } from "@insuretrack/ui";
  *   2. Produk (link ke anchor di landing)
  *   3. Perusahaan (Tentang, FAQ, Kontak)
  *   4. Legal (Privacy, Terms)
- *   5. Kontak (email, jam, lokasi)
+ *   5. Kontak (email, jam, lokasi) — di-merge dari section Contact
+ *      yang dulu ada di landing (sekarang digabung supaya tidak duplikat)
+ *
+ * v2 update: brand mark pakai honey-400 square (accent kuning konsisten
+ * dengan tema landing). Link hover pakai honey-300 (subtle, warm).
+ * Honey gradient divider di atas footer untuk transisi visual halus
+ * dari section honey-400 (CTA) di atasnya.
  *
  * Social media di-link ke username "insuretrack" di tiap platform. Override
  * per-link ada di array `socials` di bawah — ganti URL kalau akun resmi
@@ -90,7 +96,7 @@ function SocialIconLink({ social }: { social: SocialLink }) {
       title={social.name}
       target="_blank"
       rel="noopener noreferrer"
-      className="app-footer-social-link"
+      className="app-footer-social-link footer-link-honey"
       style={{ ["--hover-color" as string]: social.hoverColor }}
     >
       {social.iconName ? (
@@ -105,13 +111,24 @@ function SocialIconLink({ social }: { social: SocialLink }) {
 export function Footer() {
   const year = new Date().getFullYear();
   return (
-    <footer className="app-footer">
+    <footer className="app-footer relative">
+      {/* Honey gradient divider — transisi visual dari section CTA
+          (honey-400) di atas ke footer (ink dark). Tipis, tidak夺眼. */}
+      <div
+        aria-hidden="true"
+        className="footer-divider-honey absolute top-0 left-0 right-0"
+      />
+
       <div className="app-footer-inner">
         <div className="app-footer-grid">
           {/* Brand + social */}
           <div className="app-footer-brand">
             <Link href="/" className="app-footer-brand-mark">
-              <Icon name="ShieldCheck" size="md" style={{ color: "var(--matcha-300)" }} />
+              {/* Honey-400 square mark — konsisten dengan tema landing.
+                  Beda dari navbar (ink bg) supaya ada variasi visual. */}
+              <span className="footer-brand-accent" aria-hidden="true">
+                ◆
+              </span>
               <span>InsureTrack</span>
             </Link>
             <p className="app-footer-tagline">
@@ -129,16 +146,24 @@ export function Footer() {
             <h4>Produk</h4>
             <ul>
               <li>
-                <Link href="/#products">Asuransi Jiwa</Link>
+                <Link href="/#products" className="footer-link-honey">
+                  Asuransi Jiwa
+                </Link>
               </li>
               <li>
-                <Link href="/#products">Asuransi Kecelakaan Diri</Link>
+                <Link href="/#products" className="footer-link-honey">
+                  Asuransi Kecelakaan Diri
+                </Link>
               </li>
               <li>
-                <Link href="/#products">Asuransi Kesehatan</Link>
+                <Link href="/#products" className="footer-link-honey">
+                  Asuransi Kesehatan
+                </Link>
               </li>
               <li>
-                <Link href="/#how">Cara Kerja</Link>
+                <Link href="/#how" className="footer-link-honey">
+                  Cara Kerja
+                </Link>
               </li>
             </ul>
           </div>
@@ -148,16 +173,24 @@ export function Footer() {
             <h4>Perusahaan</h4>
             <ul>
               <li>
-                <Link href="/about">Tentang Kami</Link>
+                <Link href="/about" className="footer-link-honey">
+                  Tentang Kami
+                </Link>
               </li>
               <li>
-                <Link href="/faq">FAQ</Link>
+                <Link href="/#faq" className="footer-link-honey">
+                  FAQ
+                </Link>
               </li>
               <li>
-                <Link href="/#contact">Kontak</Link>
+                <a href="mailto:contact@insuretrack.com" className="footer-link-honey">
+                  Kontak
+                </a>
               </li>
               <li>
-                <Link href="/portal/register">Daftar Akun</Link>
+                <Link href="/portal/register" className="footer-link-honey">
+                  Daftar Akun
+                </Link>
               </li>
             </ul>
           </div>
@@ -167,20 +200,31 @@ export function Footer() {
             <h4>Legal</h4>
             <ul>
               <li>
-                <Link href="/privacy">Privacy Policy</Link>
+                <Link href="/privacy" className="footer-link-honey">
+                  Privacy Policy
+                </Link>
               </li>
               <li>
-                <Link href="/terms">Terms &amp; Conditions</Link>
+                <Link href="/terms" className="footer-link-honey">
+                  Terms &amp; Conditions
+                </Link>
               </li>
             </ul>
           </div>
 
-          {/* Kontak */}
+          {/* Kontak — di-merge dari section Contact (sebelumnya section
+              terpisah di landing). Sekarang inline di footer untuk
+              konsolidasi — tidak duplikat info. */}
           <div className="app-footer-col">
             <h4>Kontak</h4>
             <ul>
               <li>
-                <a href="mailto:contact@insuretrack.com">contact@insuretrack.com</a>
+                <a
+                  href="mailto:contact@insuretrack.com"
+                  className="footer-link-honey"
+                >
+                  contact@insuretrack.com
+                </a>
               </li>
               <li>Senin–Jumat</li>
               <li>09:00–18:00 WIB</li>

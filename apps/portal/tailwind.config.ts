@@ -35,9 +35,11 @@ const config: Config = {
         ring: "var(--focus-ring, rgb(20 110 245))",
         background: "var(--pure-white)",
         foreground: "var(--clay-black)",
+        // Remapped ke Honey (landing refresh). Form components yang
+        // butuh ube-800 (admin-style) bisa pakai `bg-ube-800` di bawah.
         primary: {
-          DEFAULT: "var(--ube-800)",
-          foreground: "var(--pure-white)",
+          DEFAULT: "var(--honey-700)",
+          foreground: "var(--canvas)",
         },
         secondary: {
           DEFAULT: "var(--oat-light)",
@@ -55,6 +57,33 @@ const config: Config = {
           DEFAULT: "var(--matcha-600)",
           foreground: "var(--pure-white)",
         },
+        // Honey brand palette (landing refresh v2). Reference CSS
+        // variables di packages/ui/src/styles/globals.css. Single
+        // source of truth tetap di CSS.
+        honey: {
+          50: "var(--honey-50)",
+          100: "var(--honey-100)",
+          200: "var(--honey-200)",
+          300: "var(--honey-300)",
+          400: "var(--honey-400)",
+          500: "var(--honey-500)",
+          600: "var(--honey-600)",
+          700: "var(--honey-700)",
+          800: "var(--honey-800)",
+          900: "var(--honey-900)",
+        },
+        // Warm-off-white surface scale (landing canvas)
+        canvas: "var(--canvas)",
+        paper: "var(--paper)",
+        sand: "var(--sand)",
+        honeyTint: "var(--honey-tint)",
+        // Refined neutrals (warm-black, warm-grey)
+        ink: "var(--ink)",
+        charcoal: "var(--charcoal)",
+        stone: "var(--stone)",
+        // Refined oat (warm border)
+        oatRefined: "var(--oat-refined)",
+        oatLightRefined: "var(--oat-light-refined)",
         // Brand palette — direct access ke design tokens.
         // Pakai di section components untuk utility-first styling.
         matcha: {

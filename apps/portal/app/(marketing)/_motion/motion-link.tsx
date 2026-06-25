@@ -8,8 +8,9 @@
  * entrance animation, jadi aman untuk SSR.
  */
 
-import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
+import { motion, type HTMLMotionProps } from "motion/react";
 import { type ReactNode } from "react";
+import { useShouldAnimate } from "@/hooks/use-should-animate";
 
 const SPRING = { type: "spring" as const, stiffness: 280, damping: 22, mass: 0.5 };
 
@@ -20,9 +21,10 @@ type MotionLinkProps = {
 } & Omit<HTMLMotionProps<"a">, "href">;
 
 export function MotionLink({ children, className, href, ...rest }: MotionLinkProps) {
-  const reduced = useReducedMotion();
+  // Custom hook bypass motion warning.
+  const shouldAnimate = useShouldAnimate();
 
-  if (reduced) {
+  if (!shouldAnimate) {
     return (
       <a href={href} className={className}>
         {children}

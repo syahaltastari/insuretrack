@@ -21,6 +21,24 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   title: "InsureTrack - Digital Insurance Platform",
   description: "Asuransi digital, prosesnya cepat, polis langsung terbit.",
+  openGraph: {
+    title: "InsureTrack - Digital Insurance Platform",
+    description:
+      "Daftar, bayar, dan e-policy terbit dalam hitungan menit. Asuransi jiwa, kecelakaan diri, dan kesehatan — semua online.",
+    type: "website",
+    locale: "id_ID",
+    siteName: "InsureTrack",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "InsureTrack - Digital Insurance Platform",
+    description:
+      "Asuransi digital, prosesnya cepat, polis langsung terbit.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

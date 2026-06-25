@@ -70,7 +70,7 @@ export default async function ProductDetailPage({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 6,
-                color: "var(--clay-black)",
+                color: "var(--ink)",
                 textDecoration: "none",
                 marginBottom: 24,
               }}
@@ -99,7 +99,7 @@ export default async function ProductDetailPage({
                   height: 72,
                   borderRadius: 20,
                   background: "var(--pure-white)",
-                  color: "var(--clay-black)",
+                  color: "var(--ink)",
                   marginBottom: 24,
                   boxShadow: "var(--shadow-clay)",
                 }}
@@ -114,7 +114,7 @@ export default async function ProductDetailPage({
                   padding: "6px 14px",
                   borderRadius: 999,
                   background: "var(--pure-white)",
-                  color: "var(--clay-black)",
+                  color: "var(--ink)",
                   marginBottom: 16,
                   marginLeft:10,
                 }}
@@ -129,7 +129,7 @@ export default async function ProductDetailPage({
               </h1>
               <p
                 className="body-large"
-                style={{ color: "var(--clay-black)", marginBottom: 32, maxWidth: 560 }}
+                style={{ color: "var(--ink)", marginBottom: 32, maxWidth: 560 }}
               >
                 {product.tagline}
               </p>
@@ -145,7 +145,7 @@ export default async function ProductDetailPage({
                 <a
                   href="#cara-klaim"
                   className="clay-button ghost size-large pill"
-                  style={{ color: "var(--clay-black)", borderColor: "var(--clay-black)" }}
+                  style={{ color: "var(--ink)", borderColor: "var(--ink)" }}
                 >
                   Cara Klaim
                 </a>
@@ -162,7 +162,7 @@ export default async function ProductDetailPage({
                   // swatch-matcha). Tanpa reset, text di dalam white
                   // card inherit white → invisible ("Mulai dari" bug di
                   // LIFE/HEALTH).
-                  color: "var(--clay-black)",
+                  color: "var(--ink)",
                   padding: 28,
                 }}
               >
@@ -177,7 +177,7 @@ export default async function ProductDetailPage({
                 </p>
                 <p
                   className="caption"
-                  style={{ color: "var(--warm-charcoal)", marginBottom: 24 }}
+                  style={{ color: "var(--charcoal)", marginBottom: 24 }}
                 >
                   per tahun — untuk UP {formatIdrShort(100_000_000)}, term 1 tahun
                 </p>
@@ -199,7 +199,7 @@ export default async function ProductDetailPage({
                         gap: 12,
                       }}
                     >
-                      <span className="caption" style={{ color: "var(--warm-charcoal)" }}>
+                      <span className="caption" style={{ color: "var(--charcoal)" }}>
                         {row.label}
                       </span>
                       <span
@@ -233,7 +233,7 @@ export default async function ProductDetailPage({
                 <Icon name="Sparkles" size="xs" style={{ color: `var(--${product.iconTone})` }} />
                 <span
                   className="uppercase-label"
-                  style={{ margin: 0, color: "var(--warm-charcoal)" }}
+                  style={{ margin: 0, color: "var(--charcoal)" }}
                 >
                   Keunggulan
                 </span>
@@ -262,7 +262,7 @@ export default async function ProductDetailPage({
                   <h3 className="card-heading" style={{ fontSize: "1.25rem", marginBottom: 8 }}>
                     {b.title}
                   </h3>
-                  <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+                  <p className="body" style={{ color: "var(--charcoal)", margin: 0 }}>
                     {b.desc}
                   </p>
                 </article>
@@ -296,7 +296,7 @@ export default async function ProductDetailPage({
               <h2 className="section-heading">Apa yang dijamin — dan tidak</h2>
               <p
                 className="body"
-                style={{ color: "var(--warm-charcoal)", marginTop: 12, marginBottom: 0 }}
+                style={{ color: "var(--charcoal)", marginTop: 12, marginBottom: 0 }}
               >
                 Baca baik-baik: yang ditanggung adalah hak Anda, pengecualian adalah
                 batasan. Tidak ada kejutan di belakang hari.
@@ -346,7 +346,7 @@ export default async function ProductDetailPage({
                         display: "flex",
                         gap: 10,
                         alignItems: "flex-start",
-                        color: "var(--clay-black)",
+                        color: "var(--ink)",
                       }}
                     >
                       <Icon
@@ -398,7 +398,7 @@ export default async function ProductDetailPage({
                         display: "flex",
                         gap: 10,
                         alignItems: "flex-start",
-                        color: "var(--clay-black)",
+                        color: "var(--ink)",
                       }}
                     >
                       <Icon
@@ -437,7 +437,7 @@ export default async function ProductDetailPage({
                 <p
                   className="caption"
                   style={{
-                    color: "var(--warm-charcoal)",
+                    color: "var(--charcoal)",
                     margin: 0,
                     fontWeight: 600,
                     textTransform: "uppercase",
@@ -447,7 +447,7 @@ export default async function ProductDetailPage({
                 >
                   Masa Tunggu
                 </p>
-                <p className="body" style={{ color: "var(--clay-black)", margin: 0 }}>
+                <p className="body" style={{ color: "var(--ink)", margin: 0 }}>
                   {product.waitingPeriod}
                 </p>
               </div>
@@ -469,10 +469,10 @@ export default async function ProductDetailPage({
                   marginBottom: 16,
                 }}
               >
-                <Icon name="ScrollText" size="xs" style={{ color: "var(--ube-800)" }} />
+                <Icon name="ScrollText" size="xs" style={{ color: "var(--honey-700)" }} />
                 <span
                   className="uppercase-label"
-                  style={{ margin: 0, color: "var(--ube-800)" }}
+                  style={{ margin: 0, color: "var(--honey-700)" }}
                 >
                   Proses Klaim
                 </span>
@@ -504,7 +504,7 @@ export default async function ProductDetailPage({
                   >
                     {step.title}
                   </h3>
-                  <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+                  <p className="body" style={{ color: "var(--charcoal)", margin: 0 }}>
                     {step.desc}
                   </p>
                 </div>
@@ -569,7 +569,7 @@ export default async function ProductDetailPage({
                     <Icon
                       name="Plus"
                       size="md"
-                      style={{ color: "var(--warm-charcoal)", flexShrink: 0 }}
+                      style={{ color: "var(--charcoal)", flexShrink: 0 }}
                     />
                   </summary>
                   <div
@@ -581,7 +581,7 @@ export default async function ProductDetailPage({
                   >
                     <p
                       className="body"
-                      style={{ color: "var(--warm-charcoal)", margin: 0 }}
+                      style={{ color: "var(--charcoal)", margin: 0 }}
                     >
                       {faq.a}
                     </p>
@@ -633,7 +633,7 @@ export default async function ProductDetailPage({
                     <h3 className="card-heading" style={{ fontSize: "1.25rem", marginBottom: 8 }}>
                       {other.name}
                     </h3>
-                    <p className="body" style={{ color: "var(--warm-charcoal)", margin: 0 }}>
+                    <p className="body" style={{ color: "var(--charcoal)", margin: 0 }}>
                       {other.description}
                     </p>
                     <div
@@ -642,7 +642,7 @@ export default async function ProductDetailPage({
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 6,
-                        color: "var(--clay-black)",
+                        color: "var(--ink)",
                         fontWeight: 600,
                         fontSize: "0.9rem",
                       }}

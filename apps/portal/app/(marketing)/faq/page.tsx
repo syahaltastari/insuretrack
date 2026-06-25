@@ -223,7 +223,7 @@ export default function FaqPage() {
       {/* Hero */}
       <section className="clay-section" style={{ paddingTop: 80, paddingBottom: 24 }}>
         <div className="clay-container" style={{ maxWidth: 880 }}>
-          <p className="uppercase-label" style={{ color: "var(--ube-800)", marginBottom: 12 }}>
+          <p className="uppercase-label" style={{ color: "var(--honey-700)", marginBottom: 12 }}>
             ✦ Help Center
           </p>
           <h1 className="display-secondary" style={{ marginBottom: 16 }}>
@@ -231,12 +231,12 @@ export default function FaqPage() {
           </h1>
           <p
             className="body-large"
-            style={{ color: "var(--warm-charcoal)", maxWidth: 640 }}
+            style={{ color: "var(--charcoal)", maxWidth: 640 }}
           >
             Tidak menemukan jawaban yang Anda cari?{" "}
             <a
               href="mailto:cs@insuretrack.example"
-              style={{ color: "var(--ube-800)", textDecoration: "underline" }}
+              style={{ color: "var(--honey-700)", textDecoration: "underline" }}
             >
               Hubungi tim kami
             </a>
@@ -323,13 +323,13 @@ export default function FaqPage() {
                     <Icon
                       name="ChevronDown"
                       size="sm"
-                      style={{ flexShrink: 0, color: "var(--warm-silver)" }}
+                      style={{ flexShrink: 0, color: "var(--honey-700)" }}
                     />
                   </summary>
                   <div
                     style={{
                       padding: "0 24px 20px 24px",
-                      color: "var(--warm-charcoal)",
+                      color: "var(--charcoal)",
                       lineHeight: 1.6,
                     }}
                   >
@@ -347,17 +347,17 @@ export default function FaqPage() {
         <div className="clay-container" style={{ maxWidth: 880 }}>
           <div
             className="clay-card feature"
-            style={{ background: "var(--matcha-300)", textAlign: "center" }}
+            style={{ background: "var(--honey-100)", textAlign: "center" }}
           >
-            <h2 className="section-heading" style={{ marginBottom: 12 }}>
+            <h2 className="section-heading" style={{ marginBottom: 12, color: "var(--ink)" }}>
               Masih ada pertanyaan?
             </h2>
-            <p className="body-large" style={{ color: "var(--matcha-800)", marginBottom: 24 }}>
+            <p className="body-large" style={{ color: "var(--honey-900)", marginBottom: 24 }}>
               Tim customer service kami siap membantu Senin–Jumat, 09:00–18:00 WIB.
             </p>
             <a
               href="mailto:cs@insuretrack.example"
-              className="clay-button solid-ube size-large"
+              className="clay-button solid-honey size-large"
             >
               Hubungi Customer Service
             </a>

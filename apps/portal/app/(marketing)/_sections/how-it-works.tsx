@@ -1,9 +1,13 @@
-// HowItWorks — section dengan background `swatch-ube` (ubin gelap).
-// 3 langkah: 01 Daftar Online, 02 Bayar Premi, 03 Polis Terbit.
-// Cards stagger 150ms (slightly slower dari products — emphasis step).
+// HowItWorks — 3 langkah dari formulir ke polis. Sand background untuk
+// visual break halus (section 4 Produk = canvas, section ini = sand, lalu
+// section 5 = canvas lagi — rhythm alternating).
 //
-// Background full-width (`borderRadius: 0, margin: 80px 0`) — section
-// ini jadi visual break di antara section cream-colored di atas/bawah.
+// Card: white floating di atas sand, dengan number badge honey-400 di
+// pojok kiri atas. Connector line (dashed honey-500) horizontal antara
+// step di desktop, vertikal di mobile.
+//
+// Stagger 150ms per step — slightly slower dari products (80ms) — kasih
+// emphasis "ini adalah sequence, baca perlahan".
 
 import { Reveal } from "../_motion/reveal";
 import { StaggerGroup } from "../_motion/stagger-group";
@@ -14,48 +18,67 @@ export function HowItWorks() {
   return (
     <section
       id="how"
-      className="swatch-ube clay-section"
-      style={{ borderRadius: 0, margin: "80px 0" }}
+      className="landing-section"
+      style={{ background: "var(--sand)" }}
     >
       <div className="clay-container">
         <Reveal>
-          <span
-            className="uppercase-label inline-flex items-center gap-2 mb-2"
-            style={{ color: "var(--ube-300)" }}
-          >
-            <IconWrapper />
-            {COPY.howItWorks.eyebrow}
-          </span>
-          <h2
-            className="section-heading mb-12"
-            style={{ color: "var(--pure-white)" }}
-          >
-            {COPY.howItWorks.title}
-          </h2>
+          <div className="text-center mb-12 md:mb-20">
+            <span
+              className="uppercase-label inline-flex items-center gap-2"
+              style={{ color: "var(--honey-700)" }}
+            >
+              <IconWrapper />
+              {COPY.howItWorks.eyebrow}
+            </span>
+            <h2 className="section-heading mt-4">{COPY.howItWorks.title}</h2>
+          </div>
         </Reveal>
 
-        <StaggerGroup className="clay-grid cols-3" step={0.15}>
-          {STEPS.map((s) => (
-            <div
-              key={s.n}
-              className="clay-card feature"
-              style={{ background: "var(--ube-900)" }}
-            >
-              <p
-                className="mono text-sm m-0 mb-2"
-                style={{ color: "var(--ube-300)" }}
+        <StaggerGroup
+          className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 relative"
+          step={0.15}
+        >
+          {STEPS.map((s, i) => (
+            <div key={s.n} className="relative">
+              {/* Connector line — horizontal di desktop, vertikal di mobile.
+                  Absolute positioned, dashed honey-500 untuk "in progress" feel. */}
+              {i < STEPS.length - 1 && (
+                <div
+                  aria-hidden="true"
+                  className="hidden md:block absolute top-7 left-[calc(50%+32px)] right-[calc(-50%+32px)] h-px
+                             border-t-2 border-dashed"
+                  style={{ borderColor: "var(--honey-500)" }}
+                />
+              )}
+
+              <div
+                className="bg-white rounded-[var(--radius-feature)] p-7 h-full
+                           border border-[var(--oat-refined)]
+                           transition-all duration-300 ease-out
+                           hover:border-[var(--honey-300)]
+                           hover:-translate-y-1"
+                style={{ boxShadow: "var(--shadow-soft)" }}
               >
-                {s.n}
-              </p>
-              <h3
-                className="feature-title"
-                style={{ color: "var(--pure-white)" }}
-              >
-                {s.t}
-              </h3>
-              <p className="body m-0" style={{ color: "var(--ube-300)" }}>
-                {s.d}
-              </p>
+                {/* Number badge — honey-400 bg + ink text, "01/02/03" mono */}
+                <div
+                  className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-5
+                             mono text-xl font-bold"
+                  style={{
+                    background: "var(--honey-400)",
+                    color: "var(--ink)",
+                  }}
+                >
+                  {s.n}
+                </div>
+                <h3 className="feature-title mb-3">{s.t}</h3>
+                <p
+                  className="body m-0"
+                  style={{ color: "var(--charcoal)" }}
+                >
+                  {s.d}
+                </p>
+              </div>
             </div>
           ))}
         </StaggerGroup>
@@ -64,9 +87,8 @@ export function HowItWorks() {
   );
 }
 
-// Inline helper untuk icon di eyebrow — di sini (bukan di data module)
-// karena Icon component butuh Client boundary; section ini RSC.
-// Sparkles di-render via Lucide inline untuk hemat boundary trip.
+// Inline helper untuk icon di eyebrow — Icon component butuh Client
+// boundary; section ini RSC. Pakai Lucide inline untuk hemat boundary trip.
 function IconWrapper() {
   return (
     <svg

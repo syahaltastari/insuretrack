@@ -9,8 +9,9 @@
  * tidak ada SSR/hydration issue.
  */
 
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import { type ReactNode } from "react";
+import { useShouldAnimate } from "@/hooks/use-should-animate";
 
 const SPRING = { type: "spring" as const, stiffness: 240, damping: 24, mass: 0.6 };
 
@@ -21,9 +22,10 @@ export function MotionCard({
   children: ReactNode;
   className?: string;
 }) {
-  const reduced = useReducedMotion();
+  // Custom hook bypass motion warning.
+  const shouldAnimate = useShouldAnimate();
 
-  if (reduced) {
+  if (!shouldAnimate) {
     return <div className={className}>{children}</div>;
   }
 

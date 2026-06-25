@@ -1,94 +1,70 @@
 "use client";
 
-/**
- * StaggerGroup — wraps children dengan Web Animations API stagger.
- *
- * Sama rationale dengan Reveal: pure JS animation, zero CSS dependency.
- * Parent observe viewport; setelah in-view, trigger animation di tiap
- * child wrapper dengan per-child delay untuk stagger effect.
- */
+// StaggerGroup — parent wrapper untuk orchestrated child reveal.
+//
+// SSR-safe: pre-hydration, render plain div dengan children visible
+// (mounted gate). Post-hydration, swap ke motion.div dengan variants
+// (STAGGER_PARENT orchestrates child timing, FADE_UP drives each
+// child's animation). Trade-off: brief micro-flash di first paint
+// (~16ms) saat swap, tapi no hydration mismatch.
+//
+// Pakai variants existing dari `../_lib/animations` (STAGGER_PARENT,
+// FADE_UP, VIEWPORT_ONCE) — single source of truth.
 
-import { Children, useEffect, useRef, type ReactNode } from "react";
+import { motion } from "motion/react";
+import { Children, useEffect, useState, type ReactNode } from "react";
+import { FADE_UP, STAGGER_PARENT, VIEWPORT_ONCE } from "../_lib/animations";
+import { useShouldAnimate } from "@/hooks/use-should-animate";
+
+type StaggerGroupProps = {
+  children: ReactNode;
+  className?: string;
+  /** Detik antar child. Default 0.08s (80ms) — snappier dari hero 120ms. */
+  step?: number;
+  /** Detik delay sebelum child pertama. Default 0.1s. */
+  baseDelay?: number;
+};
 
 export function StaggerGroup({
   children,
   className,
-  step = 0.12,
-  baseDelay = 0,
-}: {
-  children: ReactNode;
-  className?: string;
-  /** Detik antar child. Default 0.12s (120ms). */
-  step?: number;
-  /** Detik delay sebelum child pertama. Default 0s. */
-  baseDelay?: number;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  step = 0.08,
+  baseDelay = 0.1,
+}: StaggerGroupProps) {
+  const [mounted, setMounted] = useState(false);
+  // Custom hook (bukan motion's useReducedMotion) — no warning.
+  const shouldAnimate = useShouldAnimate();
 
   useEffect(() => {
-    const parent = ref.current;
-    if (!parent) {
-      console.warn("[StaggerGroup] ref.current is null");
-      return;
-    }
-
-    console.log("[StaggerGroup] mounted, will animate", parent.children.length, "children");
-
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const childWrappers = Array.from(parent.children) as HTMLElement[];
-
-    if (reduced) {
-      childWrappers.forEach((el) => {
-        el.style.opacity = "1";
-        el.style.transform = "translateY(0)";
-      });
-      return;
-    }
-
-    const trigger = () => {
-      console.log("[StaggerGroup] animating children");
-      childWrappers.forEach((el, i) => {
-        el.animate(
-          [
-            { opacity: 0, transform: "translateY(28px)" },
-            { opacity: 1, transform: "translateY(0)" },
-          ],
-          {
-            duration: 700,
-            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-            delay: (baseDelay + i * step) * 1000,
-            fill: "both",
-          },
-        );
-      });
-    };
-
-    const rect = parent.getBoundingClientRect();
-    const inViewport = rect.top < window.innerHeight && rect.bottom > 0;
-
-    if (inViewport) {
-      requestAnimationFrame(trigger);
-      return;
-    }
-
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          requestAnimationFrame(trigger);
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.2, rootMargin: "0px 0px -8% 0px" },
-    );
-    obs.observe(parent);
-    return () => obs.disconnect();
+    setMounted(true);
   }, []);
 
+  // Reduced motion atau pre-hydration: render plain, no animation.
+  if (!shouldAnimate || !mounted) {
+    return <div className={className}>{children}</div>;
+  }
+
+  // Override STAGGER_PARENT timing dengan props custom.
+  const parentVariants = {
+    ...STAGGER_PARENT,
+    visible: {
+      transition: { staggerChildren: step, delayChildren: baseDelay },
+    },
+  };
+
   return (
-    <div ref={ref} className={className}>
-      {Children.map(children, (child) => (
-        <div>{child}</div>
+    <motion.div
+      className={className}
+      variants={parentVariants}
+      initial="hidden"
+      whileInView="visible"
+      viewport={VIEWPORT_ONCE}
+    >
+      {Children.map(children, (child, i) => (
+        <motion.div key={i} variants={FADE_UP}>
+          {child}
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }

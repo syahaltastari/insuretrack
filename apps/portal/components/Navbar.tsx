@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { checkSession, logoutCustomer } from "@insuretrack/api-client";
+import { useShouldAnimate } from "@/hooks/use-should-animate";
 
 const navItems = [
   { href: "/#products", label: "Produk" },
@@ -25,6 +27,8 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
   const [open, setOpen] = useState(false);
   const [authed, setAuthed] = useState(initialAuthed);
   const [scrolled, setScrolled] = useState(false);
+  // Custom hook bypass motion warning.
+  const shouldAnimate = useShouldAnimate();
 
   useEffect(() => {
     // Cookie session HttpOnly — JS tidak bisa deteksi via `document.cookie`.
@@ -108,7 +112,7 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
         <div className="navbar-actions">
           {authed ? (
             <>
-              <Link href="/portal/dashboard" className="clay-button ghost size-small">
+              <Link href="/portal/dashboard" className="clay-button outline-honey size-small">
                 Portal
               </Link>
               <button onClick={logout} className="clay-button solid-pomegranate size-small">
@@ -120,7 +124,7 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
               <Link href="/portal/login" className="navbar-link navbar-link-cta">
                 Login
               </Link>
-              <button onClick={buyPolis} className="clay-button solid-ube size-small pill">
+              <button onClick={buyPolis} className="clay-button solid-honey size-small pill">
                 Beli Polis →
               </button>
             </>
@@ -139,35 +143,51 @@ export function Navbar({ initialAuthed = false }: { initialAuthed?: boolean } = 
         </button>
       </div>
 
-      {open && (
-        <div className="navbar-mobile">
-          {navItems.map((item) => (
-            <a key={item.href} href={item.href} className="navbar-mobile-link">
-              {item.label}
-            </a>
-          ))}
-          <div className="navbar-mobile-divider" />
-          {authed ? (
-            <>
-              <Link href="/portal/dashboard" className="navbar-mobile-link">
-                Portal
-              </Link>
-              <button onClick={logout} className="navbar-mobile-link navbar-mobile-cta">
-                Logout
-              </button>
-            </>
-          ) : (
-            <>
-              <Link href="/portal/login" className="navbar-mobile-link">
-                Login
-              </Link>
-              <button onClick={buyPolis} className="navbar-mobile-link navbar-mobile-cta">
-                Beli Polis →
-              </button>
-            </>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          // Mobile dropdown menu. Pakai AnimatePresence + motion.div
+          // supaya exit animation jalan (close = fade+slide up).
+          // Pre-hydration SSR renders plain div via class .navbar-mobile
+          // (yang punya `display: none` di desktop, `display: flex` di
+          // mobile). Post-hydration, motion.div tambah inline transform
+          // untuk animasi. CSS class wins untuk display, motion menang
+          // untuk transform/opacity — no conflict.
+          <motion.div
+            key="mobile-menu"
+            className="navbar-mobile"
+            initial={shouldAnimate ? { opacity: 0, y: -8 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            exit={shouldAnimate ? { opacity: 0, y: -8 } : { opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {navItems.map((item) => (
+              <a key={item.href} href={item.href} className="navbar-mobile-link">
+                {item.label}
+              </a>
+            ))}
+            <div className="navbar-mobile-divider" />
+            {authed ? (
+              <>
+                <Link href="/portal/dashboard" className="navbar-mobile-link">
+                  Portal
+                </Link>
+                <button onClick={logout} className="navbar-mobile-link navbar-mobile-cta">
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/portal/login" className="navbar-mobile-link">
+                  Login
+                </Link>
+                <button onClick={buyPolis} className="navbar-mobile-link navbar-mobile-cta">
+                  Beli Polis →
+                </button>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }
