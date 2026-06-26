@@ -78,10 +78,7 @@ pub fn router() -> Router<AppState> {
             "/customers/:id/reset-password",
             post(reset_customer_password),
         )
-        .route(
-            "/customers/:id/resend-activation",
-            post(resend_activation),
-        )
+        .route("/customers/:id/resend-activation", post(resend_activation))
 }
 
 // ============================================================
@@ -418,11 +415,10 @@ async fn get_customer(
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
-    let claims_count: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM claims WHERE customer_id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let claims_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM claims WHERE customer_id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
     let inquiries_count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM inquiries WHERE customer_id = $1")
             .bind(id)
@@ -672,12 +668,11 @@ async fn resend_activation(
         full_name: String,
         portal_status: Option<String>,
     }
-    let target: Option<ActivationTarget> = sqlx::query_as(
-        "SELECT email, full_name, portal_status FROM customers WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let target: Option<ActivationTarget> =
+        sqlx::query_as("SELECT email, full_name, portal_status FROM customers WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
     let target = target.ok_or(AppError::NotFound("customer".into()))?;
     if target.portal_status.as_deref() != Some("PENDING") {
         return Err(AppError::Validation(

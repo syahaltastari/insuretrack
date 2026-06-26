@@ -198,8 +198,7 @@ pub async fn spawn_app() -> TestApp {
     // bypass CSRF defense yang sebenarnya diaktif di production.
     use axum::middleware::from_fn_with_state;
     use insuretrack_backend::auth::csrf_guard;
-    let router = routes::build(state.clone())
-        .layer(from_fn_with_state(state.clone(), csrf_guard));
+    let router = routes::build(state.clone()).layer(from_fn_with_state(state.clone(), csrf_guard));
 
     TestApp {
         router,

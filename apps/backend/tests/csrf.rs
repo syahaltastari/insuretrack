@@ -115,11 +115,7 @@ async fn get_requests_skip_csrf_check() {
         .body(Body::empty())
         .unwrap();
     let resp = app.router.clone().oneshot(req).await.unwrap();
-    assert_eq!(
-        resp.status(),
-        StatusCode::OK,
-        "GET harus skip CSRF guard"
-    );
+    assert_eq!(resp.status(), StatusCode::OK, "GET harus skip CSRF guard");
 }
 
 #[tokio::test]
@@ -187,8 +183,14 @@ async fn login_response_sets_both_cookies() {
     let has_csrf = cookies
         .iter()
         .any(|c| c.starts_with(&app.config.csrf_cookie_name) && !c.contains("HttpOnly"));
-    assert!(has_session, "session cookie HttpOnly harus di-set: {cookies:?}");
-    assert!(has_csrf, "CSRF cookie (non-HttpOnly) harus di-set: {cookies:?}");
+    assert!(
+        has_session,
+        "session cookie HttpOnly harus di-set: {cookies:?}"
+    );
+    assert!(
+        has_csrf,
+        "CSRF cookie (non-HttpOnly) harus di-set: {cookies:?}"
+    );
 }
 
 #[tokio::test]
@@ -249,8 +251,7 @@ async fn logout_response_clears_cookies_via_set_cookie_header() {
     let app = common::spawn_app().await;
 
     // Seed customer supaya login bisa authenticate.
-    let customer_id =
-        common::seed_customer(&app.pool, "logout-smoke@test.local", "ACTIVE").await;
+    let customer_id = common::seed_customer(&app.pool, "logout-smoke@test.local", "ACTIVE").await;
     use insuretrack_backend::auth::password;
     let hashed = password::hash_password("Test1234!").unwrap();
     sqlx::query("UPDATE customers SET password_hash = $1 WHERE id = $2")
@@ -294,7 +295,11 @@ async fn logout_response_clears_cookies_via_set_cookie_header() {
             let full = s.strip_prefix(&format!("{}=", app.config.session_cookie_name))?;
             // Split di ';' pertama (cookie attributes separator)
             let value = full.split(';').next()?.trim();
-            if value.is_empty() { None } else { Some(value.to_string()) }
+            if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            }
         })
         .expect("login harus return session cookie dengan value non-empty");
 
@@ -320,12 +325,12 @@ async fn logout_response_clears_cookies_via_set_cookie_header() {
         .iter()
         .map(|v| v.to_str().unwrap().to_string())
         .collect();
-    let has_session_clear = cookies.iter().any(|c| {
-        c.starts_with(&app.config.session_cookie_name) && c.contains("Max-Age=0")
-    });
-    let has_csrf_clear = cookies.iter().any(|c| {
-        c.starts_with(&app.config.csrf_cookie_name) && c.contains("Max-Age=0")
-    });
+    let has_session_clear = cookies
+        .iter()
+        .any(|c| c.starts_with(&app.config.session_cookie_name) && c.contains("Max-Age=0"));
+    let has_csrf_clear = cookies
+        .iter()
+        .any(|c| c.starts_with(&app.config.csrf_cookie_name) && c.contains("Max-Age=0"));
     assert!(
         has_session_clear,
         "session cookie harus di-clear (Max-Age=0): {cookies:?}"

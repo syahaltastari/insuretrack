@@ -221,7 +221,10 @@ async fn claim_admin_requires_auth() {
         .method(Method::PATCH)
         .uri(format!("/api/admin/claims/{claim_id}"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, common::cookie_with_csrf(&app, &cust_token, csrf))
+        .header(
+            header::COOKIE,
+            common::cookie_with_csrf(&app, &cust_token, csrf),
+        )
         .header("X-CSRF-Token", csrf)
         .body(Body::from(json!({ "status": "UNDER_REVIEW" }).to_string()))
         .unwrap();

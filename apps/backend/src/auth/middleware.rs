@@ -36,7 +36,10 @@ async fn read_claims(
     state: &AppState,
     cookie_name: &str,
 ) -> Result<Claims, AppError> {
-    let jar = parts.extract::<CookieJar>().await.map_err(|_| AppError::Unauthorized)?;
+    let jar = parts
+        .extract::<CookieJar>()
+        .await
+        .map_err(|_| AppError::Unauthorized)?;
     let cookie = jar.get(cookie_name).ok_or(AppError::Unauthorized)?;
     state.tokens.verify(cookie.value())
 }
@@ -69,8 +72,7 @@ impl FromRequestParts<AppState> for RequireCustomer {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let claims =
-            read_claims(parts, state, &state.config.customer_session_cookie_name).await?;
+        let claims = read_claims(parts, state, &state.config.customer_session_cookie_name).await?;
         if claims.role != Role::Customer {
             return Err(AppError::Forbidden);
         }

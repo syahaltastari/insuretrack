@@ -29,10 +29,11 @@ const TEST_CSRF: &str = "test-csrf-token";
 /// atau test tertentu.
 async fn admin_auth(app: &common::TestApp) -> (String, Uuid) {
     let token = common::admin_token(app, Role::Admin, true).await;
-    let admin_id: (Uuid,) = sqlx::query_as("SELECT id FROM admin_users WHERE username = 'testadmin'")
-        .fetch_one(&app.pool)
-        .await
-        .unwrap();
+    let admin_id: (Uuid,) =
+        sqlx::query_as("SELECT id FROM admin_users WHERE username = 'testadmin'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
     (token, admin_id.0)
 }
 
@@ -49,7 +50,10 @@ fn post_empty(app: &common::TestApp, uri: &str, token: &str) -> Request<Body> {
     Request::builder()
         .method(Method::POST)
         .uri(uri)
-        .header(header::COOKIE, common::cookie_with_csrf(app, token, TEST_CSRF))
+        .header(
+            header::COOKIE,
+            common::cookie_with_csrf(app, token, TEST_CSRF),
+        )
         .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::empty())
         .unwrap()
@@ -68,7 +72,11 @@ async fn list_customers_returns_paginated() {
     }
 
     let (status, body) = common::response_json(
-        common::send(&app, get_json(&app, "/api/admin/customers?page=1&page_size=2", &token)).await,
+        common::send(
+            &app,
+            get_json(&app, "/api/admin/customers?page=1&page_size=2", &token),
+        )
+        .await,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -105,7 +113,11 @@ async fn list_customers_filter_by_portal_status() {
     common::seed_customer(&app.pool, "a1@test.local", "ACTIVE").await;
 
     let (_, body) = common::response_json(
-        common::send(&app, get_json(&app, "/api/admin/customers?status=PENDING", &token)).await,
+        common::send(
+            &app,
+            get_json(&app, "/api/admin/customers?status=PENDING", &token),
+        )
+        .await,
     )
     .await;
     assert_eq!(body["total"], 2);
@@ -126,7 +138,11 @@ async fn list_customers_filter_by_is_active() {
     common::seed_customer(&app.pool, "y@test.local", "ACTIVE").await;
 
     let (_, body) = common::response_json(
-        common::send(&app, get_json(&app, "/api/admin/customers?active=false", &token)).await,
+        common::send(
+            &app,
+            get_json(&app, "/api/admin/customers?active=false", &token),
+        )
+        .await,
     )
     .await;
     assert_eq!(body["total"], 1);
@@ -140,7 +156,11 @@ async fn list_customers_csv_format() {
     let (token, _) = admin_auth(&app).await;
     common::seed_customer(&app.pool, "csv@test.local", "ACTIVE").await;
 
-    let resp = common::send(&app, get_json(&app, "/api/admin/customers?format=csv", &token)).await;
+    let resp = common::send(
+        &app,
+        get_json(&app, "/api/admin/customers?format=csv", &token),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let ct = resp
         .headers()
@@ -148,7 +168,9 @@ async fn list_customers_csv_format() {
         .map(|v| v.to_str().unwrap().to_string())
         .unwrap_or_default();
     assert!(ct.starts_with("text/csv"), "expected text/csv, got {ct}");
-    let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let body = String::from_utf8(bytes.to_vec()).unwrap();
     // Header row + at least 1 data row. Field headers dipisah koma,
     // jadi cek substring per-field supaya tidak rapuh terhadap urutan.
@@ -242,7 +264,15 @@ async fn deactivate_then_activate_toggles_is_active() {
     let id = common::seed_customer(&app.pool, "tog@test.local", "ACTIVE").await;
 
     // Deactivate
-    let resp = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
+    let resp = common::send(
+        &app,
+        post_empty(
+            &app,
+            &format!("/api/admin/customers/{id}/deactivate"),
+            &token,
+        ),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let row: (bool, Option<chrono::DateTime<chrono::Utc>>) =
         sqlx::query_as("SELECT is_active, deactivated_at FROM customers WHERE id = $1")
@@ -254,7 +284,11 @@ async fn deactivate_then_activate_toggles_is_active() {
     assert!(row.1.is_some(), "deactivated_at harus di-set");
 
     // Activate
-    let resp = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/activate"), &token)).await;
+    let resp = common::send(
+        &app,
+        post_empty(&app, &format!("/api/admin/customers/{id}/activate"), &token),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let row: (bool, Option<chrono::DateTime<chrono::Utc>>) =
         sqlx::query_as("SELECT is_active, deactivated_at FROM customers WHERE id = $1")
@@ -264,7 +298,10 @@ async fn deactivate_then_activate_toggles_is_active() {
             .unwrap();
     assert_eq!(row.0, true);
     // Re-activate harus clear deactivated_at
-    assert!(row.1.is_none(), "deactivated_at harus NULL setelah aktivasi ulang");
+    assert!(
+        row.1.is_none(),
+        "deactivated_at harus NULL setelah aktivasi ulang"
+    );
 }
 
 #[tokio::test]
@@ -274,10 +311,26 @@ async fn deactivate_already_inactive_returns_404() {
     let (token, _) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "ai@test.local", "ACTIVE").await;
     // First deactivate: success
-    let r1 = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
+    let r1 = common::send(
+        &app,
+        post_empty(
+            &app,
+            &format!("/api/admin/customers/{id}/deactivate"),
+            &token,
+        ),
+    )
+    .await;
     assert_eq!(r1.status(), StatusCode::NO_CONTENT);
     // Second: 404
-    let r2 = common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
+    let r2 = common::send(
+        &app,
+        post_empty(
+            &app,
+            &format!("/api/admin/customers/{id}/deactivate"),
+            &token,
+        ),
+    )
+    .await;
     assert_eq!(r2.status(), StatusCode::NOT_FOUND);
 }
 
@@ -288,7 +341,15 @@ async fn deactivate_creates_audit_log() {
     let (token, admin_id) = admin_auth(&app).await;
     let id = common::seed_customer(&app.pool, "audit@test.local", "ACTIVE").await;
 
-    common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
+    common::send(
+        &app,
+        post_empty(
+            &app,
+            &format!("/api/admin/customers/{id}/deactivate"),
+            &token,
+        ),
+    )
+    .await;
 
     let entry: (String, String, String, Option<serde_json::Value>) = sqlx::query_as(
         "SELECT actor, action, entity_type, metadata \
@@ -328,7 +389,15 @@ async fn deactivated_customer_cannot_login() {
         .unwrap();
 
     // Deactivate
-    common::send(&app, post_empty(&app, &format!("/api/admin/customers/{id}/deactivate"), &token)).await;
+    common::send(
+        &app,
+        post_empty(
+            &app,
+            &format!("/api/admin/customers/{id}/deactivate"),
+            &token,
+        ),
+    )
+    .await;
 
     // Coba login → harus 401
     let req = Request::builder()
@@ -382,12 +451,19 @@ async fn reset_password_returns_plaintext_and_works_for_login() {
     let (_, body) = common::response_json(
         common::send(
             &app,
-            post_empty(&app, &format!("/api/admin/customers/{id}/reset-password"), &token),
+            post_empty(
+                &app,
+                &format!("/api/admin/customers/{id}/reset-password"),
+                &token,
+            ),
         )
         .await,
     )
     .await;
-    let new_pw = body["new_password"].as_str().expect("new_password").to_string();
+    let new_pw = body["new_password"]
+        .as_str()
+        .expect("new_password")
+        .to_string();
     assert!(!new_pw.is_empty());
     assert!(new_pw.len() >= 8);
 
@@ -414,7 +490,11 @@ async fn reset_password_audit_stores_length_not_plaintext() {
     let (_, body) = common::response_json(
         common::send(
             &app,
-            post_empty(&app, &format!("/api/admin/customers/{id}/reset-password"), &token),
+            post_empty(
+                &app,
+                &format!("/api/admin/customers/{id}/reset-password"),
+                &token,
+            ),
         )
         .await,
     )
@@ -437,7 +517,10 @@ async fn reset_password_audit_stores_length_not_plaintext() {
     assert_eq!(meta["generated_password_length"], 16);
     // SECURITY: plaintext TIDAK boleh masuk ke audit metadata
     let meta_str = meta.to_string();
-    assert!(!meta_str.contains(&plaintext), "audit metadata leaked plaintext password");
+    assert!(
+        !meta_str.contains(&plaintext),
+        "audit metadata leaked plaintext password"
+    );
 }
 
 // ---- Resend activation ----------------------------------------------------

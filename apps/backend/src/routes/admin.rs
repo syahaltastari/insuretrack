@@ -9,15 +9,15 @@ use axum::{
     Json, Router,
 };
 use axum_extra::extract::cookie::{self, Cookie, CookieJar, SameSite};
-use time::Duration;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use time::Duration;
 use uuid::Uuid;
 
 use crate::{
     auth::{
-        build_auth_cookies, generate_csrf_token, password::verify_password,
-        OptionalAdminAuth, RequireAdmin, Role,
+        build_auth_cookies, generate_csrf_token, password::verify_password, OptionalAdminAuth,
+        RequireAdmin, Role,
     },
     dto::{DashboardStats, LoginRequest, LoginResponse},
     error::{AppError, AppResult},

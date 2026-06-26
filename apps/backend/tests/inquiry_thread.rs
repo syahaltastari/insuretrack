@@ -49,7 +49,10 @@ async fn customer_message(
         .method(Method::POST)
         .uri(format!("/api/customer/inquiries/{inquiry_id}/messages"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, common::cookie_with_csrf(app, &token, TEST_CSRF))
+        .header(
+            header::COOKIE,
+            common::cookie_with_csrf(app, &token, TEST_CSRF),
+        )
         .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::from(json!({ "message": msg }).to_string()))
         .unwrap();
@@ -63,7 +66,10 @@ async fn admin_message(app: &common::TestApp, inquiry_id: Uuid, msg: &str) -> (S
         .method(Method::POST)
         .uri(format!("/api/admin/inquiries/{inquiry_id}/messages"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, common::cookie_with_csrf(app, &token, TEST_CSRF))
+        .header(
+            header::COOKIE,
+            common::cookie_with_csrf(app, &token, TEST_CSRF),
+        )
         .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::from(json!({ "message": msg }).to_string()))
         .unwrap();
@@ -77,7 +83,10 @@ async fn admin_close(app: &common::TestApp, inquiry_id: Uuid) -> (StatusCode, Va
         .method(Method::POST)
         .uri(format!("/api/admin/inquiries/{inquiry_id}/close"))
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, common::cookie_with_csrf(app, &token, TEST_CSRF))
+        .header(
+            header::COOKIE,
+            common::cookie_with_csrf(app, &token, TEST_CSRF),
+        )
         .header("X-CSRF-Token", TEST_CSRF)
         .body(Body::from("{}"))
         .unwrap();
