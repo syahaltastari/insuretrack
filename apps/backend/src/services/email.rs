@@ -226,6 +226,11 @@ pub async fn send(
         crate::services::email_template::render(&crate::services::email_template::EmailTemplate {
             subject: email.subject,
             body_text: email.body,
+            // Selalu None di orchestrator path — caller supply plain
+            // text via `Email.body`. Field ini di-reserve untuk caller
+            // yang butuh custom HTML (extend `Email` struct untuk
+            // pass-through kalau perlu).
+            body_html: None,
             cta_text: email.cta_text,
             cta_url: email.cta_url,
         });

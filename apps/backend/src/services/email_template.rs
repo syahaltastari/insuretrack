@@ -20,6 +20,17 @@ pub struct EmailTemplate<'a> {
     /// versi text, dan di-render sebagai paragraf HTML untuk versi
     /// HTML. Whitespace (newline) di-convert jadi `<br>`.
     pub body_text: &'a str,
+    /// Optional pre-built HTML body. Kalau `Some`, di-embed di HTML
+    /// wrapper **apa adanya** — caller yang build string ini bertanggung
+    /// jawab escape semua variable. Versi text selalu dari `body_text`,
+    /// field ini diabaikan di text render.
+    ///
+    /// Pakai untuk email yang butuh layout HTML di luar paragraph
+    /// biasa (mis. invoice email dengan tabel premi, atau rich content).
+    /// Default `None` = fallback ke `body_text` → paragraph pipeline
+    /// (zero perf overhead, identik dengan behavior sebelum field ini
+    /// ditambah).
+    pub body_html: Option<&'a str>,
     /// Optional call-to-action button text (mis. "Aktifkan Akun").
     /// Kalau None, button tidak di-render.
     pub cta_text: Option<&'a str>,
@@ -81,7 +92,13 @@ fn render_text(t: &EmailTemplate) -> String {
 // -- html version --
 
 fn render_html(t: &EmailTemplate) -> String {
-    let body_html = text_to_html_paragraphs(t.body_text.trim());
+    // Body source: caller-supplied HTML (preferred kalau ada), else
+    // fall back ke plain-text → paragraph converter. text version
+    // selalu pakai body_text — body_html cuma untuk HTML render.
+    let body_html = match t.body_html {
+        Some(html) => html.to_string(),
+        None => text_to_html_paragraphs(t.body_text.trim()),
+    };
     let cta_html = match (t.cta_text, t.cta_url) {
         (Some(text), Some(url)) if !text.is_empty() && !url.is_empty() => {
             let safe_text = html_escape(text);
@@ -180,6 +197,7 @@ mod tests {
         EmailTemplate {
             subject: "Halo Dunia",
             body_text: "Ini body test.",
+            body_html: None,
             cta_text: None,
             cta_url: None,
         }
@@ -198,6 +216,7 @@ mod tests {
         let tmpl = EmailTemplate {
             subject: "sub & <test>",
             body_text: "kode <script>alert(1)</script> & \"quoted\"",
+            body_html: None,
             cta_text: None,
             cta_url: None,
         };
@@ -217,6 +236,7 @@ mod tests {
         let with_both = EmailTemplate {
             subject: "sub",
             body_text: "body",
+            body_html: None,
             cta_text: Some("Aktifkan"),
             cta_url: Some("https://example.com/activate"),
         };
@@ -228,6 +248,7 @@ mod tests {
         let only_text = EmailTemplate {
             subject: "sub",
             body_text: "body",
+            body_html: None,
             cta_text: Some("Aktifkan"),
             cta_url: None,
         };
@@ -239,6 +260,7 @@ mod tests {
         let only_url = EmailTemplate {
             subject: "sub",
             body_text: "body",
+            body_html: None,
             cta_text: None,
             cta_url: Some("https://example.com/x"),
         };
@@ -250,6 +272,7 @@ mod tests {
         let empty_cta = EmailTemplate {
             subject: "sub",
             body_text: "body",
+            body_html: None,
             cta_text: Some(""),
             cta_url: Some("https://example.com/x"),
         };
@@ -271,6 +294,7 @@ mod tests {
         let tmpl = EmailTemplate {
             subject: "kosong",
             body_text: "",
+            body_html: None,
             cta_text: None,
             cta_url: None,
         };
@@ -282,5 +306,47 @@ mod tests {
         // mengirim body kosong, tapi render() tidak panic).
         assert!(!r.html.is_empty());
         assert!(!r.text.is_empty());
+    }
+
+    #[test]
+    fn body_html_overrides_body_text_in_html_version() {
+        // Caller-supplied HTML muncul apa adanya di HTML output —
+        // TIDAK melalui paragraph converter. body_text diabaikan
+        // untuk HTML version (text version tetap pakai body_text).
+        let custom = r#"<table style="width:100%;"><tr><td>Rp 100.000</td></tr></table>"#;
+        let tmpl = EmailTemplate {
+            subject: "Invoice",
+            body_text: "Lihat invoice terlampir.",
+            body_html: Some(custom),
+            cta_text: None,
+            cta_url: None,
+        };
+        let r = render(&tmpl);
+        // Custom HTML muncul apa adanya (tidak di-wrap jadi <p>).
+        assert!(r.html.contains(custom));
+        // body_text TIDAK muncul di HTML version ketika body_html di-supply.
+        assert!(!r.html.contains("Lihat invoice terlampir."));
+        // Text version tetap pakai body_text (escape rule biasa).
+        assert!(r.text.contains("Lihat invoice terlampir."));
+    }
+
+    #[test]
+    fn body_html_does_not_affect_cta_or_subject() {
+        // CTA button + subject tetap di-render normal walaupun
+        // body_html supplied — cuma body section yang pakai html.
+        let tmpl = EmailTemplate {
+            subject: "Halo",
+            body_text: "fallback",
+            body_html: Some(r#"<div>custom</div>"#),
+            cta_text: Some("Aksi"),
+            cta_url: Some("https://example.com/x"),
+        };
+        let r = render(&tmpl);
+        // CTA tetap render.
+        assert!(r.html.contains(r#"href="https://example.com/x""#));
+        // Subject tetap di-render.
+        assert!(r.html.contains("Halo"));
+        // Custom body muncul.
+        assert!(r.html.contains("<div>custom</div>"));
     }
 }
