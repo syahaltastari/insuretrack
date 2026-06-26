@@ -18,8 +18,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::str::FromStr;
@@ -37,14 +37,8 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route(
-            "/underwriting/:product_code/config",
-            get(get_config),
-        )
-        .route(
-            "/underwriting/:reg_no/submit",
-            post(submit_responses),
-        )
+        .route("/underwriting/:product_code/config", get(get_config))
+        .route("/underwriting/:reg_no/submit", post(submit_responses))
 }
 
 // ============================================================
@@ -71,26 +65,50 @@ async fn get_config(
     State(state): State<AppState>,
     Path(product_code): Path<String>,
 ) -> AppResult<Json<ConfigResponse>> {
-    let row: Option<(Uuid, String, bool, i16, i16, bool, Option<Decimal>, Option<Decimal>, bool, bool)> =
-        sqlx::query_as(
-            r#"
+    let row: Option<(
+        Uuid,
+        String,
+        bool,
+        i16,
+        i16,
+        bool,
+        Option<Decimal>,
+        Option<Decimal>,
+        bool,
+        bool,
+    )> = sqlx::query_as(
+        r#"
             SELECT id, product_code, enabled, age_min, age_max,
                    require_bmi, bmi_min, bmi_max,
                    require_smoker, require_preexisting
               FROM product_underwriting_configs
              WHERE product_code = $1
             "#,
-        )
-        .bind(&product_code)
-        .fetch_optional(&state.pool)
-        .await?;
+    )
+    .bind(&product_code)
+    .fetch_optional(&state.pool)
+    .await?;
 
-    let (_, _, enabled, age_min, age_max, require_bmi, bmi_min, bmi_max, require_smoker, require_preexisting) =
-        row.ok_or_else(|| AppError::NotFound(format!("no underwriting config for product {product_code}")))?;
+    let (
+        _,
+        _,
+        enabled,
+        age_min,
+        age_max,
+        require_bmi,
+        bmi_min,
+        bmi_max,
+        require_smoker,
+        require_preexisting,
+    ) = row.ok_or_else(|| {
+        AppError::NotFound(format!("no underwriting config for product {product_code}"))
+    })?;
 
     if !enabled {
         // 404 by convention — caller treats as "product tidak butuh underwriting".
-        return Err(AppError::NotFound(format!("underwriting disabled for product {product_code}")));
+        return Err(AppError::NotFound(format!(
+            "underwriting disabled for product {product_code}"
+        )));
     }
 
     Ok(Json(ConfigResponse {
@@ -156,9 +174,8 @@ async fn submit_responses(
     .fetch_optional(&state.pool)
     .await?;
 
-    let (reg_id, product_code, current_status) = reg_row.ok_or_else(|| {
-        AppError::NotFound(format!("registration {reg_no} not found"))
-    })?;
+    let (reg_id, product_code, current_status) =
+        reg_row.ok_or_else(|| AppError::NotFound(format!("registration {reg_no} not found")))?;
 
     // Reject kalau underwriting udah selesai (avoid double-submit
     // accidental). Customer mau re-do harus contact admin.
@@ -341,10 +358,7 @@ async fn load_config(
     })
 }
 
-async fn load_tiers(
-    pool: &sqlx::PgPool,
-    product_code: &str,
-) -> AppResult<Vec<LoadingTier>> {
+async fn load_tiers(pool: &sqlx::PgPool, product_code: &str) -> AppResult<Vec<LoadingTier>> {
     let rows = sqlx::query(
         r#"
         SELECT id, product_code, tier_code, tier_name,
@@ -365,7 +379,9 @@ async fn load_tiers(
             product_code: row.try_get("product_code").unwrap_or_default(),
             tier_code: row.try_get("tier_code").unwrap_or_default(),
             tier_name: row.try_get("tier_name").unwrap_or_default(),
-            premium_multiplier: row.try_get("premium_multiplier").unwrap_or(Decimal::from(1)),
+            premium_multiplier: row
+                .try_get("premium_multiplier")
+                .unwrap_or(Decimal::from(1)),
             criteria: row.try_get("criteria").unwrap_or(serde_json::json!({})),
             display_order: row.try_get("display_order").unwrap_or(99),
         })

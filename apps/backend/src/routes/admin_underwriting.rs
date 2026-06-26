@@ -22,8 +22,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -32,20 +32,27 @@ use crate::{
     domain::underwriting::RiskTier,
     error::{AppError, AppResult},
     repo::{Page, PageQuery},
-    services::{
-        audit::{write as audit_write, AuditEntry},
-    },
+    services::audit::{write as audit_write, AuditEntry},
     state::AppState,
 };
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/underwriting/configs", get(list_configs))
-        .route("/underwriting/configs/:product_code", get(get_config).put(update_config))
-        .route("/underwriting/tiers/:product_code", get(list_tiers).put(replace_tiers))
+        .route(
+            "/underwriting/configs/:product_code",
+            get(get_config).put(update_config),
+        )
+        .route(
+            "/underwriting/tiers/:product_code",
+            get(list_tiers).put(replace_tiers),
+        )
         .route("/underwriting/responses", get(list_responses))
         .route("/underwriting/responses/:id", get(get_response))
-        .route("/underwriting/responses/:id/override", post(override_response))
+        .route(
+            "/underwriting/responses/:id/override",
+            post(override_response),
+        )
 }
 
 // ============================================================
@@ -192,7 +199,9 @@ async fn update_config(
         .map(|v| Decimal::from_f64(v).unwrap_or_default())
         .or(existing.bmi_max);
     let require_smoker = req.require_smoker.unwrap_or(existing.require_smoker);
-    let require_preexisting = req.require_preexisting.unwrap_or(existing.require_preexisting);
+    let require_preexisting = req
+        .require_preexisting
+        .unwrap_or(existing.require_preexisting);
 
     // Sanity: age_min <= age_max.
     if age_min > age_max {
@@ -344,7 +353,9 @@ async fn replace_tiers(
 ) -> AppResult<StatusCode> {
     // Validate inputs.
     if req.tiers.is_empty() {
-        return Err(AppError::Validation("tiers array cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "tiers array cannot be empty".to_string(),
+        ));
     }
     for t in &req.tiers {
         if RiskTier::parse(&t.tier_code).is_none() {
@@ -639,7 +650,8 @@ async fn override_response(
     .bind(id)
     .fetch_optional(&state.pool)
     .await?;
-    let (_, product_code, _) = row.ok_or_else(|| AppError::NotFound(format!("response not found: {id}")))?;
+    let (_, product_code, _) =
+        row.ok_or_else(|| AppError::NotFound(format!("response not found: {id}")))?;
 
     // Lookup multiplier dari tier definition (admin's preset tiers).
     let mult_dec: Option<Decimal> = sqlx::query_scalar(

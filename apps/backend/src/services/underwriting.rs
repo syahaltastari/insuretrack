@@ -24,9 +24,7 @@
 //! Semua service functions pure (no DB, no async). DB access di
 //! `routes/underwriting.rs` layer yang panggil service ini.
 
-use crate::domain::underwriting::{
-    ProductUnderwritingConfig, ResponseValidationError, RiskTier,
-};
+use crate::domain::underwriting::{ProductUnderwritingConfig, ResponseValidationError, RiskTier};
 
 /// Compute BMI dari tinggi (cm) + berat (kg). Round ke 1 desimal.
 ///
@@ -225,15 +223,24 @@ fn matches_criteria(
                 bmi.map(|b| b >= min && b <= max).unwrap_or(false)
             }
             ("bmi", "gt") => {
-                let v = cond_obj.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let v = cond_obj
+                    .get("value")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 bmi.map(|b| b > v).unwrap_or(false)
             }
             ("bmi", "lt") => {
-                let v = cond_obj.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let v = cond_obj
+                    .get("value")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 bmi.map(|b| b < v).unwrap_or(false)
             }
             ("is_smoker", "eq") => {
-                let v = cond_obj.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+                let v = cond_obj
+                    .get("value")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 is_smoker.map(|s| s == v).unwrap_or(false)
             }
             _ => false,
@@ -257,10 +264,17 @@ fn matches_criteria(
 }
 
 /// Build human-readable reason text untuk UI display.
-fn build_reason(tier: RiskTier, age: Option<i16>, bmi: Option<f64>, smoker: Option<bool>) -> String {
+fn build_reason(
+    tier: RiskTier,
+    age: Option<i16>,
+    bmi: Option<f64>,
+    smoker: Option<bool>,
+) -> String {
     let mut parts = Vec::new();
     match tier {
-        RiskTier::Declined => parts.push("Profil di luar jangkauan yang dapat diasuransikan".to_string()),
+        RiskTier::Declined => {
+            parts.push("Profil di luar jangkauan yang dapat diasuransikan".to_string())
+        }
         RiskTier::HeavilyLoaded => {
             if smoker == Some(true) {
                 parts.push("perokok".to_string());
@@ -318,8 +332,8 @@ mod tests {
             age_min: 18,
             age_max: 65,
             require_bmi: true,
-            bmi_min: Some(Decimal::new(185, 1)),  // 18.5
-            bmi_max: Some(Decimal::new(300, 1)),  // 30.0
+            bmi_min: Some(Decimal::new(185, 1)), // 18.5
+            bmi_max: Some(Decimal::new(300, 1)), // 30.0
             require_smoker: true,
             require_preexisting: true,
         }
@@ -328,7 +342,10 @@ mod tests {
     #[test]
     fn bmi_computation_normal() {
         let bmi = compute_bmi(170.0, 70.0).unwrap();
-        assert!((bmi - 24.2).abs() < 0.1, "BMI for 170cm/70kg should be ~24.2, got {bmi}");
+        assert!(
+            (bmi - 24.2).abs() < 0.1,
+            "BMI for 170cm/70kg should be ~24.2, got {bmi}"
+        );
     }
 
     #[test]
@@ -339,14 +356,28 @@ mod tests {
     #[test]
     fn age_out_of_range_rejected() {
         let cfg = config_default();
-        let err = validate_responses(&cfg, Some(70), Some(170.0), Some(70.0), Some(false), Some(false));
+        let err = validate_responses(
+            &cfg,
+            Some(70),
+            Some(170.0),
+            Some(70.0),
+            Some(false),
+            Some(false),
+        );
         assert!(matches!(err, Some(ResponseValidationError::Age { .. })));
     }
 
     #[test]
     fn all_valid_passes() {
         let cfg = config_default();
-        let err = validate_responses(&cfg, Some(30), Some(170.0), Some(70.0), Some(false), Some(false));
+        let err = validate_responses(
+            &cfg,
+            Some(30),
+            Some(170.0),
+            Some(70.0),
+            Some(false),
+            Some(false),
+        );
         assert!(err.is_none(), "Expected None, got {:?}", err);
     }
 
