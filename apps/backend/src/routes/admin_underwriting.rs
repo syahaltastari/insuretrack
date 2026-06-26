@@ -262,7 +262,7 @@ async fn update_config(
 // Tiers CRUD
 // ============================================================
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct TierRow {
     id: Uuid,
     product_code: String,
@@ -273,11 +273,40 @@ struct TierRow {
     display_order: i16,
 }
 
+// `rust_decimal` di-konfigurasi `serde-with-str` (lihat Cargo.toml) supaya
+// presisi terjaga melewati Postgres NUMERIC — tapi itu artinya Decimal
+// serialize sebagai JSON string, bukan number. Frontend (`.toFixed()`)
+// expect number, jadi convert eksplisit di response DTO.
+#[derive(Debug, Serialize)]
+struct TierResponse {
+    id: Uuid,
+    product_code: String,
+    tier_code: String,
+    tier_name: String,
+    premium_multiplier: f64,
+    criteria: serde_json::Value,
+    display_order: i16,
+}
+
+impl From<TierRow> for TierResponse {
+    fn from(r: TierRow) -> Self {
+        Self {
+            id: r.id,
+            product_code: r.product_code,
+            tier_code: r.tier_code,
+            tier_name: r.tier_name,
+            premium_multiplier: r.premium_multiplier.to_string().parse().unwrap_or(1.0),
+            criteria: r.criteria,
+            display_order: r.display_order,
+        }
+    }
+}
+
 async fn list_tiers(
     State(state): State<AppState>,
     RequireAdmin(_admin): RequireAdmin,
     Path(product_code): Path<String>,
-) -> AppResult<Json<Vec<TierRow>>> {
+) -> AppResult<Json<Vec<TierResponse>>> {
     let rows: Vec<TierRow> = sqlx::query_as(
         r#"
         SELECT id, product_code, tier_code, tier_name,
@@ -290,7 +319,7 @@ async fn list_tiers(
     .bind(&product_code)
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(Into::into).collect()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -394,7 +423,7 @@ async fn replace_tiers(
 // Responses list + detail + override
 // ============================================================
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow)]
 struct ResponseRow {
     id: Uuid,
     registration_id: Uuid,
@@ -419,11 +448,70 @@ struct ResponseRow {
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
+// Lihat komentar di `TierResponse` — Decimal serialize sebagai string
+// dengan `serde-with-str`, frontend expect number (`.toFixed()`).
+#[derive(Debug, Serialize)]
+struct ResponseDto {
+    id: Uuid,
+    registration_id: Uuid,
+    registration_no: String,
+    customer_name: Option<String>,
+    product: String,
+    age: Option<i16>,
+    height_cm: Option<f64>,
+    weight_kg: Option<f64>,
+    bmi: Option<f64>,
+    is_smoker: Option<bool>,
+    has_preexisting: Option<bool>,
+    risk_tier: String,
+    premium_multiplier: f64,
+    decision: String,
+    decision_reason: String,
+    overridden_by: Option<Uuid>,
+    overridden_at: Option<chrono::DateTime<chrono::Utc>>,
+    override_tier: Option<String>,
+    override_multiplier: Option<f64>,
+    override_notes: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+fn decimal_to_f64(d: Decimal) -> f64 {
+    d.to_string().parse().unwrap_or(0.0)
+}
+
+impl From<ResponseRow> for ResponseDto {
+    fn from(r: ResponseRow) -> Self {
+        Self {
+            id: r.id,
+            registration_id: r.registration_id,
+            registration_no: r.registration_no,
+            customer_name: r.customer_name,
+            product: r.product,
+            age: r.age,
+            height_cm: r.height_cm.map(decimal_to_f64),
+            weight_kg: r.weight_kg.map(decimal_to_f64),
+            bmi: r.bmi.map(decimal_to_f64),
+            is_smoker: r.is_smoker,
+            has_preexisting: r.has_preexisting,
+            risk_tier: r.risk_tier,
+            premium_multiplier: decimal_to_f64(r.premium_multiplier),
+            decision: r.decision,
+            decision_reason: r.decision_reason,
+            overridden_by: r.overridden_by,
+            overridden_at: r.overridden_at,
+            override_tier: r.override_tier,
+            override_multiplier: r.override_multiplier.map(decimal_to_f64),
+            override_notes: r.override_notes,
+            created_at: r.created_at,
+        }
+    }
+}
+
 async fn list_responses(
     State(state): State<AppState>,
     RequireAdmin(_admin): RequireAdmin,
     Query(q): Query<PageQuery>,
-) -> AppResult<Json<Page<ResponseRow>>> {
+) -> AppResult<Json<Page<ResponseDto>>> {
     let product_filter = q.product.clone();
     let status_filter = q.status.clone();
     let offset = q.offset();
@@ -475,7 +563,7 @@ async fn list_responses(
     .await?;
 
     Ok(Json(Page {
-        data: rows,
+        data: rows.into_iter().map(Into::into).collect(),
         page: q.page(),
         page_size: q.page_size(),
         total: total.0,
@@ -486,7 +574,7 @@ async fn get_response(
     State(state): State<AppState>,
     RequireAdmin(_admin): RequireAdmin,
     Path(id): Path<Uuid>,
-) -> AppResult<Json<ResponseRow>> {
+) -> AppResult<Json<ResponseDto>> {
     let row: Option<ResponseRow> = sqlx::query_as(
         r#"
         SELECT ur.id, ur.registration_id, r.registration_no,
@@ -509,7 +597,7 @@ async fn get_response(
     .fetch_optional(&state.pool)
     .await?;
     let row = row.ok_or_else(|| AppError::NotFound(format!("response not found: {id}")))?;
-    Ok(Json(row))
+    Ok(Json(row.into()))
 }
 
 #[derive(Debug, Deserialize)]

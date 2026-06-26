@@ -3,13 +3,16 @@
 //!   RequireAdmin       : 401 jika tanpa/expired token, 403 jika role != admin
 //!   RequireSuperAdmin  : 401 + 403 admin, 403 tambahan jika bukan super_admin
 //!   RequireCustomer    : 401 jika tanpa/expired token, 403 jika role != customer
-//!   OptionalAuth       : decode token jika ada, return None kalau tidak
+//!   OptionalAdminAuth / OptionalCustomerAuth : decode token jika ada,
+//!                        return None kalau tidak
 //!
-//! `Authenticated` adalah helper yang expose `Claims` ke handler.
-//!
-//! Token dibaca dari cookie `Config::session_cookie_name` (HttpOnly JWT
-//! di-set saat login via `Set-Cookie`). `Authorization: Bearer` tidak
-//! lagi dibaca — cookie-only untuk menutup XSS token-theft.
+//! Token dibaca dari cookie role-specific (`Config::admin_session_cookie_name`
+//! atau `Config::customer_session_cookie_name`) — BUKAN satu nama shared.
+//! Admin dan customer punya cookie terpisah supaya browser tidak kirim
+//! JWT admin ke endpoint customer (atau sebaliknya) hanya karena
+//! keduanya di host yang sama (`localhost`) — cookie tidak di-scope per
+//! port. Lihat doc-comment di `Config` untuk detail. `Authorization:
+//! Bearer` tidak lagi dibaca — cookie-only untuk menutup XSS token-theft.
 
 use axum::{
     async_trait,
@@ -25,44 +28,17 @@ use crate::{
     state::AppState,
 };
 
-pub struct Authenticated(pub Claims);
-
-#[async_trait]
-impl FromRequestParts<AppState> for Authenticated {
-    type Rejection = AppError;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let jar = parts.extract::<CookieJar>().await.map_err(|_| AppError::Unauthorized)?;
-        let cookie = jar
-            .get(&state.config.session_cookie_name)
-            .ok_or(AppError::Unauthorized)?;
-        let claims = state.tokens.verify(cookie.value())?;
-        Ok(Self(claims))
-    }
-}
-
-pub struct OptionalAuth(pub Option<Claims>);
-
-#[async_trait]
-impl FromRequestParts<AppState> for OptionalAuth {
-    type Rejection = AppError;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let jar = match parts.extract::<CookieJar>().await {
-            Ok(j) => j,
-            Err(_) => return Ok(Self(None)),
-        };
-        let claims = jar
-            .get(&state.config.session_cookie_name)
-            .and_then(|c| state.tokens.verify(c.value()).ok());
-        Ok(Self(claims))
-    }
+/// Baca + verify JWT dari cookie `cookie_name`. Dipakai oleh extractor
+/// role-specific di bawah supaya admin/customer tidak baca cookie yang
+/// sama.
+async fn read_claims(
+    parts: &mut Parts,
+    state: &AppState,
+    cookie_name: &str,
+) -> Result<Claims, AppError> {
+    let jar = parts.extract::<CookieJar>().await.map_err(|_| AppError::Unauthorized)?;
+    let cookie = jar.get(cookie_name).ok_or(AppError::Unauthorized)?;
+    state.tokens.verify(cookie.value())
 }
 
 pub struct RequireAdmin(pub Claims);
@@ -75,7 +51,7 @@ impl FromRequestParts<AppState> for RequireAdmin {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let Authenticated(claims) = Authenticated::from_request_parts(parts, state).await?;
+        let claims = read_claims(parts, state, &state.config.admin_session_cookie_name).await?;
         if claims.role != Role::Admin {
             return Err(AppError::Forbidden);
         }
@@ -93,10 +69,45 @@ impl FromRequestParts<AppState> for RequireCustomer {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let Authenticated(claims) = Authenticated::from_request_parts(parts, state).await?;
+        let claims =
+            read_claims(parts, state, &state.config.customer_session_cookie_name).await?;
         if claims.role != Role::Customer {
             return Err(AppError::Forbidden);
         }
+        Ok(Self(claims))
+    }
+}
+
+pub struct OptionalAdminAuth(pub Option<Claims>);
+
+#[async_trait]
+impl FromRequestParts<AppState> for OptionalAdminAuth {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let claims = read_claims(parts, state, &state.config.admin_session_cookie_name)
+            .await
+            .ok();
+        Ok(Self(claims))
+    }
+}
+
+pub struct OptionalCustomerAuth(pub Option<Claims>);
+
+#[async_trait]
+impl FromRequestParts<AppState> for OptionalCustomerAuth {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let claims = read_claims(parts, state, &state.config.customer_session_cookie_name)
+            .await
+            .ok();
         Ok(Self(claims))
     }
 }

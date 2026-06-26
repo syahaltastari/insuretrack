@@ -1,10 +1,13 @@
 // Edge middleware: SSR-side auth handling untuk /portal/*.
 //
-// Setelah migrasi ke httpOnly cookie, token JWT ada di cookie
-// `insuretrack_session`. Cookie HttpOnly → tidak bisa di-baca dari JS
-// (tidak di document.cookie). Middleware ini cek NAMA cookie ada
-// (presence) sebelum pass ke page. Page-level portal shell akan
-// verify role via backend call.
+// Setelah migrasi ke httpOnly cookie, token JWT ada di cookie customer
+// session (nama TERPISAH dari cookie admin — lihat doc-comment di
+// `packages/api-client/src/auth.ts` untuk alasan: cookie di-scope per
+// host bukan per port, jadi nama yang sama collide dengan admin app di
+// port lain). Cookie HttpOnly → tidak bisa di-baca dari JS (tidak di
+// document.cookie). Middleware ini cek NAMA cookie ada (presence)
+// sebelum pass ke page. Page-level portal shell akan verify role via
+// backend call.
 //
 // Path publik (`/portal/login`, `/portal/register`, `/portal/activate`,
 // `/portal/forgot-password`) di-skip dari auth-required check. Kalau
@@ -22,7 +25,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE_NAME =
-  process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "insuretrack_session";
+  process.env.NEXT_PUBLIC_CUSTOMER_SESSION_COOKIE_NAME ?? "insuretrack_customer_session";
 
 // Path yang TIDAK butuh auth + path yang auth-aware (redirect ke dashboard
 // kalau user sudah login).

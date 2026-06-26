@@ -58,10 +58,10 @@ export default function UnderwritingDetailPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await apiFetch<{ data: ResponseDetail }>(
+        const res = await apiFetch<ResponseDetail>(
           `/admin/underwriting/responses/${id}`,
         );
-        setData(res.data);
+        setData(res);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Gagal memuat detail");
       } finally {
@@ -86,10 +86,10 @@ export default function UnderwritingDetailPage() {
         }),
       });
       // Refresh data.
-      const res = await apiFetch<{ data: ResponseDetail }>(
+      const res = await apiFetch<ResponseDetail>(
         `/admin/underwriting/responses/${id}`,
       );
-      setData(res.data);
+      setData(res);
       setOverrideNotes("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal submit override");

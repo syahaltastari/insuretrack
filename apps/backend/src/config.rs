@@ -48,13 +48,26 @@ pub struct Config {
     pub port: u16,
 
     // === Auth cookies (cookie-only, no Authorization header) ===
-    /// Name untuk session cookie (default `insuretrack_session`). JWT
-    /// yang di-issue saat login di-set ke cookie ini dengan HttpOnly+Secure+SameSite=Lax.
-    pub session_cookie_name: String,
-    /// Name untuk CSRF token cookie (default `insuretrack_csrf`). Tidak
-    /// HttpOnly — JS baca via `document.cookie` lalu kirim sebagai
-    /// header `X-CSRF-Token` di setiap request mutating.
-    pub csrf_cookie_name: String,
+    //
+    // Admin dan customer punya cookie name TERPISAH (bukan satu nama
+    // shared). Alasan: cookie di-scope per host, BUKAN per port — browser
+    // sama-sama kirim cookie `localhost` ke `localhost:3000` (portal) dan
+    // `localhost:3001` (admin) kalau nama+domain sama. Dengan nama sama,
+    // login admin lalu buka portal di browser yang sama akan kirim JWT
+    // role=admin ke `/api/customer/me` → middleware correctly reject
+    // (403 Forbidden — role mismatch), tapi user lihat itu sebagai "auth
+    // rusak". Production subdomain (`Domain=.insuretrack.id`) punya bug
+    // yang sama persis karena Domain cookie juga ignore subdomain
+    // (portal.X dan admin.X share parent domain cookie jar). Nama
+    // terpisah menghilangkan collision di kedua skenario.
+    /// Session cookie untuk admin login (default `insuretrack_admin_session`).
+    pub admin_session_cookie_name: String,
+    /// CSRF companion cookie untuk admin (default `insuretrack_admin_csrf`).
+    pub admin_csrf_cookie_name: String,
+    /// Session cookie untuk customer login (default `insuretrack_customer_session`).
+    pub customer_session_cookie_name: String,
+    /// CSRF companion cookie untuk customer (default `insuretrack_customer_csrf`).
+    pub customer_csrf_cookie_name: String,
     /// Optional Domain attribute untuk kedua cookie. Kosongkan untuk
     /// host-only cookie (default, cukup untuk dev). Di production dengan
     /// subdomain (`api.X`, `portal.X`, `admin.X`) set ke `.X` agar cookie
@@ -75,6 +88,23 @@ pub struct Config {
 }
 
 impl Config {
+    /// Pilih session cookie name yang sesuai role. Lihat doc-comment di
+    /// field `admin_session_cookie_name` untuk alasan kenapa terpisah.
+    pub fn session_cookie_name(&self, role: crate::auth::Role) -> &str {
+        match role {
+            crate::auth::Role::Admin => &self.admin_session_cookie_name,
+            crate::auth::Role::Customer => &self.customer_session_cookie_name,
+        }
+    }
+
+    /// Pilih CSRF cookie name yang sesuai role.
+    pub fn csrf_cookie_name(&self, role: crate::auth::Role) -> &str {
+        match role {
+            crate::auth::Role::Admin => &self.admin_csrf_cookie_name,
+            crate::auth::Role::Customer => &self.customer_csrf_cookie_name,
+        }
+    }
+
     pub fn from_env() -> anyhow::Result<Self> {
         let app_base_url =
             env::var("APP_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
@@ -162,10 +192,14 @@ impl Config {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8080),
-            session_cookie_name: env::var("SESSION_COOKIE_NAME")
-                .unwrap_or_else(|_| "insuretrack_session".to_string()),
-            csrf_cookie_name: env::var("CSRF_COOKIE_NAME")
-                .unwrap_or_else(|_| "insuretrack_csrf".to_string()),
+            admin_session_cookie_name: env::var("ADMIN_SESSION_COOKIE_NAME")
+                .unwrap_or_else(|_| "insuretrack_admin_session".to_string()),
+            admin_csrf_cookie_name: env::var("ADMIN_CSRF_COOKIE_NAME")
+                .unwrap_or_else(|_| "insuretrack_admin_csrf".to_string()),
+            customer_session_cookie_name: env::var("CUSTOMER_SESSION_COOKIE_NAME")
+                .unwrap_or_else(|_| "insuretrack_customer_session".to_string()),
+            customer_csrf_cookie_name: env::var("CUSTOMER_CSRF_COOKIE_NAME")
+                .unwrap_or_else(|_| "insuretrack_customer_csrf".to_string()),
             cookie_domain: env::var("COOKIE_DOMAIN").unwrap_or_default(),
             cookie_secure: env::var("COOKIE_SECURE")
                 .ok()

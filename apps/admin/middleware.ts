@@ -11,8 +11,11 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 
+// Cookie admin TERPISAH dari cookie customer (lihat doc-comment di
+// `packages/api-client/src/auth.ts`) — kalau pakai nama yang sama, cookie
+// `localhost` dari portal (:3000) ikut terbaca di sini juga.
 const SESSION_COOKIE_NAME =
-  process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "insuretrack_session";
+  process.env.NEXT_PUBLIC_ADMIN_SESSION_COOKIE_NAME ?? "insuretrack_admin_session";
 
 const PUBLIC_ADMIN_PATHS = new Set<string>([
   "/admin/login",

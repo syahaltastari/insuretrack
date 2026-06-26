@@ -4,7 +4,7 @@ import { Footer } from "@/components/Footer";
 import { MotionProvider } from "@/components/motion-provider";
 
 const SESSION_COOKIE_NAME =
-  process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "insuretrack_session";
+  process.env.NEXT_PUBLIC_CUSTOMER_SESSION_COOKIE_NAME ?? "insuretrack_customer_session";
 
 // v2: force-dynamic untuk skip static prerender. Next.js 15.0.3 + React 19
 // punya incompatibility saat static-generate marketing pages (error:
@@ -25,7 +25,9 @@ export const dynamic = "force-dynamic";
  * SSR-side auth detection: `cookies()` baca request cookie langsung di
  * server (HttpOnly visible di sini). Pass `initialAuthed` ke Navbar
  * supaya initial render sudah correct (no flash "Login" → "Portal").
- * Cookie name "insuretrack_session" di-set oleh backend saat login.
+ * Cookie name "insuretrack_customer_session" di-set oleh backend saat
+ * login customer (terpisah dari cookie admin — lihat doc-comment di
+ * `packages/api-client/src/auth.ts`).
  *
  * Dipakai oleh:
  *   - app/(marketing)/page.tsx        → /

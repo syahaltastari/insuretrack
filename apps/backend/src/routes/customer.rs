@@ -33,7 +33,7 @@ use uuid::Uuid;
 use crate::{
     auth::{
         build_auth_cookies, generate_csrf_token, password::hash_password,
-        password::verify_password, OptionalAuth, RequireCustomer, Role,
+        password::verify_password, OptionalCustomerAuth, RequireCustomer, Role,
     },
     domain::{
         claim::can_transition as claim_can_transition,
@@ -146,7 +146,7 @@ async fn activate(
         SESSION_TTL,
     )?;
     let csrf = generate_csrf_token();
-    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
+    let jar = build_auth_cookies(&state.config, Role::Customer, token, csrf, SESSION_TTL);
 
     let body = Json(LoginResponse {
         role: "customer".to_string(),
@@ -202,7 +202,7 @@ async fn login(
         SESSION_TTL,
     )?;
     let csrf = generate_csrf_token();
-    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
+    let jar = build_auth_cookies(&state.config, Role::Customer, token, csrf, SESSION_TTL);
 
     audit_write(
         &state.pool,
@@ -229,7 +229,7 @@ async fn login(
 /// FE call ini saat user klik "Logout" di menu, lalu
 /// `router.replace("/portal/login")`.
 ///
-/// IDEMPOTENT: pakai `OptionalAuth` bukan `RequireCustomer` supaya
+/// IDEMPOTENT: pakai `OptionalCustomerAuth` bukan `RequireCustomer` supaya
 /// logout SELALU succeed (204) + clear cookies, bahkan kalau session
 /// cookie absent / expired / role mismatch. Sebelumnya pakai
 /// `RequireCustomer` — kalau session invalid, extractor return 401/403,
@@ -239,7 +239,7 @@ async fn login(
 /// (no audit).
 async fn logout(
     State(state): State<AppState>,
-    OptionalAuth(maybe_claims): OptionalAuth,
+    OptionalCustomerAuth(maybe_claims): OptionalCustomerAuth,
 ) -> AppResult<Response> {
     if let Some(claims) = maybe_claims {
         if claims.role == Role::Customer {
@@ -269,18 +269,24 @@ async fn logout(
     // Regression: kalau lupa append headers, browser tidak hapus
     // session → user tetap authed setelah klik logout.
     let mut resp = (StatusCode::NO_CONTENT, ()).into_response();
-    let clear_session = Cookie::build((state.config.session_cookie_name.clone(), String::new()))
-        .path("/")
-        .max_age(Duration::ZERO)
-        .same_site(SameSite::Lax)
-        .http_only(true)
-        .build();
-    let clear_csrf = Cookie::build((state.config.csrf_cookie_name.clone(), String::new()))
-        .path("/")
-        .max_age(Duration::ZERO)
-        .same_site(SameSite::Lax)
-        .http_only(false)
-        .build();
+    let clear_session = Cookie::build((
+        state.config.customer_session_cookie_name.clone(),
+        String::new(),
+    ))
+    .path("/")
+    .max_age(Duration::ZERO)
+    .same_site(SameSite::Lax)
+    .http_only(true)
+    .build();
+    let clear_csrf = Cookie::build((
+        state.config.customer_csrf_cookie_name.clone(),
+        String::new(),
+    ))
+    .path("/")
+    .max_age(Duration::ZERO)
+    .same_site(SameSite::Lax)
+    .http_only(false)
+    .build();
     for cookie in [clear_session, clear_csrf] {
         if let Ok(value) = cookie.encoded().to_string().parse() {
             resp.headers_mut().append(header::SET_COOKIE, value);
@@ -415,7 +421,7 @@ async fn password_reset_consume(
         SESSION_TTL,
     )?;
     let csrf = generate_csrf_token();
-    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
+    let jar = build_auth_cookies(&state.config, Role::Customer, token, csrf, SESSION_TTL);
 
     let body = Json(LoginResponse {
         role: "customer".to_string(),

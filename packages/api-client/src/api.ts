@@ -46,17 +46,25 @@ export class ApiError extends Error {
   }
 }
 
-// CSRF cookie name — di-bake ke client bundle via NEXT_PUBLIC_* env, atau
-// fallback ke default. Sinkron dengan `auth.ts` SESSION_COOKIE_NAME.
-const CSRF_COOKIE_NAME =
+// CSRF cookie name — admin & customer pakai nama TERPISAH (lihat backend
+// `Config::admin_csrf_cookie_name` doc-comment untuk alasan: cookie
+// di-scope per host, bukan per port, jadi nama yang sama collide antara
+// localhost:3000 (portal) dan localhost:3001 (admin)). Override via
+// NEXT_PUBLIC_* env kalau perlu; default sudah match backend default.
+const ADMIN_CSRF_COOKIE_NAME =
   (typeof process !== "undefined" &&
-    process.env.NEXT_PUBLIC_CSRF_COOKIE_NAME) ||
-  "insuretrack_csrf";
+    process.env.NEXT_PUBLIC_ADMIN_CSRF_COOKIE_NAME) ||
+  "insuretrack_admin_csrf";
 
-const SESSION_COOKIE_NAME =
+const CUSTOMER_CSRF_COOKIE_NAME =
   (typeof process !== "undefined" &&
-    process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME) ||
-  "insuretrack_session";
+    process.env.NEXT_PUBLIC_CUSTOMER_CSRF_COOKIE_NAME) ||
+  "insuretrack_customer_csrf";
+
+/** Pilih CSRF cookie name berdasarkan path prefix (`/admin/...` vs `/customer/...`). */
+function csrfCookieNameForPath(path: string): string {
+  return path.startsWith("/admin") ? ADMIN_CSRF_COOKIE_NAME : CUSTOMER_CSRF_COOKIE_NAME;
+}
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -64,6 +72,10 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * SSR-only: baca cookies dari Next.js `cookies()` API dan serialize
  * ke `Cookie:` header value. Return `undefined` di non-Next.js
  * context (vitest, dll.) atau kalau `next/headers` tidak di-load.
+ *
+ * Forward SEMUA cookie (bukan cherry-pick nama tertentu) — admin app
+ * dan portal app masing-masing hanya punya cookie role-nya sendiri di
+ * browser, jadi tidak ada risiko forward cookie yang salah role.
  */
 async function readIncomingCookiesForSsr(): Promise<string | undefined> {
   try {
@@ -72,12 +84,9 @@ async function readIncomingCookiesForSsr(): Promise<string | undefined> {
     const mod = await import("next/headers").catch(() => null);
     if (!mod) return undefined;
     const jar = await mod.cookies();
-    const session = jar.get(SESSION_COOKIE_NAME);
-    const csrf = jar.get(CSRF_COOKIE_NAME);
-    const parts: string[] = [];
-    if (session) parts.push(`${SESSION_COOKIE_NAME}=${session.value}`);
-    if (csrf) parts.push(`${CSRF_COOKIE_NAME}=${csrf.value}`);
-    return parts.length ? parts.join("; ") : undefined;
+    const all = jar.getAll();
+    if (!all.length) return undefined;
+    return all.map((c) => `${c.name}=${c.value}`).join("; ");
   } catch {
     return undefined;
   }
@@ -86,11 +95,14 @@ async function readIncomingCookiesForSsr(): Promise<string | undefined> {
 /**
  * Browser-only: baca CSRF token dari `document.cookie`. Return `null`
  * kalau cookie absent (user belum login) atau di server-side.
+ * `path` dipakai untuk pilih cookie name yang sesuai role (admin vs
+ * customer punya nama terpisah — lihat `csrfCookieNameForPath`).
  */
-function readCsrfFromDocument(): string | null {
+function readCsrfFromDocument(path: string): string | null {
   if (typeof document === "undefined") return null;
+  const cookieName = csrfCookieNameForPath(path);
   const m = document.cookie.match(
-    new RegExp(`(?:^|;\\s*)${CSRF_COOKIE_NAME}=([^;]+)`),
+    new RegExp(`(?:^|;\\s*)${cookieName}=([^;]+)`),
   );
   return m ? decodeURIComponent(m[1]) : null;
 }
@@ -129,7 +141,7 @@ export async function apiFetch<T = unknown>(
   //    header di bawah — CSRF guard backend baca X-CSRF-Token dari
   //    header ATAU cocokkan cookie vs header (kita yang forward).
   if (MUTATING_METHODS.has(method) && typeof window !== "undefined") {
-    const csrf = readCsrfFromDocument();
+    const csrf = readCsrfFromDocument(path);
     if (csrf && !headers.has("X-CSRF-Token")) {
       headers.set("X-CSRF-Token", csrf);
     }
@@ -167,12 +179,4 @@ export async function apiFetch<T = unknown>(
     );
   }
   return json as T;
-}
-
-/** `true` kalau user punya session cookie di browser. Cross-tab safe. */
-export function hasSessionCookie(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.cookie
-    .split(";")
-    .some((c) => c.trim().startsWith(`${SESSION_COOKIE_NAME}=`));
 }

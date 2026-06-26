@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::{
     auth::{
         build_auth_cookies, generate_csrf_token, password::verify_password,
-        OptionalAuth, RequireAdmin, Role,
+        OptionalAdminAuth, RequireAdmin, Role,
     },
     dto::{DashboardStats, LoginRequest, LoginResponse},
     error::{AppError, AppResult},
@@ -110,7 +110,7 @@ async fn login(
         SESSION_TTL,
     )?;
     let csrf = generate_csrf_token();
-    let jar = build_auth_cookies(&state.config, token, csrf, SESSION_TTL);
+    let jar = build_auth_cookies(&state.config, Role::Admin, token, csrf, SESSION_TTL);
 
     audit_write(
         &state.pool,
@@ -136,7 +136,7 @@ async fn login(
 /// POST /api/admin/logout — clear session + CSRF cookies, return 204.
 /// FE juga harus `router.replace("/admin/login")` setelah call berhasil.
 ///
-/// IDEMPOTENT: pakai `OptionalAuth` bukan `RequireAdmin` supaya logout
+/// IDEMPOTENT: pakai `OptionalAdminAuth` bukan `RequireAdmin` supaya logout
 /// SELALU succeed (204) + clear cookies, bahkan kalau session cookie
 /// absent / expired / role mismatch. Sebelumnya pakai `RequireAdmin` —
 /// kalau session invalid, extractor return 401/403, handler tidak pernah
@@ -145,7 +145,7 @@ async fn login(
 /// valid → audit + clear. Kalau tidak → langsung clear (no audit).
 async fn logout(
     State(state): State<AppState>,
-    OptionalAuth(maybe_claims): OptionalAuth,
+    OptionalAdminAuth(maybe_claims): OptionalAdminAuth,
 ) -> AppResult<Response> {
     // Audit log hanya kalau ada session valid. Kalau tidak ada session
     // (logout dipanggil saat session sudah invalid), tidak ada actor
@@ -178,13 +178,16 @@ async fn logout(
     // Regression: kalau lupa append headers, browser tidak hapus
     // session → user tetap authed setelah klik logout.
     let mut resp = (StatusCode::NO_CONTENT, ()).into_response();
-    let clear_session = Cookie::build((state.config.session_cookie_name.clone(), String::new()))
-        .path("/")
-        .max_age(Duration::ZERO)
-        .same_site(SameSite::Lax)
-        .http_only(true)
-        .build();
-    let clear_csrf = Cookie::build((state.config.csrf_cookie_name.clone(), String::new()))
+    let clear_session = Cookie::build((
+        state.config.admin_session_cookie_name.clone(),
+        String::new(),
+    ))
+    .path("/")
+    .max_age(Duration::ZERO)
+    .same_site(SameSite::Lax)
+    .http_only(true)
+    .build();
+    let clear_csrf = Cookie::build((state.config.admin_csrf_cookie_name.clone(), String::new()))
         .path("/")
         .max_age(Duration::ZERO)
         .same_site(SameSite::Lax)

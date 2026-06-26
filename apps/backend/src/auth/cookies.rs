@@ -17,7 +17,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::RngCore;
 use time::Duration;
 
-use crate::config::Config;
+use crate::{auth::Role, config::Config};
 
 /// Generate random 32-byte CSRF token, base64url-encoded (~43 chars).
 /// Dipakai di companion cookie; FE mirror ke `X-CSRF-Token` header.
@@ -28,16 +28,19 @@ pub fn generate_csrf_token() -> String {
 }
 
 /// Build (session, csrf) cookie pair untuk response login yang sukses.
+/// `role` pilih cookie name pair (admin vs customer punya nama terpisah
+/// — lihat doc-comment di `Config::admin_session_cookie_name`).
 /// `ttl_seconds` cocokkan dengan `TokenService::issue` TTL.
 pub fn build_auth_cookies(
     cfg: &Config,
+    role: Role,
     session_jwt: String,
     csrf_token: String,
     ttl_seconds: i64,
 ) -> CookieJar {
     let mut jar = CookieJar::new();
 
-    let mut session = Cookie::build((cfg.session_cookie_name.clone(), session_jwt))
+    let mut session = Cookie::build((cfg.session_cookie_name(role).to_string(), session_jwt))
         .http_only(true)
         .secure(cfg.cookie_secure)
         .same_site(SameSite::Lax)
@@ -49,7 +52,7 @@ pub fn build_auth_cookies(
     }
     jar = jar.add(session);
 
-    let mut csrf = Cookie::build((cfg.csrf_cookie_name.clone(), csrf_token))
+    let mut csrf = Cookie::build((cfg.csrf_cookie_name(role).to_string(), csrf_token))
         .http_only(false) // JS harus bisa baca untuk mirror ke X-CSRF-Token
         .secure(cfg.cookie_secure)
         .same_site(SameSite::Lax)
@@ -67,10 +70,10 @@ pub fn build_auth_cookies(
 /// Build clear-cookie pair untuk logout (Max-Age=0). Browser drop
 /// cookie-nya immediately; value field di-set empty string sesuai
 /// konvensi `Set-Cookie` untuk deletion.
-pub fn build_clear_cookies(cfg: &Config) -> CookieJar {
+pub fn build_clear_cookies(cfg: &Config, role: Role) -> CookieJar {
     let mut jar = CookieJar::new();
 
-    let mut session = Cookie::build((cfg.session_cookie_name.clone(), String::new()))
+    let mut session = Cookie::build((cfg.session_cookie_name(role).to_string(), String::new()))
         .http_only(true)
         .secure(cfg.cookie_secure)
         .same_site(SameSite::Lax)
@@ -82,7 +85,7 @@ pub fn build_clear_cookies(cfg: &Config) -> CookieJar {
     }
     jar = jar.remove(session);
 
-    let mut csrf = Cookie::build((cfg.csrf_cookie_name.clone(), String::new()))
+    let mut csrf = Cookie::build((cfg.csrf_cookie_name(role).to_string(), String::new()))
         .http_only(false)
         .secure(cfg.cookie_secure)
         .same_site(SameSite::Lax)

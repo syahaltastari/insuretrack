@@ -60,13 +60,22 @@ pub async fn csrf_guard(
     }
 
     // Path tertentu: skip (lihat doc-comment di atas).
-    if CSRF_SKIP_PATHS.contains(&req.uri().path()) {
+    let path = req.uri().path();
+    if CSRF_SKIP_PATHS.contains(&path) {
         return Ok(next.run(req).await);
     }
 
+    // Admin vs customer punya CSRF cookie terpisah (lihat doc-comment di
+    // `Config::admin_csrf_cookie_name`) — pilih berdasarkan path prefix.
+    let csrf_cookie_name = if path.starts_with("/api/admin") {
+        &state.config.admin_csrf_cookie_name
+    } else {
+        &state.config.customer_csrf_cookie_name
+    };
+
     // Bandingkan cookie vs header.
     let cookie_value = cookies
-        .get(&state.config.csrf_cookie_name)
+        .get(csrf_cookie_name.as_str())
         .map(|c| c.value().to_string())
         .ok_or(AppError::Forbidden)?;
     let header_value = req

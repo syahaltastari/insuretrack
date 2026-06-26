@@ -105,7 +105,7 @@ describe("apiFetch", () => {
   });
 
   it("mutating request auto-attaches X-CSRF-Token from document.cookie", async () => {
-    setDocumentCookie("insuretrack_session=abc; insuretrack_csrf=csrf-xyz");
+    setDocumentCookie("insuretrack_admin_session=abc; insuretrack_admin_csrf=csrf-xyz");
     (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
 
     await apiFetch("/admin/foo", { method: "POST", body: "{}" });
@@ -115,7 +115,7 @@ describe("apiFetch", () => {
   });
 
   it("GET request does NOT attach X-CSRF-Token (skip CSRF check)", async () => {
-    setDocumentCookie("insuretrack_csrf=csrf-xyz");
+    setDocumentCookie("insuretrack_admin_csrf=csrf-xyz");
     (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
 
     await apiFetch("/admin/me");
@@ -135,8 +135,20 @@ describe("apiFetch", () => {
     expect(init.headers.has("x-csrf-token")).toBe(false);
   });
 
+  it("does NOT mix up admin/customer CSRF cookies by path prefix", async () => {
+    // Cookie customer ada, tapi request ke /admin/* — harus TIDAK
+    // attach token customer (beda nama cookie dari admin).
+    setDocumentCookie("insuretrack_customer_csrf=customer-token");
+    (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
+
+    await apiFetch("/admin/foo", { method: "POST", body: "{}" });
+
+    const [, init] = (globalThis.fetch as any).mock.calls[0];
+    expect(init.headers.has("x-csrf-token")).toBe(false);
+  });
+
   it("attaches credentials: 'include' for cross-origin cookie inclusion", async () => {
-    setDocumentCookie("insuretrack_session=abc");
+    setDocumentCookie("insuretrack_admin_session=abc");
     (globalThis.fetch as any).mockResolvedValue(mockResponse(200, { ok: true }));
 
     await apiFetch("/admin/me");

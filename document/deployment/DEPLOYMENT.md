@@ -453,8 +453,10 @@ NEXT_PUBLIC_API_URL=https://api.insuretrack.id
 | `REPLICAS` | Secret | `2` (production), `1` (dev) |
 | `RUST_LOG` | Secret | `info,insuretrack_backend=debug` |
 | `NEXT_PUBLIC_API_URL` | Environment | `https://api.${DOMAIN}` |
-| `SESSION_COOKIE_NAME` | Environment | Default `insuretrack_session` (jarang di-override) |
-| `CSRF_COOKIE_NAME` | Environment | Default `insuretrack_csrf` (jarang di-override) |
+| `ADMIN_SESSION_COOKIE_NAME` | Environment | Default `insuretrack_admin_session` (jarang di-override) |
+| `ADMIN_CSRF_COOKIE_NAME` | Environment | Default `insuretrack_admin_csrf` (jarang di-override) |
+| `CUSTOMER_SESSION_COOKIE_NAME` | Environment | Default `insuretrack_customer_session` (jarang di-override) |
+| `CUSTOMER_CSRF_COOKIE_NAME` | Environment | Default `insuretrack_customer_csrf` (jarang di-override) |
 | `COOKIE_DOMAIN` | Environment | Parent domain untuk cookie share di subdomain. Production: `.${DOMAIN}` (mis. `.insuretrack.id`). Dev: kosongkan (host-only). |
 | `COOKIE_SECURE` | Environment | `true` di HTTPS prod, `false` di localhost HTTP dev. |
 | `CORS_ALLOWED_ORIGINS` | Environment | Comma-separated FE origins. Prod: `https://portal.${DOMAIN},https://admin.${DOMAIN}`. Dev: kosong = fallback `http://localhost:3000,http://localhost:3001`. |

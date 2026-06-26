@@ -27,15 +27,22 @@ info:
     - All responses are JSON. Successful responses return the data
       directly. Errors use `{ "error": { "code": "VALIDATION", "message": "..." } }`.
     - **Customer auth:** `POST /customer/login` (or `/activate`,
-      `/password/reset/consume`) sets a `Set-Cookie: insuretrack_session=<jwt>`.
-      The cookie is `HttpOnly; Secure; SameSite=Lax` and is sent
-      automatically by the browser on subsequent requests. Cookie name
-      is configurable via `SESSION_COOKIE_NAME` (default
-      `insuretrack_session`). There is no manual `Authorization` header
-      — the JWT is delivered solely via the cookie.
-    - **Admin auth:** same as customer (`insuretrack_session` cookie),
-      but the JWT claim `role: "admin"` is required for `/api/admin/*`
-      routes. The backend enforces role via the `RequireAdmin` extractor.
+      `/password/reset/consume`) sets a `Set-Cookie:
+      insuretrack_customer_session=<jwt>`. The cookie is `HttpOnly;
+      Secure; SameSite=Lax` and is sent automatically by the browser on
+      subsequent requests. Cookie name is configurable via
+      `CUSTOMER_SESSION_COOKIE_NAME` (default
+      `insuretrack_customer_session`). There is no manual
+      `Authorization` header — the JWT is delivered solely via the
+      cookie.
+    - **Admin auth:** same mechanism as customer, but a SEPARATE cookie
+      (`insuretrack_admin_session`, configurable via
+      `ADMIN_SESSION_COOKIE_NAME`) carrying JWT claim `role: "admin"`,
+      required for `/api/admin/*` routes. Admin and customer cookies are
+      intentionally distinct names — cookies are scoped per host (not
+      per port), so a shared name would leak an admin session cookie
+      into customer-portal requests in the same browser (and vice
+      versa). The backend enforces role via the `RequireAdmin` extractor.
     - **CSRF defense:** every non-GET request MUST send header
       `X-CSRF-Token: <token>` matching the value of the companion
       `insuretrack_csrf` cookie (also set on login). The CSRF guard

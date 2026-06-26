@@ -45,15 +45,15 @@ export default function UnderwritingConfigPage() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await apiFetch<{ data: ProductConfig[] }>("/admin/underwriting/configs");
-        setConfigs(data.data);
+        const data = await apiFetch<ProductConfig[]>("/admin/underwriting/configs");
+        setConfigs(data);
         // Load tiers for each product in parallel.
         const tierEntries = await Promise.all(
-          data.data.map(async (cfg) => {
-            const t = await apiFetch<{ data: Tier[] }>(
+          data.map(async (cfg) => {
+            const t = await apiFetch<Tier[]>(
               `/admin/underwriting/tiers/${cfg.product_code}`,
             );
-            return [cfg.product_code, t.data] as const;
+            return [cfg.product_code, t] as const;
           }),
         );
         setTiers(Object.fromEntries(tierEntries));
