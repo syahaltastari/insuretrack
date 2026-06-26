@@ -6,10 +6,10 @@
 -- Mutation: UPDATE WHERE key = $1 di-audit ke audit_logs dengan action
 -- 'settings_updated'. Value shape divalidasi di service layer per-key.
 
-CREATE TABLE app_settings (
+CREATE TABLE IF NOT EXISTS app_settings (
   key         VARCHAR(64)  PRIMARY KEY,
   value       JSONB        NOT NULL,
-  description TEXT, 
+  description TEXT,
   updated_by  UUID         REFERENCES admin_users(id) ON DELETE SET NULL,
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
   CONSTRAINT app_settings_key_format CHECK (key ~ '^[a-z][a-z0-9_.-]{1,63}$')
