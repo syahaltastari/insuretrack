@@ -7,6 +7,7 @@ export { Pagination } from "./components/Pagination";
 export { SafeImage } from "./components/SafeImage";
 export { Skeleton, SkeletonText, SkeletonCard, SkeletonTable } from "./components/Skeleton";
 export { StatusBadge } from "./components/StatusBadge";
+export { Switch } from "./components/Switch";
 export {
   ChartCard,
   ChartTooltip,

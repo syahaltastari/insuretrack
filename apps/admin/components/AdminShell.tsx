@@ -45,6 +45,12 @@ const navGroups: NavGroup[] = [
       { href: "/admin/users", label: "Manajemen User", icon: "Users", superAdminOnly: true },
     ],
   },
+  {
+    category: "Konfigurasi",
+    items: [
+      { href: "/admin/settings/claims", label: "Klaim", icon: "SlidersHorizontal" },
+    ],
+  },
 ];
 
 const SIDEBAR_MINIMIZED_KEY = "admin_sidebar_minimized";

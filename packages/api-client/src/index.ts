@@ -32,4 +32,6 @@ export type {
   AdminCustomerAuditEntry,
   AdminCustomerResetPasswordResponse,
   ResendActivationResponse,
+  ClaimsSettings,
+  UpdateClaimsSettingsRequest,
 } from "./dto/admin";

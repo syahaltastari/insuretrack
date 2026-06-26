@@ -6,5 +6,6 @@ pub mod inquiry;
 pub mod marketing;
 pub mod pdf;
 pub mod resend;
+pub mod settings;
 pub mod storage;
 pub mod underwriting;

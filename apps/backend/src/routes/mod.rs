@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_customers;
 pub mod admin_marketing;
+pub mod admin_settings;
 pub mod admin_underwriting;
 pub mod admin_users;
 pub mod customer;
@@ -20,6 +21,7 @@ pub fn build(state: AppState) -> Router {
         .nest("/api/public", underwriting::router())
         .nest("/api/admin", admin::router())
         .nest("/api/admin", admin_marketing::router())
+        .nest("/api/admin", admin_settings::router())
         .nest("/api/admin", admin_underwriting::router())
         .nest("/api/admin", admin_users::router())
         .nest("/api/admin", admin_customers::router())

@@ -145,3 +145,21 @@ export interface ResendActivationResponse {
   ok: true;
   email: string;
 }
+
+// ============================================================
+// App settings — mirror apps/backend/src/routes/admin_settings.rs
+// Endpoint: /api/admin/settings/claims.
+// ============================================================
+
+/** Wire shape untuk `GET/PUT /api/admin/settings/claims`.
+ *  Saat ini hanya `claims.one_active_per_policy` yang di-expose — pattern
+ *  generic: tambah field per-setting, backend handle via JSONB value. */
+export interface ClaimsSettings {
+  one_active_per_policy: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export interface UpdateClaimsSettingsRequest {
+  one_active_per_policy: boolean;
+}

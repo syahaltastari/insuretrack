@@ -24,10 +24,10 @@ use axum::{
     Json, Router,
 };
 use axum_extra::extract::cookie::{self, Cookie, CookieJar, SameSite};
-use time::Duration;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use time::Duration;
 use uuid::Uuid;
 
 use crate::{
@@ -53,6 +53,7 @@ use crate::{
             render_invoice as render_invoice_pdf, InvoicePdfInput,
             ParticipantSummary as PdfParticipant,
         },
+        settings::is_one_active_claim_per_policy,
     },
     state::AppState,
 };
@@ -1153,6 +1154,60 @@ async fn create_claim(
         ));
     }
     let _ = pid;
+
+    // Lock policy (admin-toggleable via app_settings key
+    // 'claims.one_active_per_policy'). Jika aktif, tolak submission kalau
+    // polis ini sudah punya klaim berstatus SUBMITTED atau UNDER_REVIEW —
+    // klaim yang sudah APPROVED/PAID/REJECTED membebaskan slot.
+    //
+    // Race window kecil (no advisory lock): 2 submission concurrent pada
+    // polis yang sama bisa keduanya lewat check. Untuk MVP acceptable —
+    // klaim bukan high-frequency. Hardening nanti: SELECT FOR UPDATE di tx
+    // yang sama dengan INSERT.
+    if is_one_active_claim_per_policy(&state.pool).await? {
+        let active_count: i64 = sqlx::query_scalar(
+            r#"SELECT COUNT(*) FROM claims
+               WHERE policy_id = $1
+                 AND status IN ('SUBMITTED', 'UNDER_REVIEW')"#,
+        )
+        .bind(data.policy_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+        if active_count > 0 {
+            // Best-effort audit — log upaya yang ditolak untuk fraud
+            // detection. Email fetch hanya saat blocked (zero cost di
+            // happy path).
+            let actor =
+                sqlx::query_scalar::<_, String>("SELECT email FROM customers WHERE id = $1")
+                    .bind(customer_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| format!("customer:{customer_id}"));
+
+            let _ = audit_write(
+                &state.pool,
+                AuditEntry {
+                    actor: &actor,
+                    action: "claim_submission_blocked",
+                    entity_type: "claim",
+                    entity_id: None,
+                    metadata: Some(serde_json::json!({
+                        "policy_id": data.policy_id,
+                        "reason": "one_active_claim_per_policy",
+                    })),
+                    ip_address: None,
+                },
+            )
+            .await;
+
+            return Err(AppError::Conflict(
+                "polis ini sudah memiliki klaim yang sedang diproses".into(),
+            ));
+        }
+    }
 
     // Auto-determine claim_type dari product. Admin bisa override via
     // PATCH /admin/claims/:id (lihat domain::claim::default_claim_type_for_product).
