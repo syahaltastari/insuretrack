@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   // Hero / section accent
   ShieldCheck,
   Sparkles,
@@ -54,6 +55,8 @@ import {
   // Sidebar toggle
   PanelLeftClose,
   PanelLeftOpen,
+  // Konfigurasi (admin)
+  SlidersHorizontal,
   // Social media (lucide-react)
   Instagram,
   Facebook,
@@ -81,6 +84,7 @@ export const Icons: Record<string, LucideIcon> = {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   ShieldCheck,
   Sparkles,
   Quote,
@@ -116,6 +120,7 @@ export const Icons: Record<string, LucideIcon> = {
   KeyRound,
   PanelLeftClose,
   PanelLeftOpen,
+  SlidersHorizontal,
   Instagram,
   Facebook,
   Twitter,

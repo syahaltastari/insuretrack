@@ -5,39 +5,18 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { StatusBadge } from "@insuretrack/ui";
 import { API_BASE, apiFetch } from "@insuretrack/api-client";
-import { Reveal } from "@/components/Reveal";
-
-type Participant = {
-  id: string;
-  nik: string;
-  full_name: string;
-  birth_date: string;
-};
-
-type Policy = {
-  id: string;
-  policy_no: string;
-  product: string;
-  sum_assured: string;
-  premium: string;
-  effective_date: string;
-  expiry_date: string;
-  status: string;
-  pdf_path: string | null;
-  /** Untuk policy Instansi: info peserta. NULL untuk Individu. */
-  participant: Participant | null;
-};
+import { Reveal, StaggerGroup } from "@/components/Reveal";
+import { PolicyCard, type PolicyCardItem } from "@/components/PolicyCard";
 
 export default function PortalPoliciesPage() {
-  const [data, setData] = useState<Policy[]>([]);
+  const [data, setData] = useState<PolicyCardItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    apiFetch<{ data?: Policy[] }>("/customer/policies?page=1&page_size=50")
+    apiFetch<{ data?: PolicyCardItem[] }>("/customer/policies?page=1&page_size=50")
       .then((j) => setData(j.data ?? []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -84,65 +63,20 @@ export default function PortalPoliciesPage() {
         </Reveal>
       )}
       {!loading && data.length > 0 && (
-        <Reveal delay={150}>
-          <div className="clay-table-wrap">
-            <table className="clay-table">
-              <thead>
-                <tr>
-                  <th>No. Polis</th>
-                  <th>Produk</th>
-                  <th>Peserta</th>
-                  <th>UP</th>
-                  <th>Premi</th>
-                  <th>Efektif</th>
-                  <th>Berakhir</th>
-                  <th>Status</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((p) => (
-                  <tr key={p.id}>
-                    <td className="mono">{p.policy_no}</td>
-                    <td>{p.product}</td>
-                    <td>
-                      {p.participant ? (
-                        <div>
-                          <div style={{ fontWeight: 600 }}>{p.participant.full_name}</div>
-                          <div
-                            style={{
-                              fontSize: "0.8rem",
-                              color: "var(--warm-silver)",
-                              fontFamily: "var(--font-space-mono), monospace",
-                            }}
-                          >
-                            {p.participant.nik}
-                          </div>
-                        </div>
-                      ) : (
-                        <span style={{ color: "var(--warm-silver)", fontSize: "0.85rem" }}>
-                          (diri sendiri)
-                        </span>
-                      )}
-                    </td>
-                    <td>{new Intl.NumberFormat("id-ID").format(Number(p.sum_assured))}</td>
-                    <td>{new Intl.NumberFormat("id-ID").format(Number(p.premium))}</td>
-                    <td>{p.effective_date}</td>
-                    <td>{p.expiry_date}</td>
-                    <td><StatusBadge status={p.status} /></td>
-                    <td>
-                      {p.pdf_path && (
-                        <button onClick={() => downloadPdf(p.id)} className="clay-button ghost size-small">
-                          📄 PDF
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Reveal>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 20,
+            marginTop: 16,
+          }}
+        >
+          <StaggerGroup>
+            {data.map((p) => (
+              <PolicyCard key={p.id} policy={p} onDownloadPdf={downloadPdf} />
+            ))}
+          </StaggerGroup>
+        </div>
       )}
     </>
   );
