@@ -12,6 +12,7 @@
 use chrono::Utc;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::error::AppError;
 
@@ -35,6 +36,15 @@ pub struct Claims {
     pub is_super_admin: bool,
     pub exp: i64,
     pub iat: i64,
+}
+
+impl Claims {
+    /// Parse `sub` (subject id) jadi `Uuid`. Return `Unauthorized` kalau
+    /// format invalid — token JWT selalu berisi sub UUID, jadi ini hanya
+    /// trigger kalau token lama / corrupted.
+    pub fn sub_uuid(&self) -> Result<Uuid, AppError> {
+        Uuid::parse_str(&self.sub).map_err(|_| AppError::Unauthorized)
+    }
 }
 
 fn is_false(b: &bool) -> bool {
