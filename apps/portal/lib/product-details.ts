@@ -429,5 +429,16 @@ export function getProductBySlug(
   );
 }
 
+/**
+ * Lookup URL slug by product code (case-insensitive). Pakai ini saat
+ * build link produk dari data API — slug didefinisikan eksplisit di
+ * PRODUCT_DETAILS, jadi jangan turunkan manual dengan lowercase/underscore
+ * (akan salah untuk `PERSONAL_ACCIDENT` → slug `personal-accident`).
+ * Return `null` untuk code tidak dikenal — caller harus skip render link.
+ */
+export function getProductSlug(code: string | undefined | null): string | null {
+  return getProductDetail(code)?.slug ?? null;
+}
+
 /** All product codes, in stable display order. */
 export const ALL_PRODUCT_CODES = ["LIFE", "PERSONAL_ACCIDENT", "HEALTH"] as const;

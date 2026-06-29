@@ -42,7 +42,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { VIEWPORT_ONCE } from "../_lib/animations";
+import {
+  VIEWPORT_ONCE,
+} from "../_lib/animations";
 import { useShouldAnimate } from "@/hooks/use-should-animate";
 
 // SSR-safe useLayoutEffect. Di server, useLayoutEffect emit warning
@@ -59,20 +61,42 @@ type RevealProps = {
       Set true untuk above-fold elements (Hero) yang harus entrance
       begitu page load. Default: false. */
   aboveFold?: boolean;
+  /** Direction of entrance. Default "up". Pakai "left"/"right" untuk
+   *  mirror entrance pair (mis. coverage comparison: covered dari
+   *  kiri, excluded dari kanan). "fade" = pure opacity, no translate. */
+  from?: "up" | "down" | "left" | "right" | "fade";
 };
 
-const HIDDEN = { opacity: 0, y: 60, scale: 0.96 };
-const VISIBLE = { opacity: 1, y: 0, scale: 1 };
 const TRANSITION_BASE = {
   duration: 1.0,
   ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
 };
+
+// Hidden/visible per direction. Lebih simple dari generic shape karena
+// hanya 5 arah — bisa di-tune per arah kalau perlu (mis. left/right
+// magnitude lebih kecil dari up karena slide horizontal terasa "jauh").
+const HIDDEN_BY_DIRECTION = {
+  up: { opacity: 0, y: 60, scale: 0.96 },
+  down: { opacity: 0, y: -60, scale: 0.96 },
+  left: { opacity: 0, x: -60, scale: 0.96 },
+  right: { opacity: 0, x: 60, scale: 0.96 },
+  fade: { opacity: 0 },
+} as const;
+
+const VISIBLE_BY_DIRECTION = {
+  up: { opacity: 1, y: 0, scale: 1 },
+  down: { opacity: 1, y: 0, scale: 1 },
+  left: { opacity: 1, x: 0, scale: 1 },
+  right: { opacity: 1, x: 0, scale: 1 },
+  fade: { opacity: 1 },
+} as const;
 
 export function Reveal({
   children,
   delay = 0,
   className,
   aboveFold = false,
+  from = "up",
 }: RevealProps) {
   // Mounted flag: true setelah first layout effect (i.e., browser ready
   // to render motion.div). Pre-mount kita render plain div supaya SSR
@@ -94,14 +118,16 @@ export function Reveal({
   }
 
   const transition = { ...TRANSITION_BASE, delay };
+  const hidden = HIDDEN_BY_DIRECTION[from];
+  const visible = VISIBLE_BY_DIRECTION[from];
 
   if (aboveFold) {
     // Above-fold: animate immediately on mount. No viewport check.
     return (
       <motion.div
         className={className}
-        initial={HIDDEN}
-        animate={VISIBLE}
+        initial={hidden}
+        animate={visible}
         transition={transition}
       >
         {children}
@@ -114,8 +140,8 @@ export function Reveal({
   return (
     <motion.div
       className={className}
-      initial={HIDDEN}
-      whileInView={VISIBLE}
+      initial={hidden}
+      whileInView={visible}
       viewport={VIEWPORT_ONCE}
       transition={transition}
     >

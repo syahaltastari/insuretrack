@@ -17,6 +17,7 @@ import { MotionCard } from "../_motion/motion-card";
 import { COPY } from "../_data/copy";
 import { PRODUCT_VISUALS } from "../_data/product-visuals";
 import { type Product } from "../_lib/api";
+import { getProductSlug } from "@/lib/product-details";
 
 // Hardcoded starting price per product. Index-aligned dengan
 // PRODUCT_VISUALS ([Life, Personal Accident, Health]). Nanti pindah
@@ -56,10 +57,11 @@ export function Products({ products }: { products: Product[] }) {
             {products.map((p, i) => {
               const visual = PRODUCT_VISUALS[i] ?? PRODUCT_VISUALS[0];
               const price = STARTING_PRICE[i] ?? STARTING_PRICE[0];
+              const slug = getProductSlug(p.code);
               return (
                 <MotionCard key={p.code}>
                   <Link
-                    href={`/products/${p.code.toLowerCase()}`}
+                    href={slug ? `/products/${slug}` : "#"}
                     className="group block h-full no-underline text-inherit
                                rounded-[var(--radius-feature)] p-8
                                bg-white border border-[var(--oat-refined)]
