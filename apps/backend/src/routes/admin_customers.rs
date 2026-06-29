@@ -81,9 +81,7 @@ pub fn router() -> Router<AppState> {
         .route("/customers/:id/resend-activation", post(resend_activation))
 }
 
-// ============================================================
-// Row + DTO
-// ============================================================
+// ---- Row + DTO ----
 
 /// Wire shape untuk list endpoint.
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -201,9 +199,7 @@ struct ResendActivationResponse {
     email: String,
 }
 
-// ============================================================
-// GET /customers — list with search + filter + sort + CSV
-// ============================================================
+// ---- GET /customers ----
 
 async fn list_customers(
     State(state): State<AppState>,
@@ -218,21 +214,17 @@ async fn list_customers(
     let limit = q.limit();
     let search = q.q.clone().unwrap_or_default();
     let like = format!("%{search}%");
-    // ?status= → portal_status (PENDING|ACTIVE|"")
+    // ?status= → portal_status; ?active=true|false → is_active
     let portal_filter = q.status.clone().unwrap_or_default();
-    // ?active=true|false → is_active (""|"true"|"false")
     let active_filter = active_q.active.unwrap_or_default();
-    // Date range
     let (date_from, date_to) =
         filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
     let date_col = validate_date_field(q.date_field.as_deref(), CUSTOMER_DATE_FIELDS);
-    // Sort
     let sort_col = validate_sort(q.sort_by.as_deref(), CUSTOMER_SORT_COLUMNS);
     let sort_dir = validate_sort_dir(q.sort_dir.as_deref());
     // safe: sort_col & date_col dari whitelist
     let order_clause = format!("ORDER BY {sort_col} {sort_dir}, created_at DESC");
 
-    // Branch CSV: tidak paginasi, return semua row yang match filter.
     if fmt.is_csv() {
         let rows: Vec<AdminCustomerRow> = sqlx::query_as(&format!(
             r#"
@@ -290,7 +282,6 @@ async fn list_customers(
         ));
     }
 
-    // Branch JSON: paginated
     let total: (i64,) = sqlx::query_as(&format!(
         r#"
         SELECT COUNT(*) FROM customers
@@ -348,16 +339,13 @@ async fn list_customers(
     .into_response())
 }
 
-// ============================================================
-// GET /customers/:id — detail with counts + recent + audit
-// ============================================================
+// ---- GET /customers/:id ----
 
 async fn get_customer(
     State(state): State<AppState>,
     _claims: RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<AdminCustomerDetail>> {
-    // 1. Profil utama.
     #[derive(sqlx::FromRow)]
     struct CustomerProfile {
         id: Uuid,
@@ -399,9 +387,7 @@ async fn get_customer(
     .await?;
     let p = profile.ok_or(AppError::NotFound("customer".into()))?;
 
-    // 2. Counts — 4 query sederhana. Tidak di-union karena masing-masing
-    //    pakai WHERE berbeda (registrations.customer_id, claims.policy_id
-    //    → customer_id, dll).
+    // Tidak di-union: masing-masing subquery punya join-path berbeda.
     let registrations_count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM registrations WHERE customer_id = $1")
             .bind(id)
@@ -425,7 +411,6 @@ async fn get_customer(
             .fetch_one(&state.pool)
             .await?;
 
-    // 3. Recent 5 per type — di-sort created_at DESC.
     let recent_registrations: Vec<RecentRegistration> = sqlx::query_as(
         r#"
         SELECT id, registration_no, product, status, created_at
@@ -520,16 +505,14 @@ async fn get_customer(
     }))
 }
 
-// ============================================================
-// POST /customers/:id/activate
-// ============================================================
+// ---- POST /customers/:id/activate ----
 
 async fn activate_customer(
     State(state): State<AppState>,
     claims: RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
     let res = sqlx::query(
         r#"
         UPDATE customers
@@ -560,16 +543,14 @@ async fn activate_customer(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ============================================================
-// POST /customers/:id/deactivate
-// ============================================================
+// ---- POST /customers/:id/deactivate ----
 
 async fn deactivate_customer(
     State(state): State<AppState>,
     claims: RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
     // Set deactivated_at = now() + clear last_login_at? Tidak — biarkan
     // last_login_at sebagai historical record.
     let res = sqlx::query(
@@ -602,16 +583,14 @@ async fn deactivate_customer(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ============================================================
-// POST /customers/:id/reset-password
-// ============================================================
+// ---- POST /customers/:id/reset-password ----
 
 async fn reset_customer_password(
     State(state): State<AppState>,
     claims: RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<ResetPasswordResponse>> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
     let new_password = generate_random_password(GENERATED_PASSWORD_LEN);
     let new_hash = hash_password(&new_password)?;
 
@@ -649,16 +628,14 @@ async fn reset_customer_password(
     Ok(Json(ResetPasswordResponse { new_password }))
 }
 
-// ============================================================
-// POST /customers/:id/resend-activation
-// ============================================================
+// ---- POST /customers/:id/resend-activation ----
 
 async fn resend_activation(
     State(state): State<AppState>,
     claims: RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<ResendActivationResponse>> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
 
     // 1. Ambil data customer. Tolak kalau bukan PENDING.
     #[derive(sqlx::FromRow)]
