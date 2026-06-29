@@ -24,7 +24,7 @@ use crate::{
     repo::{filters as filters_helper, Page, PageQuery},
     routes::util::{csv_response, ListFormatQuery},
     services::{
-        audit::{write as audit_write, AuditEntry},
+        audit::{record as audit_record, write as audit_write, AuditEntry},
         dashboard,
     },
     state::AppState,
@@ -112,16 +112,13 @@ async fn login(
     let csrf = generate_csrf_token();
     let jar = build_auth_cookies(&state.config, Role::Admin, token, csrf, SESSION_TTL);
 
-    audit_write(
+    audit_record(
         &state.pool,
-        AuditEntry {
-            actor: &admin_username,
-            action: "admin_login",
-            entity_type: "admin_user",
-            entity_id: Some(admin_id),
-            metadata: None,
-            ip_address: None,
-        },
+        &admin_username,
+        "admin_login",
+        "admin_user",
+        Some(admin_id),
+        serde_json::json!({}),
     )
     .await?;
 
@@ -134,49 +131,30 @@ async fn login(
 }
 
 /// POST /api/admin/logout — clear session + CSRF cookies, return 204.
-/// FE juga harus `router.replace("/admin/login")` setelah call berhasil.
 ///
-/// IDEMPOTENT: pakai `OptionalAdminAuth` bukan `RequireAdmin` supaya logout
-/// SELALU succeed (204) + clear cookies, bahkan kalau session cookie
-/// absent / expired / role mismatch. Sebelumnya pakai `RequireAdmin` —
-/// kalau session invalid, extractor return 401/403, handler tidak pernah
-/// jalan, cookie tidak ter-clear, dan admin middleware redirect admin
-/// yang "logout" kembali ke dashboard (loop). Sekarang: kalau session
-/// valid → audit + clear. Kalau tidak → langsung clear (no audit).
+/// Pakai OptionalAdminAuth (bukan RequireAdmin) agar cookie selalu ter-clear
+/// meski token expired/absent — RequireAdmin menyebabkan redirect loop.
 async fn logout(
     State(state): State<AppState>,
     OptionalAdminAuth(maybe_claims): OptionalAdminAuth,
 ) -> AppResult<Response> {
-    // Audit log hanya kalau ada session valid. Kalau tidak ada session
-    // (logout dipanggil saat session sudah invalid), tidak ada actor
-    // untuk di-log.
     if let Some(claims) = maybe_claims {
         if claims.role == Role::Admin {
-            if let Ok(admin_id) = Uuid::parse_str(&claims.sub) {
-                let _ = audit_write(
+            if let Ok(admin_id) = claims.sub_uuid() {
+                let _ = audit_record(
                     &state.pool,
-                    AuditEntry {
-                        actor: &claims.sub,
-                        action: "admin_logout",
-                        entity_type: "admin_user",
-                        entity_id: Some(admin_id),
-                        metadata: None,
-                        ip_address: None,
-                    },
+                    &claims.sub,
+                    "admin_logout",
+                    "admin_user",
+                    Some(admin_id),
+                    serde_json::json!({}),
                 )
                 .await;
             }
         }
     }
 
-    // Build 204 response dengan Set-Cookie headers manual untuk clear
-    // session + csrf cookies. axum_extra::CookieJar impl-nya tidak
-    // ergonomis untuk pattern ini (tuple impl tidak auto-apply
-    // IntoResponseParts, dan `into_response_parts` butuh ResponseParts
-    // builder), jadi construct headers langsung.
-    //
-    // Regression: kalau lupa append headers, browser tidak hapus
-    // session → user tetap authed setelah klik logout.
+    // axum_extra::CookieJar tidak ergonomis untuk clear cookie, jadi construct headers langsung.
     let mut resp = (StatusCode::NO_CONTENT, ()).into_response();
     let clear_session = Cookie::build((
         state.config.admin_session_cookie_name.clone(),
@@ -270,7 +248,7 @@ async fn get_me(
     State(state): State<AppState>,
     RequireAdmin(claims): RequireAdmin,
 ) -> AppResult<Json<AdminMe>> {
-    let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let id = claims.sub_uuid()?;
     let row: Option<AdminMe> = sqlx::query_as(
         r#"SELECT id, username, full_name, email, role, is_super_admin, is_active,
                   last_login_at, password_changed_at, created_at, updated_at
@@ -293,7 +271,7 @@ async fn update_me(
     RequireAdmin(claims): RequireAdmin,
     Json(req): Json<UpdateMeRequest>,
 ) -> AppResult<Json<AdminMe>> {
-    let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let id = claims.sub_uuid()?;
     let full = req.full_name.and_then(|s| {
         let t = s.trim().to_string();
         if t.is_empty() {
@@ -338,16 +316,13 @@ async fn update_me(
         AppError::Internal(anyhow::anyhow!("update_me: {e}"))
     })?;
 
-    audit_write(
+    audit_record(
         &state.pool,
-        AuditEntry {
-            actor: &claims.sub,
-            action: "admin_profile_updated",
-            entity_type: "admin_user",
-            entity_id: Some(id),
-            metadata: None,
-            ip_address: None,
-        },
+        &claims.sub,
+        "admin_profile_updated",
+        "admin_user",
+        Some(id),
+        serde_json::json!({}),
     )
     .await?;
 
@@ -365,7 +340,7 @@ async fn change_password(
     RequireAdmin(claims): RequireAdmin,
     Json(req): Json<ChangePasswordRequest>,
 ) -> AppResult<StatusCode> {
-    let id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let id = claims.sub_uuid()?;
     if req.new_password.len() < 8 {
         return Err(AppError::Validation(
             "Password baru minimal 8 karakter".into(),
@@ -389,16 +364,13 @@ async fn change_password(
     .execute(&state.pool)
     .await?;
 
-    audit_write(
+    audit_record(
         &state.pool,
-        AuditEntry {
-            actor: &claims.sub,
-            action: "admin_password_changed",
-            entity_type: "admin_user",
-            entity_id: Some(id),
-            metadata: None,
-            ip_address: None,
-        },
+        &claims.sub,
+        "admin_password_changed",
+        "admin_user",
+        Some(id),
+        serde_json::json!({}),
     )
     .await?;
 
@@ -411,8 +383,6 @@ struct RegistrationRow {
     registration_no: String,
     customer_id: Uuid,
     customer_name: String,
-    // Kolom NULLABLE per 0008_relax_customer_for_split.sql — customer PENDING
-    // (dibuat via POST /api/public/customers) belum lengkapi form registrasi.
     customer_email: Option<String>,
     customer_mobile: Option<String>,
     product: String,
@@ -546,7 +516,6 @@ struct RegistrationDetail {
     registration_no: String,
     customer_id: Uuid,
     customer_name: String,
-    // NULLABLE per 0008_relax_customer_for_split.sql & 0017_registration_members.sql
     customer_email: Option<String>,
     customer_nik: Option<String>,
     product: String,
@@ -555,12 +524,10 @@ struct RegistrationDetail {
     coverage_term: i32,
     status: String,
     created_at: chrono::DateTime<chrono::Utc>,
-    // Group registration fields (0013_group_registration.sql) — NULL untuk INDIVIDU.
     applicant_type: String,
     company_name: Option<String>,
     company_npwp: Option<String>,
     company_industry: Option<String>,
-    // Invoice fields (UUID dibutuhkan untuk link download PDF/receipt).
     invoice_id: Option<Uuid>,
     invoice_no: Option<String>,
     invoice_status: Option<String>,
@@ -568,7 +535,6 @@ struct RegistrationDetail {
     due_date: Option<chrono::NaiveDate>,
     invoice_paid_at: Option<chrono::DateTime<chrono::Utc>>,
     invoice_created_at: Option<chrono::DateTime<chrono::Utc>>,
-    // Policy fields (UUID dibutuhkan untuk link download e-policy PDF).
     policy_id: Option<Uuid>,
     policy_no: Option<String>,
     policy_status: Option<String>,
@@ -657,7 +623,6 @@ struct InvoiceRow {
     invoice_no: String,
     registration_no: String,
     customer_name: String,
-    // NULLABLE per 0008_relax_customer_for_split.sql & 0017_registration_members.sql
     customer_email: Option<String>,
     customer_mobile: Option<String>,
     premium_amount: Decimal,
@@ -666,20 +631,11 @@ struct InvoiceRow {
     paid_at: Option<chrono::DateTime<chrono::Utc>>,
     pdf_path: Option<String>,
     created_at: chrono::DateTime<chrono::Utc>,
-    /// "INDIVIDU" | "INSTANSI" — wire format uppercase, sama dengan
-    /// registrations.applicant_type (lihat 0013_group_registration.sql).
-    /// Di-decode sebagai String polos (bukan enum) supaya FromRow derive
-    /// tidak perlu tambahan impl; DB sudah menyimpan uppercase.
+    /// String, bukan enum, agar FromRow tidak perlu custom impl ("INDIVIDU"|"INSTANSI").
     applicant_type: String,
-    /// Jumlah peserta: 1 untuk INDIVIDU, COUNT(registration_members) untuk
-    /// INSTANSI. Di-compute di SQL dengan CASE supaya frontend tidak perlu
-    /// tahu logic applicant_type untuk display count.
     participant_count: i64,
-    /// Kode produk (`"LIFE" | "PERSONAL_ACCIDENT" | "HEALTH"`) — untuk
-    /// display "Produk" di list view (frontend resolve via productLabel).
     product: String,
-    /// Composite plan code (mis. `"LIFE_BASIC"`) — nullable untuk rows
-    /// lama (registrasi sebelum migration 0018).
+    /// Nullable untuk registrasi sebelum plan_code diperkenalkan.
     plan_code: Option<String>,
 }
 
@@ -699,15 +655,11 @@ async fn list_invoices(
     let like = format!("%{search}%");
 
     // ----- New filter inputs (validated) -----
-    // Date range: parse + reject bad ISO / inverted range.
     let (date_from, date_to) =
         filters_helper::parse_date_range(q.date_from.as_deref(), q.date_to.as_deref())?;
-    // Date column: whitelist. Default = `created_at` (most common admin
-    // question: "what invoices came in this period?").
     const INVOICE_DATE_FIELDS: &[&str] = &["created_at", "due_date", "paid_at"];
     let date_field =
         filters_helper::validate_date_field(q.date_field.as_deref(), INVOICE_DATE_FIELDS);
-    // Sort column: whitelist. Default = `created_at` DESC.
     const INVOICE_SORT_COLS: &[&str] = &[
         "created_at",
         "due_date",
@@ -718,35 +670,16 @@ async fn list_invoices(
     let sort_col = filters_helper::validate_sort(q.sort_by.as_deref(), INVOICE_SORT_COLS);
     let sort_dir = filters_helper::validate_sort_dir(q.sort_dir.as_deref());
 
-    // Bind indices used in SQL are hard-coded. Layout (CSV path + JSON
-    // path are mirrored):
-    //   $1 = search ILIKE pattern  $2 = status
-    //   $3 = date_from (nullable)  $4 = date_to (nullable)
-    //   $5 = limit                 $6 = offset
-    // date_from / date_to are bound directly as Option<NaiveDate>; the
-    // SQL uses `$3::date IS NULL OR <col> >= $3::date` so a None value
-    // short-circuits the comparison and the placeholder count stays
-    // stable across requests with and without a date filter (prevents
-    // sqlx prepared-statement cache collision that produced
-    // "bind message supplies 4 parameters, but prepared statement
-    // requires 6" before this fix).
-    //
-    // Table-qualified column for the date filter + sort. Safe:
-    // `date_field` and `sort_col` come from a literal whitelist above.
+    // `$3::date IS NULL OR col >= $3::date` — placeholder count tetap stabil
+    // meski date filter tidak dipakai (cegah sqlx prepared-statement cache collision).
+    // date_col dan sort_col_qualified aman: keduanya dari whitelist di atas.
     let date_col = format!("i.{date_field}");
     let sort_col_qualified = match sort_col {
         "customer_name" => "c.full_name".to_string(),
-        // premium_amount ada di invoices (alias i), created_at/due_date/paid_at juga di i.
         other => format!("i.{other}"),
     };
 
     if fmt.is_csv() {
-        // CSV export honours the same filters as the JSON path. Date
-        // fragment is rendered as `$3 IS NULL OR <col> >= $3` so the
-        // SQL text + placeholder count is stable whether or not a date
-        // filter was applied — without this, sqlx's prepared-statement
-        // cache reuses a stale statement with 4 placeholders for what is
-        // logically a 6-placeholder query, causing a 500 bind error.
         let date_predicate = format!(
             " AND ($3::date IS NULL OR {date_col} >= $3::date) \
              AND ($4::date IS NULL OR {date_col} <= $4::date)"
@@ -776,8 +709,6 @@ async fn list_invoices(
             "#,
             order = filters_helper::order_clause(&sort_col_qualified, sort_dir),
         );
-        // Always bind 4 placeholders. df/dt are None when no date filter
-        // is applied; the `$3::date IS NULL` short-circuits in SQL.
         let rows: Vec<InvoiceRow> = sqlx::query_as::<_, InvoiceRow>(&sql)
             .bind(&like)
             .bind(&status)
@@ -829,10 +760,6 @@ async fn list_invoices(
     }
 
     // ----- JSON path (paginated) -----
-    // Date predicate uses `$3::date IS NULL OR <col> >= $3::date` so the
-    // SQL text + placeholder count is stable across requests with and
-    // without a date filter. df/dt are bound as NULL when no filter is
-    // applied, short-circuiting the comparison in SQL.
     let date_predicate = format!(
         " AND ($3::date IS NULL OR {date_col} >= $3::date) \
          AND ($4::date IS NULL OR {date_col} <= $4::date)"
@@ -860,9 +787,6 @@ async fn list_invoices(
         .fetch_one(&state.pool)
         .await?;
 
-    // Placeholder numbering for the data query: $1=search $2=status
-    // $3=df $4=dt $5=limit $6=offset. Always bind 6 — df/dt may be NULL
-    // when no date filter is applied.
     let data_sql = format!(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no, c.full_name AS customer_name,
@@ -1008,7 +932,6 @@ struct PolicyRow {
     policy_no: String,
     registration_no: String,
     customer_name: String,
-    // NULLABLE per 0008_relax_customer_for_split.sql & 0017_registration_members.sql
     customer_email: Option<String>,
     customer_mobile: Option<String>,
     product: String,
@@ -1066,12 +989,6 @@ async fn list_policies(
         other => format!("p.{other}"),
     };
 
-    // SQL placeholder layout (mirrored in CSV + JSON path):
-    //   $1=search $2=status $3=df $4=dt $5=product $6=limit $7=offset
-    // We always bind df/dt/product — when has_date/product is false, we
-    // pass sentinel values (1970..9999 range, empty string) that the
-    // boolean `has_*` flags short-circuit in SQL. This keeps placeholder
-    // numbering stable across requests.
     if fmt.is_csv() {
         let date_predicate = if has_date {
             format!(" AND {date_col} >= $3 AND {date_col} <= $4")
@@ -1248,9 +1165,6 @@ async fn download_policy_pdf(
     _: RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<Response> {
-    // Select policy_no juga agar bisa di-set sebagai filename di
-    // Content-Disposition (UX: file di folder Download = POL-...pdf,
-    // bukan UUID acak). Pattern sama dengan download_invoice_pdf.
     let row: Option<(Option<String>, String)> =
         sqlx::query_as("SELECT pdf_path, policy_no FROM policies WHERE id = $1")
             .bind(id)
@@ -1267,8 +1181,6 @@ async fn download_policy_pdf(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/pdf"),
     );
-    // Set filename seperti invoice PDF (lihat download_invoice_pdf di bawah).
-    // Tanpa filename, browser save dengan nama UUID random.
     let disposition = format!("attachment; filename=\"{policy_no}.pdf\"");
     headers.insert(
         header::CONTENT_DISPOSITION,
@@ -1510,9 +1422,7 @@ struct AdminClaimRow {
     claimed_amount: Decimal,
     status: String,
     decision_note: Option<String>,
-    /// Storage key bukti pembayaran (lihat kolom `claims.payment_proof_path`).
-    /// NULL untuk klaim yang belum berstatus PAID atau yang di-issued
-    /// sebelum fitur ini ada (backward-compatible).
+    /// NULL untuk klaim pre-fitur atau belum berstatus PAID.
     payment_proof_path: Option<String>,
     submitted_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
@@ -1561,9 +1471,6 @@ async fn list_claims_admin(
         other => format!("cl.{other}"),
     };
 
-    // Placeholder layout (mirrored in CSV + JSON path):
-    //   $1=search $2=status $3=df $4=dt $5=product $6=claim_type
-    //   $7=limit $8=offset
     if fmt.is_csv() {
         let date_predicate = if has_date {
             format!(" AND {date_col} >= $3 AND {date_col} <= $4")
@@ -1729,18 +1636,8 @@ struct PatchClaimBody {
 
 // ---- GET /claims/:id (admin detail view) ----
 //
-// Admin boleh akses semua klaim (tidak di-scope ke customer_id seperti
-// endpoint customer-side). Response shape identik dengan `ClaimRow`
-// di customer.rs PLUS `description` + `customer_name` + nested
-// `documents` (lihat `claim_documents` table). Field `description`
-// adalah kronologi kejadian yang di-input customer waktu submit klaim —
-// tidak di-include di `AdminClaimRow` list view karena cuma perlu
-// di detail page.
-//
-// Konsistensi naming: endpoint ini `get_claim_admin` (bukan `get_claim`)
-// untuk menghindari name collision dengan customer-side handler. Saat
-// di-import di `mod.rs`, full path jadi
-// `crate::routes::admin::get_claim_admin`.
+// Tambahan vs ClaimRow di customer.rs: description, customer_name, nested documents.
+// Nama `get_claim_admin` untuk menghindari name collision dengan customer-side handler.
 #[derive(Serialize, sqlx::FromRow)]
 struct AdminClaimDetailRow {
     id: Uuid,
@@ -1845,8 +1742,6 @@ async fn patch_claim(
         )));
     }
 
-    // Bangun SQL dinamis: claim_type di-update hanya kalau admin override.
-    // Status & decision_note selalu di-update.
     if let Some(ref ct) = req.claim_type {
         sqlx::query(
             "UPDATE claims SET status = $1, decision_note = $2, claim_type = $3, updated_at = now() WHERE id = $4",
@@ -2138,13 +2033,6 @@ async fn list_inquiries_admin(
     let sort_col = filters_helper::validate_sort(q.sort_by.as_deref(), INQUIRY_SORT_COLS);
     let sort_dir = filters_helper::validate_sort_dir(q.sort_dir.as_deref());
 
-    // date_from / date_to are bound as Option<NaiveDate>; the SQL uses
-    // `$3::date IS NULL OR <col> >= $3::date` so a None value
-    // short-circuits the comparison and the placeholder count stays
-    // stable across requests with and without a date filter (prevents
-    // sqlx prepared-statement cache collision that produced
-    // "bind message supplies 4 parameters, but prepared statement
-    // requires 6" before this fix).
     let date_col = format!("i.{date_field}");
     let sort_col_qualified = match sort_col {
         "customer_name" => "c.full_name".to_string(),
@@ -2396,7 +2284,7 @@ async fn admin_inquiry_message(
     }
 
     // Lookup admin's name untuk denormalized sender_name di thread.
-    let admin_id = Uuid::parse_str(&admin_claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let admin_id = admin_claims.sub_uuid()?;
     let admin_name: String = sqlx::query_scalar(
         r#"SELECT COALESCE(NULLIF(full_name, ''), username) FROM admin_users WHERE id = $1"#,
     )
@@ -2548,7 +2436,7 @@ async fn admin_inquiry_close(
         )));
     }
 
-    let admin_id = Uuid::parse_str(&admin_claims.sub).map_err(|_| AppError::Unauthorized)?;
+    let admin_id = admin_claims.sub_uuid()?;
     let admin_name: String = sqlx::query_scalar(
         r#"SELECT COALESCE(NULLIF(full_name, ''), username) FROM admin_users WHERE id = $1"#,
     )
@@ -2587,16 +2475,13 @@ async fn admin_inquiry_close(
     .await?;
     tx.commit().await?;
 
-    let _ = audit_write(
+    let _ = audit_record(
         &state.pool,
-        AuditEntry {
-            actor: &admin_claims.sub,
-            action: "inquiry_closed_by_admin",
-            entity_type: "inquiry",
-            entity_id: Some(id),
-            metadata: None,
-            ip_address: None,
-        },
+        &admin_claims.sub,
+        "inquiry_closed_by_admin",
+        "inquiry",
+        Some(id),
+        serde_json::json!({}),
     )
     .await;
 
