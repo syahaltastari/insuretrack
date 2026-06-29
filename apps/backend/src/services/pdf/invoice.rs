@@ -8,13 +8,13 @@ use std::io::BufWriter;
 
 use crate::error::AppError;
 use crate::services::pdf::{
-    helpers::{draw_line, fill_rect, set_color},
+    helpers::set_color,
     inputs::InvoicePdfInput,
     sections::{
         beneficiary_box, coverage_table, footer_bar, footer_notice, header_bar, participants_table,
         title_status, total_box, two_column_card,
     },
-    theme::{C_BLACK, C_LEMON_400, C_OAT_BORDER, C_OAT_LIGHT, C_SILVER},
+    theme::C_SILVER,
 };
 
 /// Render invoice PDF corporate-grade.

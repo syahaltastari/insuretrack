@@ -23,7 +23,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use axum_extra::extract::cookie::{self, Cookie, CookieJar, SameSite};
+use axum_extra::extract::cookie::{Cookie, SameSite};
 use chrono::Utc;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

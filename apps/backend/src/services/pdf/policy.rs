@@ -15,7 +15,7 @@ use crate::services::pdf::{
         beneficiary_box, benefit_list, company_box, coverage_table, footer_bar, footer_notice,
         header_bar, info_boxes, terms_list, title_status, two_column_card,
     },
-    theme::{C_BLACK, C_OAT_BORDER, C_SILVER},
+    theme::C_BLACK,
 };
 
 pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
@@ -63,8 +63,9 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
     };
     y = info_boxes.render(&layer, &bold, &italic, &reg, y);
 
-    // Footer notice (italic)
-    y = footer_notice::FooterNotice::render(&layer, &italic, y);
+    // Footer notice (italic). Return y tidak dipakai karena page 2 di-reset
+    // ke y=297 di bawah — section terakhir page 1.
+    footer_notice::FooterNotice::render(&layer, &italic, y);
 
     // Footer page 1
     footer_bar::FooterBar::PolicyStandard {
@@ -200,13 +201,14 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
         y = b.render(&layer, &bold, &italic, y);
     }
 
-    // Company (INSTANSI only)
+    // Company (INSTANSI only). Return y tidak dipakai — section terakhir
+    // page 2 sebelum footer (footer tidak butuh y cursor).
     if let Some(c) = company_box::CompanyBox::new(
         input.company_name.as_deref(),
         input.company_npwp.as_deref(),
         input.company_industry.as_deref(),
     ) {
-        y = c.render(&layer, &bold, &reg, y);
+        c.render(&layer, &bold, &reg, y);
     }
 
     // Footer page 2
@@ -237,8 +239,9 @@ pub fn render(input: &PolicyPdfInput<'_>) -> Result<Vec<u8>, AppError> {
     let benefits = benefit_list::BenefitList::new(input.product_name);
     y = benefits.render(&layer, &bold, &reg, y - 15.0);
 
-    // KETENTUAN UMUM POLIS
-    y = terms_list::TermsList::render(&layer, &bold, &reg, y);
+    // KETENTUAN UMUM POLIS. Return y tidak dipakai — section PENGESAHAN di
+    // bawah pakai koordinat hardcoded (Mm(47.0), Mm(40.0), 33.0).
+    terms_list::TermsList::render(&layer, &bold, &reg, y);
 
     // PENGESAHAN POLIS + SignatureBlock
     set_color(&layer, C_BLACK);
