@@ -463,7 +463,7 @@ export default function PortalInquiriesPage() {
       {error && (
         <div
           className="clay-card"
-          style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}
+          style={{ borderColor: "var(--pomegranate-400)", background: "var(--pomegranate-50)" }}
         >
           ⚠ {error}
         </div>
@@ -484,7 +484,7 @@ export default function PortalInquiriesPage() {
           {detailError && (
             <div
               className="clay-card"
-              style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}
+              style={{ borderColor: "var(--pomegranate-400)", background: "var(--pomegranate-50)" }}
             >
               ⚠ {detailError}
             </div>

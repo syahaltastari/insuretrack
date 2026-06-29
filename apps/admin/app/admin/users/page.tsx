@@ -30,10 +30,6 @@ import type {
 import { useAdmin } from "@/lib/useAdmin";
 import { formatDate, formatDateTime } from "@/lib/format";
 
-// ============================================================
-// Form schemas
-// ============================================================
-
 const createSchema = z.object({
   username: z
     .string()
@@ -76,10 +72,6 @@ const editSchema = z.object({
 type CreateFormValues = z.infer<typeof createSchema>;
 type EditFormValues = z.infer<typeof editSchema>;
 
-// ============================================================
-// Page
-// ============================================================
-
 export default function AdminUsersPage() {
   const { profile: currentProfile, isSuperAdmin, ready } = useAdmin();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -94,10 +86,7 @@ export default function AdminUsersPage() {
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // ============================================================
-  // Forms (create + edit). Dipisah biar default values & reset
-  // tidak tercampur.
-  // ============================================================
+  // Create + edit form dipisah biar default values & reset tidak tercampur.
 
   const createMethods = useForm<CreateFormValues>({
     resolver: zodResolver(createSchema) as never,
@@ -120,10 +109,6 @@ export default function AdminUsersPage() {
     },
     mode: "onBlur",
   });
-
-  // ============================================================
-  // Modal lifecycle
-  // ============================================================
 
   const openCreate = () => {
     setEditing(null);
@@ -163,10 +148,6 @@ export default function AdminUsersPage() {
     setGeneratedPassword(null);
     setCopied(false);
   };
-
-  // ============================================================
-  // Submit handlers
-  // ============================================================
 
   const onCreate = async (values: CreateFormValues) => {
     setSubmitting(true);
@@ -227,10 +208,6 @@ export default function AdminUsersPage() {
     return onCreate(values as CreateFormValues);
   };
 
-  // ============================================================
-  // Row actions
-  // ============================================================
-
   const toggleActive = async (u: AdminUser) => {
     const newActive = !u.is_active;
     const path = newActive ? "activate" : "deactivate";
@@ -273,10 +250,6 @@ export default function AdminUsersPage() {
       toast.error("Gagal copy. Silakan salin manual.");
     }
   };
-
-  // ============================================================
-  // Render
-  // ============================================================
 
   // Block render kalau belum ready atau user bukan super admin.
   // Backend juga gate, tapi ini kasih UX yang konsisten (langsung

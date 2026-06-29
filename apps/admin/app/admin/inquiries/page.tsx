@@ -26,8 +26,6 @@ import { apiFetch } from "@insuretrack/api-client";
 type InquiryStatus = "OPEN" | "ANSWERED" | "CLOSED";
 const STATUSES: InquiryStatus[] = ["OPEN", "ANSWERED", "CLOSED"];
 
-// ---- Types ---------------------------------------------------------------
-
 type SenderType = "CUSTOMER" | "ADMIN";
 
 type Message = {
@@ -59,8 +57,6 @@ type AdminInquiry = {
 
 type AdminInquiryDetail = AdminInquiry & { messages: Message[] };
 
-// ---- Helpers -------------------------------------------------------------
-
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("id-ID", {
@@ -90,8 +86,6 @@ function formatShortDate(iso: string): string {
   return `${parseInt(parts[2], 10)} ${months[mIdx] ?? "?"} ${parts[0]}`;
 }
 
-// ---- Schemas -------------------------------------------------------------
-
 const replySchema = z.object({
   message: z
     .string()
@@ -100,8 +94,6 @@ const replySchema = z.object({
     .max(5000, "Maksimal 5000 karakter"),
 });
 type ReplyValues = z.infer<typeof replySchema>;
-
-// ---- Thread view ---------------------------------------------------------
 
 function ThreadView({
   messages,
@@ -164,8 +156,6 @@ function ThreadView({
     </div>
   );
 }
-
-// ---- Inquiry card --------------------------------------------------------
 
 type InquiryCardProps = {
   inquiry: AdminInquiry;
@@ -430,8 +420,6 @@ function InquiryCard({ inquiry, expanded, onToggle, onUpdated }: InquiryCardProp
   );
 }
 
-// ---- Filter constants ---------------------------------------------------
-
 const INQUIRY_DATE_FIELDS = [
   { value: "created_at", label: "Tanggal dibuat" },
   { value: "responded_at", label: "Tanggal dijawab" },
@@ -444,8 +432,6 @@ const INQUIRY_SORT_OPTIONS = [
   { value: "last_message_at", label: "Pesan terakhir" },
   { value: "customer_name", label: "Nama customer" },
 ];
-
-// ---- Main page -----------------------------------------------------------
 
 export default function AdminInquiriesPage() {
   const router = useRouter();

@@ -136,7 +136,7 @@ export function ParticipantImport({ onImport }: ParticipantImportProps) {
           style={{
             marginTop: 12,
             padding: 12,
-            background: "#fff5f5",
+            background: "var(--pomegranate-50)",
             borderColor: "var(--pomegranate-400)",
             color: "var(--pomegranate-400)",
             fontSize: "0.9rem",

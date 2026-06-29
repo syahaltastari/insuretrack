@@ -1,20 +1,3 @@
-// Lainnya — cross-sell 2 produk lain (exclude current product).
-//
-// Animasi:
-//   - Section header fade up.
-//   - 2 cards with MotionCard hover (lift -4px + spring physics).
-//   - "Lihat detail" text + ArrowRight icon shifts +2px right on hover
-//     (group-hover, pure CSS) — micro-interaction cue "clickable".
-//
-// Tone color icon ambil dari product.iconTone (sama dengan Benefits).
-// Untuk mengakses visual property produk lain (icon, tone, name,
-// description) kita lookup via PRODUCT_DETAILS — single source of truth
-// dari lib/product-details.ts. Slug dari field `slug` di ProductDetail,
-// sehingga link selalu valid (`getProductSlug` di landing products.tsx).
-//
-// maxWidth nyaman: 2 card di grid tetap balance — tidak butuh cols-3
-// override (grid cols-3 dengan 2 item akan center-align).
-
 import Link from "next/link";
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../../../_motion/reveal";

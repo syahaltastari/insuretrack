@@ -136,7 +136,9 @@ pub async fn send(
     sender: &dyn EmailSender,
     email: Email<'_>,
 ) -> Result<Uuid, AppError> {
-    // 1. Insert email_logs dengan status QUEUED.
+    // Pipeline: insert QUEUED row → audit → resolve attachment → render
+    // & send via provider → finalize status (SENT|FAILED). Lihat doc-comment
+    // di atas `send` untuk konteks lengkap.
     let id: (Uuid,) = sqlx::query_as(
         r#"
         INSERT INTO email_logs
@@ -152,7 +154,8 @@ pub async fn send(
     .await?;
     let email_log_id = id.0;
 
-    // 2. Audit: "email queued" — early record sebelum actually send.
+    // Early audit ("email queued") sebelum actually send — supaya ada
+    // jejak kalau process crash di tengah pipeline.
     let _ = crate::services::audit::write(
         pool,
         AuditEntry {
@@ -170,7 +173,7 @@ pub async fn send(
     )
     .await;
 
-    // 3. Resolve attachment (kalau ada).
+    // Resolve attachment (kalau ada).
     let mut attachments: Vec<EmailAttachment> = Vec::new();
     if let Some(key) = email.attachment_path.as_deref() {
         match storage.read_bytes(key).await {
@@ -219,9 +222,9 @@ pub async fn send(
         }
     }
 
-    // 4. Render template (header + body + footer) → text + html,
-    //    lalu kirim via Resend. Caller supply `body` plain + optional
-    //    CTA; template yang bentuk final presentasi.
+    // Render template (header + body + footer) → text + html, lalu kirim
+    // via Resend. Caller supply `body` plain + optional CTA; template
+    // yang bentuk final presentasi.
     let rendered =
         crate::services::email_template::render(&crate::services::email_template::EmailTemplate {
             subject: email.subject,
@@ -246,7 +249,7 @@ pub async fn send(
 
     match &result {
         Ok(message_id) => {
-            // 5a. Update status SENT, audit log success.
+            // Provider reported success — finalize email_logs ke SENT.
             sqlx::query(
                 r#"UPDATE email_logs
                    SET status = 'SENT', sent_at = now(), error_message = NULL
@@ -284,7 +287,8 @@ pub async fn send(
             );
         }
         Err(e) => {
-            // 5b. Update status FAILED.
+            // Provider reported failure — finalize email_logs ke FAILED
+            // dengan error message. Best-effort, jangan propagate.
             let err_msg = format!("{e}");
             sqlx::query(
                 r#"UPDATE email_logs

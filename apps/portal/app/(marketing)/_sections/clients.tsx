@@ -1,14 +1,3 @@
-// Trust Strip — thin band antara Hero dan Produk. Tone tenang, factual.
-// Tujuan: turunkan friction user dengan social proof (logos) + factual
-// reassurance (OJK tagline) SEBELUM mereka scroll ke product detail.
-//
-// Layout: 1 baris tagline di tengah, di bawahnya logo klien korporat
-// (dari backend). Untuk 4+ logos, pakai infinite marquee — feel "alive"
-// tanpa distracting. Untuk < 4 logos, fallback ke static centered grid
-// supaya tidak terasa kosong (marquee dengan 2 logo + gap besar = jelek).
-//
-// Conditional render dari page.tsx: hanya muncul kalau `clients.length > 0`.
-
 import { Icon, SafeImage } from "@insuretrack/ui";
 import { Fragment } from "react";
 import { Reveal } from "../_motion/reveal";

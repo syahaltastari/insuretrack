@@ -1,19 +1,3 @@
-// Coverage — side-by-side "Yang ditanggung" vs "Yang tidak ditanggung".
-//
-// Animasi:
-//   - Section header slide up (Reveal)
-//   - 2 cards slide-in dari arah berlawanan: "ditanggung" dari kiri,
-//     "tidak ditanggung" dari kanan (delay 0.15s). Mirror entrance kasih
-//     feel "balanced comparison".
-//   - "Masa Tunggu" callout card slide up di bawahnya.
-//
-// Konvensi warna:
-//   - Yang ditanggung: matcha-300 bg, matcha-600 border, Check icon —
-//     "positive, aman".
-//   - Yang tidak ditanggung: pure-white bg, oat border, XCircle icon
-//     pomegranate — "peringatan, baca baik-baik".
-//   - Masa tunggu: warm-cream dengan dashed border — "info tambahan".
-
 import { Icon, type IconName } from "@insuretrack/ui";
 import { Reveal } from "../../../_motion/reveal";
 import { type ProductDetail } from "@/lib/product-details";
@@ -119,8 +103,6 @@ function CoverageCard({
   iconName: IconName;
   items: string[];
 }) {
-  // Tone → CSS variables. JANGAN hardcode color di sini — pakai
-  // design tokens supaya konsisten dengan design system.
   const styles =
     tone === "covered"
       ? {

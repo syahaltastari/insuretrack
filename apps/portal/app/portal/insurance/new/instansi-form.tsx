@@ -518,7 +518,7 @@ export function InstansiForm({
                   style={{
                     padding: 16,
                     borderColor: "var(--pomegranate-400)",
-                    background: "#fff5f5",
+                    background: "var(--pomegranate-50)",
                     color: "var(--pomegranate-400)",
                   }}
                   role="alert"

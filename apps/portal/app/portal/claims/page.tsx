@@ -113,7 +113,7 @@ export default function PortalClaimsPage() {
       )}
 
       {error && (
-        <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "#fff5f5" }}>
+        <div className="clay-card" style={{ borderColor: "var(--pomegranate-400)", background: "var(--pomegranate-50)" }}>
           ⚠ {error}
         </div>
       )}

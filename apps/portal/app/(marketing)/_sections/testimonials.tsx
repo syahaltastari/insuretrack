@@ -1,14 +1,3 @@
-// Testimoni — Carousel berbasis Embla (sudah ada di apps/portal/components/Carousel.tsx).
-// Conditional render dari page.tsx: hanya muncul kalau `testimonials.length > 0`.
-//
-// Layout v2: paper background (light warm) + white cards floating. Beda
-// dari versi lama (ubin dark) — kasih feel "ruang testimoni, bukan
-// showcase". Tone hangat, mudah dibaca, foto customer prominent.
-//
-// Rating stars: pakai Unicode ★ chars (bukan lucide Star) — sama
-// dengan kode lama, hemat icon bundle. Color: honey-700 untuk active,
-// oat-light untuk inactive (konsisten dengan tema).
-
 import { Icon } from "@insuretrack/ui";
 import { Carousel } from "@/components/Carousel";
 import { Reveal } from "../_motion/reveal";

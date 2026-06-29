@@ -450,8 +450,6 @@ function ClaimCard({ claim, onUpdated }: { claim: Claim; onUpdated: () => void }
   );
 }
 
-// ----- Filter bar + URL sync -----
-
 const CLAIM_DATE_FIELDS = [
   { value: "submitted_at", label: "Tanggal submit" },
   { value: "incident_date", label: "Tanggal insiden" },
@@ -494,7 +492,6 @@ export default function AdminClaimsPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // URL-driven filter state
   const qFromUrl = searchParams.get("q") ?? "";
   const statusFromUrl = searchParams.get("status") ?? "";
   const dateFromUrl = searchParams.get("date_from") ?? "";
@@ -541,7 +538,6 @@ export default function AdminClaimsPage() {
     [pathname, router, searchParams]
   );
 
-  // Debounce search input
   useEffect(() => {
     const t = setTimeout(() => {
       if (qInput !== qFromUrl) setFilterParams({ q: qInput });
@@ -630,7 +626,6 @@ export default function AdminClaimsPage() {
     setFilterParams({ sort_by: col, sort_dir: nextDir });
   };
 
-  // Active filter chips
   const chips: FilterChip[] = [];
   if (qFromUrl) {
     chips.push({

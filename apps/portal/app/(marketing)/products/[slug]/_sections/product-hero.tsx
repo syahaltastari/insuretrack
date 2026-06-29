@@ -1,20 +1,6 @@
-// Hero — section paling atas halaman detail produk.
-//
-// Animasi cascade (above-the-fold):
-//   1. Icon box (scale-in)               delay 0
-//   2. Badge pill (Sparkles)             delay 0.1s
-//   3. Nama produk (slide-up)            delay 0.15s
-//   4. Tagline (slide-up)                delay 0.25s
-//   5. CTAs (slide-up)                   delay 0.4s
-//   6. Pricing card (slide up + drift)   delay 0.55s
-//
-// Pricing card tetap di kanan pada ≥md (desktop) untuk kasih feel
-// "instan lihat harga" tanpa scroll. Di mobile stack di bawah.
-//
-// Kenapa Reveal `aboveFold`: hero pasti di viewport saat page load, jadi
-// `whileInView` bisa kena race condition dengan IntersectionObserver.
-// `animate` (immediate on mount) lebih reliable untuk hero — sama dengan
-// pattern di `_sections/hero.tsx`.
+// Reveal dipanggil dengan `aboveFold` karena hero pasti di viewport saat
+// page load — `whileInView` bisa kena race condition dengan
+// IntersectionObserver di sini.
 
 import Link from "next/link";
 import { Icon } from "@insuretrack/ui";

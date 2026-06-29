@@ -367,7 +367,7 @@ function ParticipantFormModal({
             style={{
               padding: 12,
               marginBottom: 12,
-              background: "#fff5f5",
+              background: "var(--pomegranate-50)",
               borderColor: "var(--pomegranate-400)",
               color: "var(--pomegranate-400)",
               fontSize: "0.9rem",

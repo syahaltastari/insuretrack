@@ -1,18 +1,4 @@
-// Stats — 3 angka besar dengan count-up animation. Dipakai untuk
-// konversi "value prop" (Benefits) menjadi "social proof with
-// numbers". Tone factual, hard data — bukan marketing fluff.
-//
-// Background: paper (slightly deeper dari canvas) — kasih subtle
-// contrast dengan section Benefits (canvas) di atasnya.
-//
-// Setiap stat punya:
-//   - Icon container (honey-100 bg + honey-700 icon) — visual anchor
-//   - Animated count-up number (CountUp component)
-//   - Label + sub-text
-//
-// CountUp: angka animate dari 0 → target saat 50% masuk viewport
-// (sekali saja). Pakai tabular-nums untuk konsistensi visual saat
-// angka berubah (no "jiggle"). Format IDR pakai Intl.NumberFormat
+// Pakai tabular-nums agar angka count-up tidak "jiggle" saat transisi.
 // locale "id-ID" (separator titik).
 
 import { Icon } from "@insuretrack/ui";

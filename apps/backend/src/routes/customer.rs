@@ -1568,7 +1568,6 @@ async fn customer_inquiry_message(
         .await?;
 
     let mut tx = state.pool.begin().await?;
-    // 1. Insert message.
     sqlx::query(
         r#"
         INSERT INTO inquiry_messages
@@ -1582,7 +1581,7 @@ async fn customer_inquiry_message(
     .bind(message)
     .execute(&mut *tx)
     .await?;
-    // 2. Update parent status ke OPEN + last_message_at.
+    // Customer reply resets parent inquiry ke OPEN + bumps last_message_at.
     sqlx::query(
         r#"
         UPDATE inquiries
@@ -1597,7 +1596,6 @@ async fn customer_inquiry_message(
     .await?;
     tx.commit().await?;
 
-    // 3. Audit.
     let _ = audit_write(
         &state.pool,
         crate::services::audit::AuditEntry {
@@ -1614,7 +1612,8 @@ async fn customer_inquiry_message(
     )
     .await;
 
-    // 4. Email admin — best-effort. Skip kalau no recipient configured.
+    // Email admin best-effort — failure tidak boleh rollback tx di atas.
+    // Skip kalau no recipient configured.
     if let Some(admin_email) =
         crate::services::email::admin_notification_email(&state.pool, &state.config).await?
     {
@@ -1670,7 +1669,6 @@ async fn customer_inquiry_message(
         .await;
     }
 
-    // 5. Return updated detail.
     let detail = build_inquiry_detail(&state, id).await?;
     Ok(Json(detail))
 }

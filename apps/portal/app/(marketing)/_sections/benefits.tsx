@@ -1,11 +1,6 @@
-// Benefits — 6 value-prop items, 3-col grid. Tone concise, bahasa awam.
-// Pakai `border-dashed` (clay-card.dashed di globals.css) untuk kasih
-// "informational, non-clickable" cue — beda dari produk card yang solid.
-//
-// Stagger 100ms per row — 6 cards reveal terasa rhythmic.
-// Tidak dibungkus MotionCard — hover micro-interaction cukup border
-// color shift + bg wash (no lift), supaya user tidak salah以为 clickable.
-
+// Pakai border-dashed (`clay-card.dashed`) untuk kasih "informational,
+// non-clickable" cue — beda dari product card yang solid. Tidak pakai
+// MotionCard karena hover lift akan misleading user.
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../_motion/reveal";
 import { StaggerGroup } from "../_motion/stagger-group";

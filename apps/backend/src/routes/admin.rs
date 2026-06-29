@@ -1959,7 +1959,6 @@ async fn upload_payment_proof(
     Path(id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> AppResult<Json<AdminClaimRow>> {
-    // 1. Verify claim exists (404 kalau tidak).
     let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM claims WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.pool)
@@ -1968,7 +1967,7 @@ async fn upload_payment_proof(
         return Err(AppError::NotFound(format!("claim {id}")));
     }
 
-    // 2. Parse multipart — expect exactly one "proof" field.
+    // Expect exactly one "proof" field di multipart body.
     let mut file_name: Option<String> = None;
     let mut content_type: Option<String> = None;
     let mut bytes: Option<Vec<u8>> = None;
@@ -1996,20 +1995,18 @@ async fn upload_payment_proof(
         bytes.ok_or_else(|| AppError::Validation("empty 'proof' field".into()))?,
     );
 
-    // 3. Save to storage (validates mime + size internally).
+    // save_payment_proof validates mime + size di internal storage.
     let stored = state
         .storage
         .save_payment_proof(id, &fname, &mime_t, &b)
         .await?;
 
-    // 4. Persist path ke kolom klaim.
     sqlx::query("UPDATE claims SET payment_proof_path = $1, updated_at = now() WHERE id = $2")
         .bind(&stored.key)
         .bind(id)
         .execute(&state.pool)
         .await?;
 
-    // 5. Audit.
     audit_write(
         &state.pool,
         AuditEntry {
@@ -2028,7 +2025,6 @@ async fn upload_payment_proof(
     )
     .await?;
 
-    // 6. Return updated row.
     let row: AdminClaimRow = sqlx::query_as(
         r#"
         SELECT cl.id, cl.claim_no, p.policy_no, c.full_name AS customer_name,
@@ -2409,7 +2405,6 @@ async fn admin_inquiry_message(
     .await?;
 
     let mut tx = state.pool.begin().await?;
-    // 1. Insert message.
     sqlx::query(
         r#"
         INSERT INTO inquiry_messages
@@ -2423,7 +2418,6 @@ async fn admin_inquiry_message(
     .bind(message)
     .execute(&mut *tx)
     .await?;
-    // 2. Update parent: status=ANSWERED + last_message_at.
     sqlx::query(
         r#"
         UPDATE inquiries
@@ -2439,7 +2433,6 @@ async fn admin_inquiry_message(
     .await?;
     tx.commit().await?;
 
-    // 3. Audit.
     let _ = audit_write(
         &state.pool,
         AuditEntry {
@@ -2456,7 +2449,7 @@ async fn admin_inquiry_message(
     )
     .await;
 
-    // 4. Email customer — best-effort.
+    // Email customer best-effort — failure tidak boleh rollback tx di atas.
     let inquiry_no: String = sqlx::query_scalar("SELECT inquiry_no FROM inquiries WHERE id = $1")
         .bind(id)
         .fetch_one(&state.pool)
@@ -2497,7 +2490,6 @@ async fn admin_inquiry_message(
     )
     .await;
 
-    // 5. Return updated detail.
     let inquiry: AdminInquiryRow = sqlx::query_as(
         r#"
         SELECT i.id, i.inquiry_no, c.full_name AS customer_name, c.email AS customer_email,

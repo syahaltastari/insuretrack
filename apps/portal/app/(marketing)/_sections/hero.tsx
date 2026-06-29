@@ -1,18 +1,6 @@
-// Hero — first viewport section. Sequencing entrance:
-//   1. Eyebrow badge (fade-up)
-//   2. Headline (slide-up, delay 80ms)
-//   3. Subtitle (slide-up, delay 180ms)
-//   4. CTAs (slide-up, delay 280ms)
-//   5. Floating e-policy card (slide-in from right, delay 500ms) — desktop only
-//
-// DNA animasi: fade + translateY 28px + 700ms ease-out-expo.
-// Palette: honey-400 brand primary, ink untuk heading, charcoal untuk body,
-// canvas untuk background.
-//
-// Layout v2: stacked center (mobile) → 2-col grid (md+): text left, floating
-// card right. Card adalah signature moment — mock e-policy dengan subtle
-// infinite float animation + hover lift. Visual cue "ini yang akan Anda
-// dapatkan" tanpa membuat klaim spesifik yang tidak bisa di-backup.
+// Floating e-policy card di kanan adalah signature moment — visual cue
+// "ini yang akan Anda dapatkan" tanpa klaim spesifik yang tidak bisa
+// di-backup.
 
 import Link from "next/link";
 import { Icon } from "@insuretrack/ui";

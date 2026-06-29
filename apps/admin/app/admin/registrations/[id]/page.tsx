@@ -89,8 +89,6 @@ const formatDateTime = (iso: string | null | undefined) => {
   });
 };
 
-// ---- presentational helpers ----
-
 function Field({ label, children, mono }: { label: string; children: React.ReactNode; mono?: boolean }) {
   return (
     <div>
@@ -207,8 +205,6 @@ function SummaryStat({
     </div>
   );
 }
-
-// ---- main page ----
 
 export default function RegistrationDetailPage() {
   const params = useParams<{ id: string }>();

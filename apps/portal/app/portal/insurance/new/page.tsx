@@ -23,7 +23,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@insuretrack/ui";
 import { Reveal } from "@/components/Reveal";
 import { PlanPicker } from "@/components/PlanPicker";
 import { ApplicantTypePicker } from "@/components/registration/ApplicantTypePicker";
-import { InstansiForm } from "./InstansiForm";
+import { InstansiForm } from "./instansi-form";
 import { Form, FormField } from "@insuretrack/forms";
 import { ResultDialog } from "@/components/registration/ResultDialog";
 import { IDLE, mapSubmitError, type ResultState } from "@/lib/submit-error";
@@ -820,7 +820,7 @@ function InsuranceNewPageInner() {
                         style={{
                           padding: 16,
                           borderColor: "var(--pomegranate-400)",
-                          background: "#fff5f5",
+                          background: "var(--pomegranate-50)",
                           color: "var(--pomegranate-400)",
                         }}
                         role="alert"

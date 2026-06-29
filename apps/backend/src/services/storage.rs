@@ -88,10 +88,6 @@ pub trait Storage: Send + Sync {
     fn public_url(&self, key: &str) -> Option<String>;
 }
 
-// ============================================================
-// LocalStorage
-// ============================================================
-
 pub struct LocalStorage {
     upload_dir: String,
 }
@@ -277,10 +273,6 @@ impl Storage for LocalStorage {
     }
 }
 
-// ============================================================
-// R2Storage
-// ============================================================
-
 pub struct R2Storage {
     client: S3Client,
     bucket: String,
@@ -447,10 +439,6 @@ impl Storage for R2Storage {
     }
 }
 
-// ============================================================
-// Builder
-// ============================================================
-
 /// Build the configured Storage backend. Hard-fail kalau config invalid.
 pub async fn build_storage(config: &crate::config::Config) -> anyhow::Result<Arc<dyn Storage>> {
     match config.storage_backend.as_str() {
@@ -479,10 +467,6 @@ pub async fn build_storage(config: &crate::config::Config) -> anyhow::Result<Arc
         }
     }
 }
-
-// ============================================================
-// Shared helpers
-// ============================================================
 
 fn guard_key(key: &str) -> &str {
     // Path traversal guard: reject any ".." segment in the key.

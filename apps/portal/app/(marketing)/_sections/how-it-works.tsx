@@ -1,14 +1,3 @@
-// HowItWorks — 3 langkah dari formulir ke polis. Sand background untuk
-// visual break halus (section 4 Produk = canvas, section ini = sand, lalu
-// section 5 = canvas lagi — rhythm alternating).
-//
-// Card: white floating di atas sand, dengan number badge honey-400 di
-// pojok kiri atas. Connector line (dashed honey-500) horizontal antara
-// step di desktop, vertikal di mobile.
-//
-// Stagger 150ms per step — slightly slower dari products (80ms) — kasih
-// emphasis "ini adalah sequence, baca perlahan".
-
 import { Reveal } from "../_motion/reveal";
 import { StaggerGroup } from "../_motion/stagger-group";
 import { COPY } from "../_data/copy";

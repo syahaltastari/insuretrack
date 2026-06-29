@@ -41,10 +41,6 @@ pub fn router() -> Router<AppState> {
         .route("/users/:id/reset-password", post(reset_password))
 }
 
-// ============================================================
-// Row + DTO
-// ============================================================
-
 /// Wire shape untuk admin user. Sama dengan `AdminMe` di `admin.rs` plus
 /// `is_super_admin` — kalau ke depan mau gabung, bisa di-extract ke
 /// `dto/admin_user.rs`. Untuk sekarang duplikasi 1 field lebih sederhana
@@ -89,10 +85,6 @@ struct ResetPasswordResponse {
     new_password: String,
 }
 
-// ============================================================
-// Helpers
-// ============================================================
-
 fn ensure_not_self(actor_id: Uuid, target_id: Uuid, action: &str) -> AppResult<()> {
     if actor_id == target_id {
         return Err(AppError::Validation(format!(
@@ -101,10 +93,6 @@ fn ensure_not_self(actor_id: Uuid, target_id: Uuid, action: &str) -> AppResult<(
     }
     Ok(())
 }
-
-// ============================================================
-// Handlers
-// ============================================================
 
 async fn list_users(
     State(state): State<AppState>,

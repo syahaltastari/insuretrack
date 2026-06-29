@@ -1,14 +1,3 @@
-// Final CTA — section penutup, full-width pada product swatch-deep
-// (pomegranate/ube/matcha-deep). Tone high-energy, conversion-focused.
-//
-// Animasi: single Reveal cascade untuk title → subtitle → CTA → note.
-// Background swatch-deep sudah built-in kontras tinggi (white text on
-// dark) — text-content reveal cukup tanpa dekorasi tambahan.
-//
-// Layout: centered, padding top/bottom generous. Style konsisten dengan
-// landing CTA (`_sections/cta.tsx`) tapi tone color sesuai product
-// (bukan generic honey-400).
-
 import Link from "next/link";
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../../../_motion/reveal";

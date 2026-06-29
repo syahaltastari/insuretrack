@@ -205,7 +205,6 @@ async fn submit_responses(
         return Err(AppError::Validation(err.message()));
     }
 
-    // 4. Compute BMI (kalau require_bmi).
     let bmi = if config.require_bmi {
         let h = req.height_cm.unwrap_or(0.0);
         let w = req.weight_kg.unwrap_or(0.0);
@@ -227,8 +226,8 @@ async fn submit_responses(
     );
     let decision = AutoDecision::from_tier(tier);
 
-    // 7. Persist underwriting_responses + update registration. Wrap in
-    //    transaction supaya atomic (kalau salah satu fail, rollback).
+    // Persist underwriting_responses + update registration dalam satu
+    // transaction — kalau salah satu fail, semua rollback.
     let mut tx = state.pool.begin().await?;
 
     // Convert multiplier ke Decimal untuk DB.

@@ -1,12 +1,3 @@
-// Benefits — 4 value-prop cards (icon + title + desc).
-//
-// Animasi: section header fade-up, lalu 4 cards scale-in dengan stagger
-// 0.08s (snappy, tidak lambat). Setiap card wrapped dengan MotionCard
-// untuk hover lift -4px — kasih cue "interaktif" saat hover.
-//
-// Tone warna icon pakai `product.iconTone` (matcha/slushie/ube) supaya
-// kartu harmonis dengan hero swatch section di atasnya.
-
 import { Icon, type IconName } from "@insuretrack/ui";
 import { Reveal } from "../../../_motion/reveal";
 import { StaggerGroup } from "../../../_motion/stagger-group";

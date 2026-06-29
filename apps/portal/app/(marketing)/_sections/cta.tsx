@@ -1,11 +1,3 @@
-// Final CTA — signature section. Full-width honey-400 bg + ink text.
-// Tone: high-energy, conversion-focused. Kontras tinggi (ink on
-// honey-400 = 15.6:1) supaya CTA "pop" di akhir scroll journey.
-//
-// Decorative blob di belakang text — kasih depth, tidak flat.
-// Primary button: ink bg + canvas text (max contrast, "do it now").
-// Secondary button: outline ink pada honey (transparan, "learn more").
-
 import Link from "next/link";
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../_motion/reveal";

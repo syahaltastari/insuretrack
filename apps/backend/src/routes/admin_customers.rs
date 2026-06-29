@@ -472,7 +472,6 @@ async fn get_customer(
     .fetch_all(&state.pool)
     .await?;
 
-    // 4. Audit — 10 terakhir khusus untuk entity ini.
     let recent_audit: Vec<AuditEntryRow> = sqlx::query_as(
         r#"
         SELECT id, actor, action, metadata, created_at
@@ -728,7 +727,6 @@ async fn resend_activation(
     )
     .await;
 
-    // 4. Audit.
     audit_write(
         &state.pool,
         AuditEntry {

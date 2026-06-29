@@ -54,8 +54,6 @@ pub fn router() -> Router<AppState> {
         .route("/uploads/*path", get(serve_upload))
 }
 
-// ---- GET /products ----
-
 async fn list_products() -> Json<serde_json::Value> {
     // Nested shape: { data: { products: [...], plans: [...] } }.
     // Frontend fetch sekali untuk render plan picker — single source of truth.
@@ -66,8 +64,6 @@ async fn list_products() -> Json<serde_json::Value> {
         }
     }))
 }
-
-// ---- GET /registrations/{regNo} ----
 
 #[derive(Debug, Serialize)]
 struct RegistrationStatus {
@@ -115,8 +111,6 @@ async fn get_registration(
         policy_no,
     }))
 }
-
-// ---- POST /payment/webhook ----
 
 #[derive(Debug, Deserialize)]
 struct WebhookBody {
@@ -1318,7 +1312,6 @@ async fn register_customer(
     .execute(&state.pool)
     .await?;
 
-    // Audit
     let _ = audit_write(
         &state.pool,
         AuditEntry {

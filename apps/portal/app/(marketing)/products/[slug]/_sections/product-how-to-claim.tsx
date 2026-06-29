@@ -1,13 +1,4 @@
-// Cara Klaim — 4 step timeline card.
-//
-// Animasi:
-//   - Section header slide up (Reveal).
-//   - 4 step cards stagger 0.1s (lambat dari benefit 0.08s karena step
-//     cards lebih besar — kasih feel "santai, deliberate").
-//   - Step number `01`/`02`/dst dengan tone warna product — kasih
-//     konsistensi visual dengan hero swatch.
-//
-// id="cara-klaim" — di-link dari Hero CTA "Cara Klaim" (anchor scroll).
+// id="cara-klaim" di-link dari Hero CTA "Cara Klaim" (anchor scroll).
 
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../../../_motion/reveal";

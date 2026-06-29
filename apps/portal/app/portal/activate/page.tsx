@@ -127,7 +127,7 @@ function ActivateInner() {
               role="alert"
               style={{
                 borderColor: "var(--pomegranate-400)",
-                background: "#fff5f5",
+                background: "var(--pomegranate-50)",
                 padding: "10px 14px",
                 borderRadius: "var(--radius-card)",
                 marginBottom: 12,

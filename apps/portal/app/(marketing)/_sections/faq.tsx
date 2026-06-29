@@ -1,13 +1,5 @@
-// FAQ — accordion 2-column grid. 6 Q&A pair dengan native <details>
-// untuk full a11y (keyboard, screen reader) tanpa dependensi JS.
-//
-// Pakai native HTML <details>/<summary> (bukan Radix Accordion atau
-// custom) — keuntungan: zero JS, browser-handle semua a11y, instant
-// open/close (acceptable untuk FAQ, animasi chevron sudah cukup).
-//
-// Animasi chevron: CSS transform via class .faq-chevron. Border color
-// shift via .faq-item[open]. Detail styles di globals.css.
-
+// Pakai native `<details>` (bukan Radix Accordion) — browser handle semua
+// a11y, instant open/close, tanpa dep JS.
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../_motion/reveal";
 import { COPY } from "../_data/copy";

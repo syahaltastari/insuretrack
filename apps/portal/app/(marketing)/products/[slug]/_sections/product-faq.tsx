@@ -1,16 +1,5 @@
-// FAQ — accordion pakai native <details>/<summary>, full a11y gratis
-// (keyboard navigation, screen reader) tanpa dependensi JS.
-//
-// Pakai CSS class .faq-item / .faq-summary / .faq-chevron dari globals.css
-// (sama dengan `_sections/faq.tsx` landing page): chevron ber-rotasi
-// 180deg saat [open], border tint ke honey tone.
-//
-// Animasi entrance: section header fade-up, lalu 4 details stagger 0.08s
-// (snappy). Open/close sendiri handle oleh browser — kita tidak
-// recompose dengan motion (overkill untuk a11y gratis native).
-//
-// maxWidth 800 supaya line length nyaman dibaca untuk Q&A text — pola
-// yang sama dengan landing FAQ juga 2-col dengan max-w-5xl.
+// Pakai native `<details>` untuk a11y gratis (keyboard, screen reader).
+// Open/close di-handle browser — tidak perlu motion library.
 
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../../../_motion/reveal";

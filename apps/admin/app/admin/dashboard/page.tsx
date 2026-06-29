@@ -223,7 +223,6 @@ export default function AdminDashboard() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // ----- URL-driven state (semua filter di searchParams, shareable) -----
   const dateFromUrl = searchParams.get("date_from") ?? "";
   const dateToUrl = searchParams.get("date_to") ?? "";
   const productFromUrl = searchParams.get("product") ?? "";
@@ -236,7 +235,6 @@ export default function AdminDashboard() {
     return { from: fromYmd(dateFromUrl), to: dateToUrl ? fromYmd(dateToUrl) : undefined };
   }, [dateFromUrl, dateToUrl]);
 
-  // ----- Data state -----
   const [stats, setStats] = useState<Stats | null>(null);
   const [charts, setCharts] = useState<Charts | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -255,7 +253,6 @@ export default function AdminDashboard() {
     [pathname, router, searchParams],
   );
 
-  // ----- Data fetch (triggered by URL changes) -----
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -299,7 +296,6 @@ export default function AdminDashboard() {
     load();
   }, [load]);
 
-  // ----- Filter change handlers -----
   const onDateRangeChange = (range: DateRangeValue | undefined) => {
     setFilterParams({
       date_from: range?.from ? toYmd(range.from) : undefined,
@@ -314,7 +310,6 @@ export default function AdminDashboard() {
 
   const resetAll = () => router.replace(pathname);
 
-  // ----- Active filter chips -----
   const chips: FilterChip[] = [];
   if (dateFromUrl || dateToUrl) {
     const dfLbl = dateFromUrl

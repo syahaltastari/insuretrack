@@ -259,11 +259,9 @@ fn add_one_month(d: NaiveDate) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(d)
 }
 
-// ----- filter clause builders -----
-//
-// Karena `product` dan `applicant_type` divalidasi ke enum tertutup
-// (`DashboardQuery::validated_*`), string inlining ke SQL aman. Tidak
-// perlu parameterized binding — value space-nya kecil dan eksplisit.
+// `product` dan `applicant_type` sudah divalidasi ke enum tertutup di
+// `DashboardQuery::validated_*`, jadi string inlining aman — value
+// space-nya kecil dan eksplisit, tidak perlu parameterized binding.
 
 fn product_clause(product: &Option<String>) -> &'static str {
     match product.as_deref() {

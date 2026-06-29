@@ -1,14 +1,3 @@
-// Produk — 3-column grid (1 col mobile). Cards stagger 80ms.
-//
-// Hover micro-interaction (MotionCard wrapping):
-//   1. Card lift -4px + shadow grow (MotionCard via Framer Motion)
-//   2. Icon container rotate 8deg + shift ke honey-600 (group-hover)
-//   3. Border color shift ke honey-300 (subtle, "active card" cue)
-//
-// Tone/icon per product dari `_data/product-visuals.ts` (index-based).
-// Harga "Mulai dari Rp Xrb/bln" sementara hardcoded sesuai spec produk
-// (Life/PA/Health) — ketika backend expose pricing, ganti ke field API.
-
 import Link from "next/link";
 import { Icon } from "@insuretrack/ui";
 import { Reveal } from "../_motion/reveal";

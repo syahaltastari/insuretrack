@@ -114,7 +114,8 @@ pub async fn update_claims_settings(
     .fetch_one(&state.pool)
     .await?;
 
-    // 3. Audit (mandatory: pakai `?` untuk propagate failure).
+    // Pakai `?` (bukan `let _ =`) — audit failure harus propagate ke caller
+    // supaya client tahu update belum sepenuhnya persisted.
     audit_write(
         &state.pool,
         AuditEntry {
