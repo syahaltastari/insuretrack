@@ -11,7 +11,7 @@
   "scripts": {
     "dev:portal": "pnpm --filter @insuretrack/portal dev",
     "dev:admin": "pnpm --filter @insuretrack/admin dev",
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
