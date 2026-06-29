@@ -38,3 +38,28 @@ pub async fn write(pool: &PgPool, entry: AuditEntry<'_>) -> Result<(), AppError>
     .await?;
     Ok(())
 }
+
+/// Shortcut untuk callsite yang sering muncul: tidak butuh `ip_address`.
+/// Caller wajib pakai `?` (atau `let _ = .await` eksplisit untuk
+/// best-effort) — audit failure harus visible, tidak silent-swallowed.
+pub async fn record(
+    pool: &PgPool,
+    actor: &str,
+    action: &str,
+    entity_type: &str,
+    entity_id: Option<Uuid>,
+    metadata: Value,
+) -> Result<(), AppError> {
+    write(
+        pool,
+        AuditEntry {
+            actor,
+            action,
+            entity_type,
+            entity_id,
+            metadata: Some(metadata),
+            ip_address: None,
+        },
+    )
+    .await
+}

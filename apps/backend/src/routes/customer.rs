@@ -35,10 +35,7 @@ use crate::{
         build_auth_cookies, generate_csrf_token, password::hash_password,
         password::verify_password, OptionalCustomerAuth, RequireCustomer, Role,
     },
-    domain::{
-        claim::can_transition as claim_can_transition,
-        identifier::{next_id, EntityType},
-    },
+    domain::identifier::{next_id, EntityType},
     dto::{
         find_plan, product_name_from_code, ActivateRequest, LoginRequest, LoginResponse,
         PasswordResetConsumeRequest, PasswordResetRequest, RegistrationData,
@@ -102,13 +99,6 @@ struct CustomerCredRow {
     is_active: bool,
 }
 
-fn customer_id_from(claims: &crate::auth::Claims) -> AppResult<Uuid> {
-    claims
-        .sub
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Unauthorized)
-}
-
 // ---- POST /activate ----
 
 async fn activate(
@@ -120,7 +110,7 @@ async fn activate(
         return Err(AppError::Unauthorized);
     }
 
-    let customer_id: Uuid = claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let customer_id = claims.sub_uuid()?;
 
     let row: Option<CustomerCredRow> = sqlx::query_as(
         r#"
@@ -227,24 +217,16 @@ async fn login(
 }
 
 /// POST /api/customer/logout — clear session + CSRF cookies, return 204.
-/// FE call ini saat user klik "Logout" di menu, lalu
-/// `router.replace("/portal/login")`.
 ///
-/// IDEMPOTENT: pakai `OptionalCustomerAuth` bukan `RequireCustomer` supaya
-/// logout SELALU succeed (204) + clear cookies, bahkan kalau session
-/// cookie absent / expired / role mismatch. Sebelumnya pakai
-/// `RequireCustomer` — kalau session invalid, extractor return 401/403,
-/// handler tidak pernah jalan, cookie tidak ter-clear, dan portal
-/// middleware redirect user kembali ke dashboard (loop). Sekarang:
-/// kalau session valid → audit + clear. Kalau tidak → langsung clear
-/// (no audit).
+/// Pakai OptionalCustomerAuth (bukan RequireCustomer) agar cookie selalu ter-clear
+/// meski token expired/absent — RequireCustomer menyebabkan redirect loop.
 async fn logout(
     State(state): State<AppState>,
     OptionalCustomerAuth(maybe_claims): OptionalCustomerAuth,
 ) -> AppResult<Response> {
     if let Some(claims) = maybe_claims {
         if claims.role == Role::Customer {
-            if let Ok(customer_id) = customer_id_from(&claims) {
+            if let Ok(customer_id) = claims.sub_uuid() {
                 let _ = audit_write(
                     &state.pool,
                     AuditEntry {
@@ -382,7 +364,7 @@ async fn password_reset_consume(
     if claims.purpose.as_deref() != Some("password_reset") || claims.role != Role::Customer {
         return Err(AppError::Unauthorized);
     }
-    let customer_id: Uuid = claims.sub.parse().map_err(|_| AppError::Unauthorized)?;
+    let customer_id = claims.sub_uuid()?;
     let new_hash = hash_password(&req.new_password)?;
 
     let row: Option<CustomerCredRow> = sqlx::query_as(
@@ -390,7 +372,7 @@ async fn password_reset_consume(
         UPDATE customers
            SET password_hash = $1, updated_at = now()
          WHERE id = $2
-        RETURNING id, email, full_name, password_hash, portal_status
+        RETURNING id, email, full_name, password_hash, portal_status, is_active
         "#,
     )
     .bind(&new_hash)
@@ -412,7 +394,6 @@ async fn password_reset_consume(
     )
     .await?;
 
-    // Issue a fresh login token so the user is signed in immediately.
     const SESSION_TTL: i64 = 60 * 60 * 8;
     let token = state.tokens.issue(
         &customer.id.to_string(),
@@ -472,7 +453,7 @@ async fn me(
     State(state): State<AppState>,
     RequireCustomer(claims): RequireCustomer,
 ) -> AppResult<Json<MeSummary>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
 
     #[derive(sqlx::FromRow)]
     struct MeRow {
@@ -572,7 +553,7 @@ async fn update_me(
     RequireCustomer(claims): RequireCustomer,
     Json(req): Json<UpdateMeRequest>,
 ) -> AppResult<Json<UpdateMeResponse>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
 
     // Normalisasi & validasi per-field. Kalau field None, biarkan
     // nilai existing (tidak di-overwrite). Kalau Some("") ditolak.
@@ -696,7 +677,7 @@ async fn change_password(
     RequireCustomer(claims): RequireCustomer,
     Json(req): Json<ChangePasswordRequest>,
 ) -> AppResult<StatusCode> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
 
     if req.new_password.len() < 8 {
         return Err(AppError::Validation(
@@ -828,7 +809,7 @@ async fn list_policies(
     RequireCustomer(claims): RequireCustomer,
     Query(q): Query<PageQuery>,
 ) -> AppResult<Json<Page<PolicyRow>>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -890,7 +871,7 @@ async fn get_policy(
     RequireCustomer(claims): RequireCustomer,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<PolicyRow>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let row: Option<PolicyRowRaw> = sqlx::query_as(
         r#"
         SELECT p.id, p.policy_no, p.product, p.sum_assured, p.premium,
@@ -921,7 +902,7 @@ async fn download_policy_pdf(
     RequireCustomer(claims): RequireCustomer,
     Path(id): Path<Uuid>,
 ) -> AppResult<Response> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let row: Option<(Option<String>,)> = sqlx::query_as(
         r#"
         SELECT p.pdf_path
@@ -997,7 +978,7 @@ async fn list_claims(
     RequireCustomer(claims): RequireCustomer,
     Query(q): Query<PageQuery>,
 ) -> AppResult<Json<Page<ClaimRow>>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -1045,7 +1026,7 @@ async fn get_claim(
     RequireCustomer(claims): RequireCustomer,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<ClaimRow>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let row: Option<ClaimRow> = sqlx::query_as(
         r#"
         SELECT cl.id, cl.claim_no, cl.policy_id, p.policy_no,
@@ -1069,7 +1050,7 @@ async fn create_claim(
     RequireCustomer(customer_claims): RequireCustomer,
     mut multipart: Multipart,
 ) -> AppResult<impl IntoResponse> {
-    let customer_id = customer_id_from(&customer_claims)?;
+    let customer_id = customer_claims.sub_uuid()?;
 
     let mut data_json: Option<String> = None;
     let mut doc_files: Vec<(String, String, Vec<u8>)> = Vec::new(); // (name, mime, bytes)
@@ -1109,7 +1090,7 @@ async fn create_claim(
     let data: CreateClaimJson = serde_json::from_str(&data_str)
         .map_err(|e| AppError::Validation(format!("invalid data JSON: {e}")))?;
 
-    // Validate: policy belongs to customer, ACTIVE, incident_date in coverage period.
+    // Validasi policy: milik customer, status ACTIVE, incident_date dalam coverage period.
     // `claim_type` & `claimed_amount` di-derive dari policy di bawah
     // (lihat komentar di CreateClaimJson).
     let policy: Option<(
@@ -1257,7 +1238,6 @@ async fn create_claim(
         .await?;
     }
 
-    // Email + audit
     let customer_email: String = sqlx::query_scalar("SELECT email FROM customers WHERE id = $1")
         .bind(customer_id)
         .fetch_one(&state.pool)
@@ -1309,9 +1289,6 @@ async fn create_claim(
         },
     )
     .await?;
-
-    // Touch state machine helper so we know it's wired (no transition at submit; just import).
-    let _ = claim_can_transition;
 
     Ok((
         StatusCode::CREATED,
@@ -1409,7 +1386,7 @@ async fn list_inquiries(
     RequireCustomer(claims): RequireCustomer,
     Query(q): Query<PageQuery>,
 ) -> AppResult<Json<Page<InquiryRow>>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -1476,7 +1453,7 @@ async fn get_inquiry(
     RequireCustomer(claims): RequireCustomer,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<InquiryDetailRow>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
 
     // Lazy auto-close sebelum fetch — kalau stale, close dulu agar response
     // status akurat. Idempotent.
@@ -1533,7 +1510,7 @@ async fn customer_inquiry_message(
 ) -> AppResult<Json<InquiryDetailRow>> {
     use crate::domain::inquiry::can_transition;
 
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let message = req.message.trim();
     if message.is_empty() {
         return Err(AppError::Validation("message required".into()));
@@ -1684,7 +1661,7 @@ async fn customer_inquiry_close(
 ) -> AppResult<Json<InquiryRow>> {
     use crate::domain::inquiry::can_transition;
 
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let current: Option<(String, Uuid)> =
         sqlx::query_as("SELECT status, customer_id FROM inquiries WHERE id = $1")
             .bind(id)
@@ -1807,7 +1784,7 @@ async fn create_inquiry(
     RequireCustomer(claims): RequireCustomer,
     Json(req): Json<CreateInquiryJson>,
 ) -> AppResult<impl IntoResponse> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
 
     if req.subject.trim().is_empty() {
         return Err(AppError::Validation("subject required".into()));
@@ -1816,7 +1793,7 @@ async fn create_inquiry(
         return Err(AppError::Validation("message required".into()));
     }
 
-    // If policy_id is provided, verify ownership.
+    // Verifikasi ownership kalau policy_id di-supply.
     if let Some(pid) = req.policy_id {
         let owned: Option<(Uuid,)> = sqlx::query_as(
             r#"
@@ -2021,10 +1998,7 @@ async fn submit_insurance_application(
     RequireCustomer(claims): RequireCustomer,
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
-    let customer_id = claims
-        .sub
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Unauthorized)?;
+    let customer_id = claims.sub_uuid()?;
 
     // `claims.sub` adalah UUID (lihat auth::jwt::issue) — BUKAN email. Source
     // email dari DB agar Resend menerima `to` berformat `email@example.com`.
@@ -2523,7 +2497,7 @@ async fn list_invoices(
     RequireCustomer(claims): RequireCustomer,
     Query(q): Query<PageQuery>,
 ) -> AppResult<Json<Page<InvoiceRow>>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let page = q.page();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -2584,7 +2558,7 @@ async fn get_invoice(
     RequireCustomer(claims): RequireCustomer,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<InvoiceRow>> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let row: Option<InvoiceRow> = sqlx::query_as(
         r#"
         SELECT i.id, i.invoice_no, r.registration_no,
@@ -2615,7 +2589,7 @@ async fn download_invoice_pdf(
     RequireCustomer(claims): RequireCustomer,
     Path(id): Path<Uuid>,
 ) -> AppResult<Response> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let row: Option<(Option<String>, String)> = sqlx::query_as(
         r#"
         SELECT i.pdf_path, i.invoice_no
@@ -2657,7 +2631,7 @@ async fn download_invoice_receipt(
     RequireCustomer(claims): RequireCustomer,
     Path(id): Path<Uuid>,
 ) -> AppResult<Response> {
-    let customer_id = customer_id_from(&claims)?;
+    let customer_id = claims.sub_uuid()?;
     let row: Option<(Option<String>, String)> = sqlx::query_as(
         r#"
         SELECT i.receipt_pdf_path, i.invoice_no
