@@ -173,7 +173,6 @@ async fn create_user(
     claims: RequireSuperAdmin,
     Json(req): Json<CreateUserRequest>,
 ) -> AppResult<impl IntoResponse> {
-    // Validasi dasar.
     let username = req.username.trim();
     if username.len() < 3 {
         return Err(AppError::Validation("username minimal 3 karakter".into()));
@@ -227,8 +226,7 @@ async fn create_user(
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
-        // Unique constraint: username atau email duplicate.
-        if let sqlx::Error::Database(db) = &e {
+            if let sqlx::Error::Database(db) = &e {
             if let Some(c) = db.constraint() {
                 let msg = match c {
                     "admin_users_username_key" => "username sudah dipakai",
@@ -241,7 +239,7 @@ async fn create_user(
         AppError::Internal(anyhow::anyhow!("create_user: {e}"))
     })?;
 
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
     audit_write(
         &state.pool,
         AuditEntry {
@@ -249,9 +247,7 @@ async fn create_user(
             action: "admin_user_created",
             entity_type: "admin_user",
             entity_id: Some(new_id),
-            // Catat username + is_super_admin di metadata untuk audit trail.
-            // JANGAN catat password_hash.
-            metadata: Some(serde_json::json!({
+                    metadata: Some(serde_json::json!({
                 "username": username,
                 "is_super_admin": is_super_admin,
                 "actor_id": actor_id,
@@ -270,7 +266,7 @@ async fn update_user(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> AppResult<Json<AdminUserRow>> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
 
     // Self-protection: admin tidak bisa demote diri sendiri dari super_admin.
     // Tolak request yang attempted untuk set is_super_admin=false pada self.
@@ -280,7 +276,6 @@ async fn update_user(
         ));
     }
 
-    // Trim & validate (kalau di-supply). None = no change (COALESCE di SQL).
     let full_name: Option<&str> = req
         .full_name
         .as_deref()
@@ -361,7 +356,7 @@ async fn activate_user(
     claims: RequireSuperAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
     let res =
         sqlx::query("UPDATE admin_users SET is_active = TRUE, updated_at = now() WHERE id = $1")
             .bind(id)
@@ -392,7 +387,7 @@ async fn deactivate_user(
     claims: RequireSuperAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
     // Self-protection: admin tidak bisa nonaktifkan diri sendiri.
     ensure_not_self(actor_id, id, "deactivate")?;
 
@@ -426,14 +421,12 @@ async fn reset_password(
     claims: RequireSuperAdmin,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<ResetPasswordResponse>> {
-    let actor_id = Uuid::parse_str(&claims.0.sub).map_err(|_| AppError::Unauthorized)?;
+    let actor_id = claims.0.sub_uuid()?;
     // Self-protection: admin tidak bisa reset password sendiri via endpoint
     // ini. Gunakan `POST /api/admin/me/password` yang require current password.
     ensure_not_self(actor_id, id, "reset_password")?;
 
-    // Generate random password, hash, update. Plaintext dikembalikan
-    // SEKALI di response — caller (FE) harus tampilkan ke user
-    // dan minta user ganti di /me/password saat login pertama.
+    // Plaintext dikembalikan sekali di response — FE wajib tampilkan ke user.
     let new_password = generate_random_password(GENERATED_PASSWORD_LEN);
     let new_hash = hash_password(&new_password)?;
 
@@ -455,9 +448,7 @@ async fn reset_password(
             action: "admin_user_password_reset",
             entity_type: "admin_user",
             entity_id: Some(id),
-            // Catat panjang password yang di-generate, BUKAN plaintext-nya.
-            // (Plaintext sudah di response — tapi audit_log harus tetap
-            // aman untuk di-export tanpa泄露 credentials.)
+            // Catat panjang, BUKAN plaintext — audit log harus aman untuk di-export.
             metadata: Some(serde_json::json!({
                 "actor_id": actor_id,
                 "generated_password_length": GENERATED_PASSWORD_LEN,
