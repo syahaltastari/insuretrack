@@ -6,21 +6,21 @@ use printpdf::{IndirectFontRef, PdfLayerReference};
 use crate::services::pdf::helpers::{draw_line, set_color, truncate};
 use crate::services::pdf::theme::{C_BLACK, C_CHARCOAL, C_SILVER};
 
-pub struct BeneficiaryBox<'a> {
-    pub name: &'a str,
+pub(crate) struct BeneficiaryBox<'a> {
+    pub(crate) name: &'a str,
 }
 
 impl<'a> BeneficiaryBox<'a> {
     /// Return None kalau name kosong (caller skip).
-    pub fn new(name: Option<&'a str>) -> Option<Self> {
+    pub(crate) fn new(name: Option<&'a str>) -> Option<Self> {
         name.filter(|s| !s.is_empty()).map(|n| Self { name: n })
     }
 
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         27.0
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,

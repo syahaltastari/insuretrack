@@ -23,7 +23,7 @@ use crate::services::pdf::{
 /// pemanggilan ini untuk alur INDIVIDU (`participants.is_empty()`).
 /// `doc_label` = "INVOICE" atau "BUKTI PEMBAYARAN" (ditampilkan di
 /// header bar page pertama).
-pub fn render(
+pub(crate) fn render(
     doc: &PdfDocumentReference,
     bold: &IndirectFontRef,
     reg: &IndirectFontRef,

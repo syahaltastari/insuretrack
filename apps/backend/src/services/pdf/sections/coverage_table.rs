@@ -8,26 +8,26 @@ use crate::services::pdf::theme::{C_BLACK, C_OAT_BORDER, C_OAT_LIGHT, C_SILVER};
 use chrono::Datelike;
 use rust_decimal::Decimal;
 
-pub struct CoverageTable<'a> {
-    pub variant: CoverageVariant,
-    pub product_name: &'a str,
-    pub plan_tier: Option<&'a str>,
-    pub sum_assured: Decimal,
-    pub premium: Decimal,
-    pub coverage_term_years: i32,
-    pub applicant_type: &'a str,
-    pub per_participant_premium: Option<Decimal>,
-    pub participant_count: usize,
+pub(crate) struct CoverageTable<'a> {
+    pub(crate) variant: CoverageVariant,
+    pub(crate) product_name: &'a str,
+    pub(crate) plan_tier: Option<&'a str>,
+    pub(crate) sum_assured: Decimal,
+    pub(crate) premium: Decimal,
+    pub(crate) coverage_term_years: i32,
+    pub(crate) applicant_type: &'a str,
+    pub(crate) per_participant_premium: Option<Decimal>,
+    pub(crate) participant_count: usize,
 }
 
-pub enum CoverageVariant {
+pub(crate) enum CoverageVariant {
     Policy,
     Invoice,
     Receipt { effective_date: chrono::NaiveDate },
 }
 
 impl<'a> CoverageTable<'a> {
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         match self.variant {
             CoverageVariant::Policy => 38.0, // +total premi row
             CoverageVariant::Invoice | CoverageVariant::Receipt { .. } => {
@@ -43,7 +43,7 @@ impl<'a> CoverageTable<'a> {
         }
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,
@@ -422,6 +422,6 @@ impl<'a> CoverageTable<'a> {
     }
 }
 
-fn format_idr_only_date(d: chrono::NaiveDate) -> String {
+pub(crate) fn format_idr_only_date(d: chrono::NaiveDate) -> String {
     crate::services::pdf::helpers::format_date_id(d)
 }

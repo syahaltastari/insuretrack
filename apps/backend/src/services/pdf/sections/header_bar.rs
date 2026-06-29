@@ -8,7 +8,7 @@ use printpdf::{IndirectFontRef, PdfLayerReference};
 use crate::services::pdf::helpers::{fill_rect, set_color};
 use crate::services::pdf::theme::{C_BLACK, C_CREAM, C_WHITE};
 
-pub enum HeaderBar<'a> {
+pub(crate) enum HeaderBar<'a> {
     /// Page 1 cover (invoice/receipt/lampiran): brand kiri besar, doc_label
     /// kanan besar, tagline + subtitle di bawah.
     FullCover {
@@ -23,7 +23,7 @@ pub enum HeaderBar<'a> {
 
 impl<'a> HeaderBar<'a> {
     /// Tinggi header dalam mm.
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         match self {
             HeaderBar::FullCover { .. } | HeaderBar::LampiranContinued { .. } => 23.0,
             HeaderBar::MiniPolicy { .. } => 18.0,
@@ -31,7 +31,7 @@ impl<'a> HeaderBar<'a> {
     }
 
     /// Render ke `layer` dengan `top_y` sebagai top edge. Return bottom y.
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,

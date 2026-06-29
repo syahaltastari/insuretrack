@@ -6,7 +6,7 @@ use printpdf::{IndirectFontRef, PdfLayerReference};
 use crate::services::pdf::helpers::{fill_rect, set_color};
 use crate::services::pdf::theme::{C_BLACK, C_CREAM, C_WHITE};
 
-pub enum FooterBar<'a> {
+pub(crate) enum FooterBar<'a> {
     /// Footer e-Policy p1/p2 (tinggi 17mm): brand + halaman + no polis.
     PolicyStandard {
         policy_no: &'a str,
@@ -26,7 +26,7 @@ pub enum FooterBar<'a> {
 }
 
 impl<'a> FooterBar<'a> {
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         match self {
             FooterBar::PolicyStandard { .. } => 17.0,
             FooterBar::PolicyLastPage { .. } => 15.5,
@@ -36,7 +36,7 @@ impl<'a> FooterBar<'a> {
     }
 
     /// Render footer. Y = 0 (bottom edge) sampai height().
-    pub fn render(&self, layer: &PdfLayerReference, bold: &IndirectFontRef, reg: &IndirectFontRef) {
+    pub(crate) fn render(&self, layer: &PdfLayerReference, bold: &IndirectFontRef, reg: &IndirectFontRef) {
         let h = self.height();
         fill_rect(layer, 0.0, 0.0, 210.0, h, C_BLACK);
         match self {

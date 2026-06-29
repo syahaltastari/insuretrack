@@ -11,7 +11,7 @@ use crate::services::pdf::inputs::{
 };
 
 /// Sample `PolicyPdfInput` — match pola existing test di pdf.rs.
-pub fn sample_input() -> PolicyPdfInput<'static> {
+pub(crate) fn sample_input() -> PolicyPdfInput<'static> {
     PolicyPdfInput {
         policy_no: "POL-202606-000001",
         registration_no: "REG-202606-000001",
@@ -38,7 +38,7 @@ pub fn sample_input() -> PolicyPdfInput<'static> {
 }
 
 /// Sample `InvoicePdfInput` dengan peserta opsional (None = INDIVIDU).
-pub fn sample_invoice_input(participants: Vec<ParticipantSummary>) -> InvoicePdfInput<'static> {
+pub(crate) fn sample_invoice_input(participants: Vec<ParticipantSummary>) -> InvoicePdfInput<'static> {
     let applicant_type: &'static str = if participants.is_empty() {
         "INDIVIDU"
     } else {
@@ -87,7 +87,7 @@ pub fn sample_invoice_input(participants: Vec<ParticipantSummary>) -> InvoicePdf
 }
 
 /// Sample `ReceiptPdfInput` dengan peserta opsional (None = INDIVIDU).
-pub fn sample_receipt_input(participants: Vec<ParticipantSummary>) -> ReceiptPdfInput<'static> {
+pub(crate) fn sample_receipt_input(participants: Vec<ParticipantSummary>) -> ReceiptPdfInput<'static> {
     let applicant_type: &'static str = if participants.is_empty() {
         "INDIVIDU"
     } else {
@@ -131,7 +131,7 @@ pub fn sample_receipt_input(participants: Vec<ParticipantSummary>) -> ReceiptPdf
 }
 
 /// Generate N sample participants untuk test lampiran.
-pub fn sample_participants(n: usize) -> Vec<ParticipantSummary> {
+pub(crate) fn sample_participants(n: usize) -> Vec<ParticipantSummary> {
     (1..=n)
         .map(|i| ParticipantSummary {
             no: i as u32,
@@ -150,7 +150,7 @@ pub fn sample_participants(n: usize) -> Vec<ParticipantSummary> {
 }
 
 /// Assert byte output valid PDF (magic header + EOF marker).
-pub fn assert_valid_pdf(bytes: &[u8]) {
+pub(crate) fn assert_valid_pdf(bytes: &[u8]) {
     assert!(bytes.starts_with(b"%PDF-"), "missing PDF magic bytes");
     let tail = &bytes[bytes.len().saturating_sub(32)..];
     assert!(

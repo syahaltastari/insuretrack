@@ -8,12 +8,12 @@ use crate::services::pdf::helpers::{
 };
 use crate::services::pdf::theme::{C_BLACK, C_CREAM, C_OAT_BORDER, C_SILVER};
 
-pub struct CardRow {
-    pub label: &'static str,
-    pub value: String,
+pub(crate) struct CardRow {
+    pub(crate) label: &'static str,
+    pub(crate) value: String,
 }
 
-pub enum TwoColumnKind<'a> {
+pub(crate) enum TwoColumnKind<'a> {
     PolicySchedule {
         left_title: &'a str,
         right_title: &'a str,
@@ -61,7 +61,7 @@ pub enum TwoColumnKind<'a> {
 }
 
 impl<'a> TwoColumnKind<'a> {
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         match self {
             TwoColumnKind::PolicySchedule { .. } => 66.0,
             TwoColumnKind::InvoiceBillTo { applicant_type, .. } => {
@@ -82,7 +82,7 @@ impl<'a> TwoColumnKind<'a> {
     }
 }
 
-pub fn render<'a>(
+pub(crate) fn render<'a>(
     kind: &TwoColumnKind<'a>,
     layer: &PdfLayerReference,
     bold: &IndirectFontRef,

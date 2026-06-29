@@ -18,7 +18,7 @@ mod inputs;
 mod layout;
 mod theme;
 
-pub mod sections;
+pub(crate) mod sections;
 
 mod invoice;
 mod policy;

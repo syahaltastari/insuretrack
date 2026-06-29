@@ -6,14 +6,14 @@ use crate::services::pdf::helpers::set_color;
 use crate::services::pdf::theme::{C_BLACK, C_SILVER};
 
 /// Footer notice di policy p1 (italic 2 baris tentang polis elektronik).
-pub struct FooterNotice;
+pub(crate) struct FooterNotice;
 
 impl FooterNotice {
-    pub fn height() -> f32 {
+    pub(crate) fn height() -> f32 {
         12.0
     }
 
-    pub fn render(layer: &PdfLayerReference, italic: &IndirectFontRef, top_y: f32) -> f32 {
+    pub(crate) fn render(layer: &PdfLayerReference, italic: &IndirectFontRef, top_y: f32) -> f32 {
         let bottom_y = top_y - Self::height();
         set_color(layer, C_SILVER);
         layer.use_text(
@@ -35,24 +35,24 @@ impl FooterNotice {
 }
 
 /// Payment instructions + catatan (untuk invoice & receipt).
-pub struct PaymentInstructions {
-    pub kind: PaymentKind,
+pub(crate) struct PaymentInstructions {
+    pub(crate) kind: PaymentKind,
 }
 
-pub enum PaymentKind {
+pub(crate) enum PaymentKind {
     Invoice,
     Receipt,
 }
 
 impl PaymentInstructions {
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         match self.kind {
             PaymentKind::Invoice => 35.0,
             PaymentKind::Receipt => 22.0,
         }
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,

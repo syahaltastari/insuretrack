@@ -6,7 +6,7 @@ use printpdf::{IndirectFontRef, PdfLayerReference};
 use crate::services::pdf::helpers::{fill_rect, set_color};
 use crate::services::pdf::theme::{C_BLACK, C_LEMON_400, C_MATCHA_300, C_POMEGRANATE, C_SILVER};
 
-pub enum TitleStatus<'a> {
+pub(crate) enum TitleStatus<'a> {
     /// e-Policy: judul besar "POLIS ASURANSI" + product + nomor polis + AKTIF badge.
     Policy {
         product_name: &'a str,
@@ -19,18 +19,18 @@ pub enum TitleStatus<'a> {
 }
 
 impl<'a> TitleStatus<'a> {
-    pub fn policy(product_name: &'a str, policy_no: &'a str) -> Self {
+    pub(crate) fn policy(product_name: &'a str, policy_no: &'a str) -> Self {
         TitleStatus::Policy {
             product_name,
             policy_no,
         }
     }
-    pub fn invoice(status: &'a str) -> Self {
+    pub(crate) fn invoice(status: &'a str) -> Self {
         TitleStatus::Invoice { status }
     }
 
     /// Tinggi title block dalam mm.
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         match self {
             TitleStatus::Policy { .. } => 110.0,
             TitleStatus::Invoice { .. } | TitleStatus::Receipt => 35.0,
@@ -38,7 +38,7 @@ impl<'a> TitleStatus<'a> {
     }
 
     /// Render. top_y = top edge of title (untuk policy: setelah header; untuk invoice/receipt: setelah header).
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,

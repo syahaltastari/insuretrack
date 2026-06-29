@@ -24,27 +24,27 @@ pub enum SeedMode {
 
 #[derive(Debug, Clone)]
 pub struct Counts {
-    pub customers: usize,
-    pub registrations: usize,
-    pub customers_with_portal: usize,
+    pub(crate) customers: usize,
+    pub(crate) registrations: usize,
+    pub(crate) customers_with_portal: usize,
     /// Proporsi registration yang berupa Instansi (group). 0.0..=1.0.
     /// Default 0.2 (20% Instansi, 80% Individu).
-    pub group_ratio: f32,
+    pub(crate) group_ratio: f32,
     /// Minimum peserta per Instansi registration (inclusive).
-    pub min_participants: usize,
+    pub(crate) min_participants: usize,
     /// Maximum peserta per Instansi registration (inclusive).
-    pub max_participants: usize,
+    pub(crate) max_participants: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct SeedConfig {
-    pub mode: SeedMode,
-    pub reset: bool,
-    pub dry_run: bool,
-    pub counts: Counts,
-    pub months_back: i32,
-    pub claims_ratio: f32,
-    pub upload_dir: String,
+    pub(crate) mode: SeedMode,
+    pub(crate) reset: bool,
+    pub(crate) dry_run: bool,
+    pub(crate) counts: Counts,
+    pub(crate) months_back: i32,
+    pub(crate) claims_ratio: f32,
+    pub(crate) upload_dir: String,
 }
 
 /// Build config dari raw CLI values (dipakai `bin/seed.rs`).

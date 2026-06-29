@@ -7,20 +7,20 @@ use crate::services::pdf::helpers::{draw_line, fill_rect, format_idr, set_color,
 use crate::services::pdf::theme::{C_BLACK, C_CREAM, C_OAT_LIGHT, C_SILVER};
 
 /// Tiga kotak info side-by-side di policy p1 (di bawah judul).
-pub struct PolicyScheduleBoxes {
-    pub effective_date: chrono::NaiveDate,
-    pub expiry_date: chrono::NaiveDate,
-    pub coverage_term_years: i32,
-    pub sum_assured: rust_decimal::Decimal,
-    pub premium: rust_decimal::Decimal,
+pub(crate) struct PolicyScheduleBoxes {
+    pub(crate) effective_date: chrono::NaiveDate,
+    pub(crate) expiry_date: chrono::NaiveDate,
+    pub(crate) coverage_term_years: i32,
+    pub(crate) sum_assured: rust_decimal::Decimal,
+    pub(crate) premium: rust_decimal::Decimal,
 }
 
 impl PolicyScheduleBoxes {
-    pub fn height() -> f32 {
+    pub(crate) fn height() -> f32 {
         46.0
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,
@@ -153,17 +153,17 @@ impl PolicyScheduleBoxes {
 }
 
 /// Signature block — dua blok tanda tangan di policy p3.
-pub struct SignatureBlock<'a> {
-    pub customer_name: &'a str,
-    pub effective_date: chrono::NaiveDate,
+pub(crate) struct SignatureBlock<'a> {
+    pub(crate) customer_name: &'a str,
+    pub(crate) effective_date: chrono::NaiveDate,
 }
 
 impl<'a> SignatureBlock<'a> {
-    pub fn height() -> f32 {
+    pub(crate) fn height() -> f32 {
         40.0
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,

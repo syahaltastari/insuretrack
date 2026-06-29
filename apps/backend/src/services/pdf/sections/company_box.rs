@@ -6,14 +6,14 @@ use printpdf::{IndirectFontRef, PdfLayerReference};
 use crate::services::pdf::helpers::{draw_line, set_color, truncate};
 use crate::services::pdf::theme::{C_BLACK, C_CHARCOAL, C_SILVER};
 
-pub struct CompanyBox<'a> {
-    pub name: &'a str,
-    pub npwp: Option<&'a str>,
-    pub industry: Option<&'a str>,
+pub(crate) struct CompanyBox<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) npwp: Option<&'a str>,
+    pub(crate) industry: Option<&'a str>,
 }
 
 impl<'a> CompanyBox<'a> {
-    pub fn new(
+    pub(crate) fn new(
         name: Option<&'a str>,
         npwp: Option<&'a str>,
         industry: Option<&'a str>,
@@ -26,11 +26,11 @@ impl<'a> CompanyBox<'a> {
         })
     }
 
-    pub fn height(&self) -> f32 {
+    pub(crate) fn height(&self) -> f32 {
         27.0
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,

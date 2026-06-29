@@ -18,7 +18,7 @@ use crate::services::pdf::theme::ID_MONTHS;
 
 /// Set fill + outline color sekaligus. printpdf butuh dua call terpisah
 /// (`set_fill_color` + `set_outline_color`) — helper ini sekaligus.
-pub fn set_color(layer: &PdfLayerReference, c: (u8, u8, u8)) {
+pub(crate) fn set_color(layer: &PdfLayerReference, c: (u8, u8, u8)) {
     // printpdf 0.7's Rgb::new expects f32 dalam 0.0..1.0, bukan u8 (0-255).
     let r = c.0 as f32 / 255.0;
     let g = c.1 as f32 / 255.0;
@@ -29,7 +29,7 @@ pub fn set_color(layer: &PdfLayerReference, c: (u8, u8, u8)) {
 
 /// Fill rectangle. Coords: bottom-left (x1, y1) dan top-right (x2, y2)
 /// dalam mm.
-pub fn fill_rect(
+pub(crate) fn fill_rect(
     layer: &PdfLayerReference,
     x1: f32,
     y1: f32,
@@ -50,7 +50,7 @@ pub fn fill_rect(
 }
 
 /// Draw straight line antara dua titik.
-pub fn draw_line(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32) {
+pub(crate) fn draw_line(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32) {
     layer.set_outline_thickness(thickness);
     let line = Line {
         points: vec![
@@ -68,7 +68,7 @@ pub fn draw_line(layer: &PdfLayerReference, x1: f32, y1: f32, x2: f32, y2: f32, 
 ///
 /// Convert ke integer string dulu, lalu format pakai separator manual
 /// supaya aman untuk nilai besar tanpa kehilangan presisi.
-pub fn format_idr(d: Decimal) -> String {
+pub(crate) fn format_idr(d: Decimal) -> String {
     let s = d.trunc().to_string();
     let (sign, int_part) = if let Some(stripped) = s.strip_prefix('-') {
         ("-", stripped)
@@ -87,7 +87,7 @@ pub fn format_idr(d: Decimal) -> String {
 }
 
 /// Format tanggal Indonesia: "9 Juni 2026".
-pub fn format_date_id(d: NaiveDate) -> String {
+pub(crate) fn format_date_id(d: NaiveDate) -> String {
     format!(
         "{} {} {}",
         d.day(),
@@ -99,7 +99,7 @@ pub fn format_date_id(d: NaiveDate) -> String {
 // ---- Text utilities ---------------------------------------------------------
 
 /// Truncate string dengan ellipsis kalau lebih panjang dari `max_len`.
-pub fn truncate(s: &str, max_len: usize) -> String {
+pub(crate) fn truncate(s: &str, max_len: usize) -> String {
     if s.chars().count() <= max_len {
         s.to_string()
     } else {
@@ -109,7 +109,7 @@ pub fn truncate(s: &str, max_len: usize) -> String {
 }
 
 /// Word-wrap sederhana — split by space, group by `max_chars` per line.
-pub fn wrap_text(s: &str, max_chars: usize) -> Vec<String> {
+pub(crate) fn wrap_text(s: &str, max_chars: usize) -> Vec<String> {
     let mut lines = Vec::new();
     for raw_line in s.split('\n') {
         let mut current = String::new();

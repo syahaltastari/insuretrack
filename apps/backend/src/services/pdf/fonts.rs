@@ -13,18 +13,18 @@ use printpdf::{BuiltinFont, IndirectFontRef, PdfDocumentReference};
 
 use crate::error::AppError;
 
-pub struct Fonts {
+pub(crate) struct Fonts {
     #[allow(dead_code)] // wired saat orchestrator migrate ke Fonts::load
-    pub bold: IndirectFontRef,
+    pub(crate) bold: IndirectFontRef,
     #[allow(dead_code)]
-    pub reg: IndirectFontRef,
+    pub(crate) reg: IndirectFontRef,
     #[allow(dead_code)]
-    pub italic: IndirectFontRef,
+    pub(crate) italic: IndirectFontRef,
 }
 
 impl Fonts {
     #[allow(dead_code)] // dipakai setelah section extraction
-    pub fn load(doc: &PdfDocumentReference) -> Result<Self, AppError> {
+    pub(crate) fn load(doc: &PdfDocumentReference) -> Result<Self, AppError> {
         let bold = doc
             .add_builtin_font(BuiltinFont::HelveticaBold)
             .map_err(|e| AppError::Internal(anyhow::anyhow!("font bold: {e}")))?;

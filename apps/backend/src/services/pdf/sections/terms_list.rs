@@ -18,11 +18,11 @@ const TERMS: &[(&str, &str)] = &[
      "Pemegang Polis dapat membatalkan polis kapan saja. Premi dikembalikan penuh jika pembatalan dalam 30 hari sejak terbit (free-look period). Di luar itu, premi tidak dikembalikan."),
 ];
 
-pub struct TermsList;
+pub(crate) struct TermsList;
 
 impl TermsList {
     /// Render Ketentuan Umum. `top_y` = top edge (di bawah BenefitList). Returns bottom y.
-    pub fn render(
+    pub(crate) fn render(
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,
         reg: &IndirectFontRef,

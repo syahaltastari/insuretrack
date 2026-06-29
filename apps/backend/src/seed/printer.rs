@@ -6,7 +6,7 @@
 
 use crate::seed::config::SeedConfig;
 
-pub fn print_plan(cfg: &SeedConfig) {
+pub(crate) fn print_plan(cfg: &SeedConfig) {
     let mode = match cfg.mode {
         crate::seed::config::SeedMode::Demo => "Demo (realistic)",
         crate::seed::config::SeedMode::Load => "Load (high volume)",
@@ -74,7 +74,7 @@ pub fn print_plan(cfg: &SeedConfig) {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn print_summary(
+pub(crate) fn print_summary(
     customers: usize,
     portal_customers: usize,
     registrations: usize,
@@ -126,17 +126,17 @@ pub fn print_summary(
 /// 1 portal customer + daftar tag applicant_type untuk registrations
 /// yang dia miliki. Dipakai `print_portal_credentials` untuk nandai
 /// akun mana yang relevan untuk demo flow Individual vs Instansi.
-pub struct PortalCredWithTags {
-    pub email: String,
-    pub password: String,
-    pub full_name: String,
+pub(crate) struct PortalCredWithTags {
+    pub(crate) email: String,
+    pub(crate) password: String,
+    pub(crate) full_name: String,
     /// Distinct applicant_types dari registrations customer ini,
     /// lowercase: `"individu"`, `"instansi"`. Bisa kosong kalau customer
     /// tidak punya registration (kasus edge: portal account tanpa polis).
-    pub tags: Vec<String>,
+    pub(crate) tags: Vec<String>,
 }
 
-pub fn print_portal_credentials(creds: &[PortalCredWithTags]) {
+pub(crate) fn print_portal_credentials(creds: &[PortalCredWithTags]) {
     if creds.is_empty() {
         return;
     }

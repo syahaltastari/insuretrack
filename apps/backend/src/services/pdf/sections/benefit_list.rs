@@ -5,8 +5,8 @@ use printpdf::{IndirectFontRef, PdfLayerReference};
 use crate::services::pdf::helpers::{draw_line, set_color, wrap_text};
 use crate::services::pdf::theme::{C_BLACK, C_CHARCOAL};
 
-pub struct BenefitList<'a> {
-    pub product_name: &'a str,
+pub(crate) struct BenefitList<'a> {
+    pub(crate) product_name: &'a str,
 }
 
 const LIFE_BENEFITS: &[(&str, &str)] = &[
@@ -37,11 +37,11 @@ const HEALTH_BENEFITS: &[(&str, &str)] = &[
 ];
 
 impl<'a> BenefitList<'a> {
-    pub fn new(product_name: &'a str) -> Self {
+    pub(crate) fn new(product_name: &'a str) -> Self {
         Self { product_name }
     }
 
-    pub fn pick(&self) -> &[(&'static str, &'static str)] {
+    pub(crate) fn pick(&self) -> &[(&'static str, &'static str)] {
         if self.product_name.contains("Life") || self.product_name.contains("Jiwa") {
             LIFE_BENEFITS
         } else if self.product_name.contains("Accident") || self.product_name.contains("Kecelakaan")
@@ -54,7 +54,7 @@ impl<'a> BenefitList<'a> {
 
     /// Render dengan `top_y` sebagai top edge. Adaptive height.
     /// Returns bottom_y.
-    pub fn render(
+    pub(crate) fn render(
         &self,
         layer: &PdfLayerReference,
         bold: &IndirectFontRef,
